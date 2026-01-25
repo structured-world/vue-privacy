@@ -22,7 +22,7 @@ export const CONSENT_MANAGER_KEY = Symbol("consentManager");
  * @example
  * ```ts
  * import { createApp } from 'vue';
- * import { createConsentPlugin } from '@structured-world/consent/vue';
+ * import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
  *
  * const app = createApp(App);
  * app.use(createConsentPlugin({
@@ -31,9 +31,7 @@ export const CONSENT_MANAGER_KEY = Symbol("consentManager");
  * }));
  * ```
  */
-export function createConsentPlugin(
-  options: ConsentPluginOptions = {},
-): Plugin {
+export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin {
   const { autoInit = true, ...config } = options;
 
   return {
@@ -56,10 +54,7 @@ export function createConsentPlugin(
 
           // Initialize after mount
           manager.init().catch((err) => {
-            console.error(
-              "[@structured-world/consent] Failed to initialize:",
-              err,
-            );
+            console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
           });
 
           return result;
@@ -75,7 +70,7 @@ export function createConsentPlugin(
  * @example
  * ```vue
  * <script setup>
- * import { useConsent } from '@structured-world/consent/vue';
+ * import { useConsent } from '@structured-world/vue-privacy/vue';
  *
  * const { acceptAll, rejectAll, hasConsent } = useConsent();
  * </script>
@@ -86,8 +81,8 @@ export function useConsent() {
 
   if (!manager) {
     throw new Error(
-      "[@structured-world/consent] useConsent() called without plugin. " +
-        "Did you forget to app.use(createConsentPlugin())?",
+      "[@structured-world/vue-privacy] useConsent() called without plugin. " +
+        "Did you forget to app.use(createConsentPlugin())?"
     );
   }
 
@@ -97,9 +92,8 @@ export function useConsent() {
     /** Reject all non-essential cookies */
     rejectAll: () => manager.rejectAll(),
     /** Save custom preferences */
-    savePreferences: (
-      categories: Parameters<typeof manager.savePreferences>[0],
-    ) => manager.savePreferences(categories),
+    savePreferences: (categories: Parameters<typeof manager.savePreferences>[0]) =>
+      manager.savePreferences(categories),
     /** Get current consent state */
     getConsent: () => manager.getConsent(),
     /** Check if user has made a consent choice */

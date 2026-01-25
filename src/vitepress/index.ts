@@ -9,7 +9,7 @@ import { createConsentPlugin, ConsentBanner } from "../vue/index";
  * ```ts
  * // docs/.vitepress/theme/index.ts
  * import DefaultTheme from 'vitepress/theme';
- * import { enhanceWithConsent } from '@structured-world/consent/vitepress';
+ * import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
  *
  * export default enhanceWithConsent(DefaultTheme, {
  *   gaId: 'G-XXXXXXXXXX',
@@ -28,7 +28,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
         createConsentPlugin({
           ...config,
           autoInit: true,
-        }),
+        })
       );
     },
   };
@@ -41,7 +41,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
  * ```ts
  * // docs/.vitepress/theme/index.ts
  * import DefaultTheme from 'vitepress/theme';
- * import { createConsentPlugin, ConsentBanner } from '@structured-world/consent/vitepress';
+ * import { createConsentPlugin, ConsentBanner } from '@structured-world/vue-privacy/vitepress';
  * import { h } from 'vue';
  *
  * export default {

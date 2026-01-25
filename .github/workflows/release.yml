@@ -13,7 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    if: github.repository == 'structured-world/consent'
+    if: github.repository == 'structured-world/vue-privacy'
 
     steps:
       - uses: actions/checkout@v4
