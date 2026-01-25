@@ -1,0 +1,16 @@
+# Cloudflare Worker configuration for consent.sw.foundation bug reports
+name = "consent-bug-report"
+main = "bug-report.js"
+compatibility_date = "2024-01-01"
+
+# Route configuration - handles /api/report-bug on consent.sw.foundation
+routes = [
+  { pattern = "consent.sw.foundation/api/report-bug", zone_name = "sw.foundation" }
+]
+
+# Environment variables (set via dashboard or wrangler secret)
+# GITHUB_TOKEN - set via: wrangler secret put GITHUB_TOKEN
+# GITHUB_REPO - defaults to "structured-world/consent"
+
+[vars]
+GITHUB_REPO = "structured-world/consent"
