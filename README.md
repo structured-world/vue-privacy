@@ -217,6 +217,35 @@ The banner uses CSS custom properties for theming:
 
 Dark mode is automatically supported via `prefers-color-scheme`.
 
+## Status & Roadmap
+
+### Current (v1.0)
+
+| Feature | Status |
+|---------|--------|
+| Consent banner component | Done |
+| Google Consent Mode v2 | Done |
+| GA4 integration | Done |
+| EU geo-detection | Done |
+| Vue 3 / VitePress / Quasar adapters | Done |
+| Local storage (cookie/localStorage) | Done |
+| Dark mode support | Done |
+
+### Planned
+
+| Feature | Description |
+|---------|-------------|
+| Preference center modal | Full-featured modal with category toggles (OneTrust-style) |
+| Script blocking | Block 3rd-party scripts until consent given |
+| Multi-language (i18n) | Built-in translations for 20+ languages |
+| CCPA support | California Consumer Privacy Act compliance |
+| Server-side storage | Optional backend via [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) |
+| Analytics dashboard | Opt-in rates, banner interactions (via privacy.structured.world) |
+
+### Related Projects
+
+- [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) - Cloudflare Worker for server-side consent storage
+
 ## License
 
 Apache 2.0 - see [LICENSE](LICENSE)
