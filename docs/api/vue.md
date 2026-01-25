@@ -5,7 +5,7 @@
 Creates a Vue plugin for consent management.
 
 ```typescript
-import { createConsentPlugin } from '@structured-world/consent/vue';
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 app.use(createConsentPlugin(options));
 ```
@@ -19,7 +19,7 @@ See [ConsentConfig](/api/types#consentconfig) for all options.
 Composable for accessing consent state and methods.
 
 ```typescript
-import { useConsent } from '@structured-world/consent/vue';
+import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
   consent,
@@ -84,7 +84,7 @@ The component uses Teleport to render at body level. No slots available.
 Enhance a VitePress theme with consent.
 
 ```typescript
-import { enhanceWithConsent } from '@structured-world/consent/vitepress';
+import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
 
 export default enhanceWithConsent(DefaultTheme, options);
 ```
@@ -96,7 +96,7 @@ export default enhanceWithConsent(DefaultTheme, options);
 Create a Quasar boot function.
 
 ```typescript
-import { consentBoot } from '@structured-world/consent/quasar';
+import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot(options));
 ```

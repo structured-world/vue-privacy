@@ -7,7 +7,7 @@ The core API is framework-agnostic and can be used without Vue.
 Creates a consent manager instance.
 
 ```typescript
-import { createConsentManager } from '@structured-world/consent';
+import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
@@ -99,7 +99,7 @@ manager.resetConsent();
 Set initial consent state before loading gtag.js.
 
 ```typescript
-import { setConsentDefaults } from '@structured-world/consent';
+import { setConsentDefaults } from '@structured-world/vue-privacy';
 
 setConsentDefaults({
   analytics_storage: 'denied',
@@ -114,7 +114,7 @@ setConsentDefaults({
 Update consent signals after user choice.
 
 ```typescript
-import { updateConsent } from '@structured-world/consent';
+import { updateConsent } from '@structured-world/vue-privacy';
 
 updateConsent({
   analytics_storage: 'granted',
@@ -126,7 +126,7 @@ updateConsent({
 Initialize Google Analytics with Consent Mode.
 
 ```typescript
-import { initGoogleAnalytics } from '@structured-world/consent';
+import { initGoogleAnalytics } from '@structured-world/vue-privacy';
 
 await initGoogleAnalytics('G-XXXXXXXXXX', true); // true = default denied
 ```
@@ -138,7 +138,7 @@ await initGoogleAnalytics('G-XXXXXXXXXX', true); // true = default denied
 Read consent from cookie.
 
 ```typescript
-import { getStoredConsent } from '@structured-world/consent';
+import { getStoredConsent } from '@structured-world/vue-privacy';
 
 const consent = getStoredConsent({ cookie: { name: 'my_consent' } });
 ```
@@ -148,7 +148,7 @@ const consent = getStoredConsent({ cookie: { name: 'my_consent' } });
 Write consent to cookie.
 
 ```typescript
-import { storeConsent } from '@structured-world/consent';
+import { storeConsent } from '@structured-world/vue-privacy';
 
 storeConsent({
   categories: { analytics: true, marketing: false, functional: true },
@@ -160,7 +160,7 @@ storeConsent({
 Delete consent cookie.
 
 ```typescript
-import { clearConsent } from '@structured-world/consent';
+import { clearConsent } from '@structured-world/vue-privacy';
 
 clearConsent();
 ```

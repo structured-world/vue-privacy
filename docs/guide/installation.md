@@ -5,15 +5,15 @@
 ::: code-group
 
 ```bash [npm]
-npm install @structured-world/consent
+npm install @structured-world/vue-privacy
 ```
 
 ```bash [yarn]
-yarn add @structured-world/consent
+yarn add @structured-world/vue-privacy
 ```
 
 ```bash [pnpm]
-pnpm add @structured-world/consent
+pnpm add @structured-world/vue-privacy
 ```
 
 :::
@@ -38,10 +38,10 @@ The package provides multiple entry points:
 
 | Import | Description |
 |--------|-------------|
-| `@structured-world/consent` | Core (framework-agnostic) |
-| `@structured-world/consent/vue` | Vue 3 plugin & components |
-| `@structured-world/consent/vitepress` | VitePress theme enhancement |
-| `@structured-world/consent/quasar` | Quasar boot file |
+| `@structured-world/vue-privacy` | Core (framework-agnostic) |
+| `@structured-world/vue-privacy/vue` | Vue 3 plugin & components |
+| `@structured-world/vue-privacy/vitepress` | VitePress theme enhancement |
+| `@structured-world/vue-privacy/quasar` | Quasar boot file |
 
 ## Browser Support
 

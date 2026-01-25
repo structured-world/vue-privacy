@@ -4,7 +4,7 @@
 
 ```typescript
 import { createApp } from 'vue';
-import { createConsentPlugin } from '@structured-world/consent/vue';
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 const app = createApp(App);
 
@@ -25,7 +25,7 @@ app.use(createConsentPlugin({
 
 ```vue
 <script setup>
-import { ConsentBanner } from '@structured-world/consent/vue';
+import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </script>
 
 <template>
@@ -58,7 +58,7 @@ import { ConsentBanner } from '@structured-world/consent/vue';
 
 ```vue
 <script setup>
-import { useConsent } from '@structured-world/consent/vue';
+import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
   consent,        // Ref<StoredConsent | null>
@@ -86,7 +86,7 @@ Build your own preferences modal:
 ```vue
 <script setup>
 import { ref } from 'vue';
-import { useConsent } from '@structured-world/consent/vue';
+import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const { savePreferences, consent } = useConsent();
 

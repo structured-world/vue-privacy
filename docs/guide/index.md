@@ -1,6 +1,6 @@
 # Introduction
 
-**@structured-world/consent** is a GDPR-compliant cookie consent library with full Google Consent Mode v2 support for Vue 3, Quasar, and VitePress applications.
+**@structured-world/vue-privacy** is a privacy-first consent and analytics library with full Google Consent Mode v2 support for Vue 3, Nuxt 3, VitePress, and Quasar applications.
 
 ## Why This Library?
 
@@ -41,7 +41,7 @@ The core library works without any framework. Vue 3 integration provides:
 
 ```typescript
 import { createApp } from 'vue';
-import { createConsentPlugin, ConsentBanner } from '@structured-world/consent/vue';
+import { createConsentPlugin, ConsentBanner } from '@structured-world/vue-privacy/vue';
 
 const app = createApp(App);
 

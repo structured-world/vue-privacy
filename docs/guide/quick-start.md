@@ -7,7 +7,7 @@
 ```typescript
 // main.ts
 import { createApp } from 'vue';
-import { createConsentPlugin } from '@structured-world/consent/vue';
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 import App from './App.vue';
 
 const app = createApp(App);
@@ -25,7 +25,7 @@ app.mount('#app');
 ```vue
 <!-- App.vue -->
 <script setup>
-import { ConsentBanner } from '@structured-world/consent/vue';
+import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </script>
 
 <template>
@@ -43,7 +43,7 @@ That's it! The banner will automatically show for EU users who haven't given con
 ```typescript
 // docs/.vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme';
-import { enhanceWithConsent } from '@structured-world/consent/vitepress';
+import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
 
 export default enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
@@ -55,7 +55,7 @@ export default enhanceWithConsent(DefaultTheme, {
 ```typescript
 // src/boot/consent.ts
 import { boot } from 'quasar/wrappers';
-import { consentBoot } from '@structured-world/consent/quasar';
+import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot({
   gaId: 'G-XXXXXXXXXX',
@@ -71,7 +71,7 @@ boot: ['consent'],
 ## Framework-Agnostic
 
 ```typescript
-import { createConsentManager } from '@structured-world/consent';
+import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',

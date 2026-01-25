@@ -7,7 +7,7 @@ The easiest way to add consent to VitePress:
 ```typescript
 // docs/.vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme';
-import { enhanceWithConsent } from '@structured-world/consent/vitepress';
+import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
 
 export default enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
@@ -30,7 +30,7 @@ If you have a custom theme:
 ```typescript
 // docs/.vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme';
-import { createConsentPlugin, ConsentBanner } from '@structured-world/consent/vue';
+import { createConsentPlugin, ConsentBanner } from '@structured-world/vue-privacy/vue';
 import type { Theme } from 'vitepress';
 
 export default {

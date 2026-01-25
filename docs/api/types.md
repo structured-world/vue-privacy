@@ -133,7 +133,7 @@ import {
   IPAPIGeoDetector,
   TimezoneGeoDetector,
   AutoGeoDetector,
-} from '@structured-world/consent';
+} from '@structured-world/vue-privacy';
 
 // Use a specific detector
 const detector = new CloudflareGeoDetector();

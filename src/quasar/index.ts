@@ -1,9 +1,6 @@
 import type { App } from "vue";
 import type { ConsentConfig } from "../core/types";
-import {
-  createConsentPlugin as createBasePlugin,
-  ConsentBanner,
-} from "../vue/index";
+import { createConsentPlugin as createBasePlugin, ConsentBanner } from "../vue/index";
 
 /**
  * Quasar boot file for cookie consent
@@ -12,7 +9,7 @@ import {
  * ```ts
  * // src/boot/consent.ts
  * import { boot } from 'quasar/wrappers';
- * import { consentBoot } from '@structured-world/consent/quasar';
+ * import { consentBoot } from '@structured-world/vue-privacy/quasar';
  *
  * export default boot(consentBoot({
  *   gaId: 'G-XXXXXXXXXX',
@@ -25,7 +22,7 @@ export function consentBoot(config: ConsentConfig) {
       createBasePlugin({
         ...config,
         autoInit: true,
-      }),
+      })
     );
   };
 }
@@ -41,7 +38,7 @@ export function consentBoot(config: ConsentConfig) {
  * }
  *
  * // main.ts
- * import { createConsentPlugin } from '@structured-world/consent/quasar';
+ * import { createConsentPlugin } from '@structured-world/vue-privacy/quasar';
  * app.use(createConsentPlugin({ gaId: 'G-XXX' }));
  * ```
  */

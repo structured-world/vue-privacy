@@ -1,20 +1,20 @@
 import { defineConfig } from "vitepress";
 
-const hostname = "https://consent.sw.foundation";
+const hostname = "https://privacy.sw.foundation";
 
 export default defineConfig({
-  title: "@structured-world/consent",
-  description: "GDPR-compliant cookie consent with Google Consent Mode v2",
+  title: "Vue Privacy",
+  description: "Privacy-first consent & analytics for Vue ecosystem",
 
   head: [
     ["link", { rel: "icon", href: "/favicon.ico" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "@structured-world/consent" }],
+    ["meta", { property: "og:title", content: "Vue Privacy" }],
     [
       "meta",
       {
         property: "og:description",
-        content: "GDPR-compliant cookie consent with Google Consent Mode v2",
+        content: "Privacy-first consent & analytics for Vue ecosystem",
       },
     ],
     ["meta", { property: "og:url", content: hostname }],
@@ -27,11 +27,13 @@ export default defineConfig({
 
   themeConfig: {
     logo: "/logo.svg",
+    siteTitle: "Vue Privacy",
 
     nav: [
       { text: "Guide", link: "/guide/" },
       { text: "API", link: "/api/" },
-      { text: "GitHub", link: "https://github.com/structured-world/consent" },
+      { text: "Platform", link: "https://privacy.structured.world" },
+      { text: "GitHub", link: "https://github.com/structured-world/vue-privacy" },
     ],
 
     sidebar: {
@@ -48,6 +50,7 @@ export default defineConfig({
           text: "Framework Integration",
           items: [
             { text: "Vue 3", link: "/guide/vue" },
+            { text: "Nuxt 3", link: "/guide/nuxt" },
             { text: "VitePress", link: "/guide/vitepress" },
             { text: "Quasar", link: "/guide/quasar" },
           ],
@@ -55,9 +58,19 @@ export default defineConfig({
         {
           text: "Features",
           items: [
+            { text: "Consent Banner", link: "/guide/consent-banner" },
+            { text: "Preference Center", link: "/guide/preference-center" },
             { text: "Google Consent Mode v2", link: "/guide/consent-mode" },
-            { text: "EU Detection", link: "/guide/eu-detection" },
+            { text: "Script Blocking", link: "/guide/script-blocking" },
+            { text: "Geo Detection", link: "/guide/geo-detection" },
             { text: "Customization", link: "/guide/customization" },
+          ],
+        },
+        {
+          text: "Platform Integration",
+          items: [
+            { text: "Privacy Platform", link: "/guide/platform" },
+            { text: "Analytics", link: "/guide/analytics" },
           ],
         },
       ],
@@ -74,17 +87,17 @@ export default defineConfig({
     },
 
     socialLinks: [
-      { icon: "github", link: "https://github.com/structured-world/consent" },
-      { icon: "npm", link: "https://www.npmjs.com/package/@structured-world/consent" },
+      { icon: "github", link: "https://github.com/structured-world/vue-privacy" },
+      { icon: "npm", link: "https://www.npmjs.com/package/@structured-world/vue-privacy" },
     ],
 
     footer: {
-      message: "Released under the Apache 2.0 License.",
+      message: "Released under the Apache 2.0 License. Powered by structured.world",
       copyright: "Copyright 2025 Dmitry Prudnikov",
     },
 
     editLink: {
-      pattern: "https://github.com/structured-world/consent/edit/main/docs/:path",
+      pattern: "https://github.com/structured-world/vue-privacy/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
 

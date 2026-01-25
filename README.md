@@ -1,8 +1,8 @@
-# @structured-world/consent
+# @structured-world/vue-privacy
 
 GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3, Quasar, and VitePress.
 
-[![npm version](https://img.shields.io/npm/v/@structured-world/consent.svg)](https://www.npmjs.com/package/@structured-world/consent)
+[![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Features
@@ -19,11 +19,11 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 ## Installation
 
 ```bash
-npm install @structured-world/consent
+npm install @structured-world/vue-privacy
 # or
-yarn add @structured-world/consent
+yarn add @structured-world/vue-privacy
 # or
-pnpm add @structured-world/consent
+pnpm add @structured-world/vue-privacy
 ```
 
 ## Quick Start
@@ -32,7 +32,7 @@ pnpm add @structured-world/consent
 
 ```typescript
 import { createApp } from 'vue';
-import { createConsentPlugin } from '@structured-world/consent/vue';
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 import App from './App.vue';
 
 const app = createApp(App);
@@ -59,7 +59,7 @@ app.mount('#app');
 ```typescript
 // docs/.vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme';
-import { enhanceWithConsent } from '@structured-world/consent/vitepress';
+import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
 
 export default enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
@@ -71,7 +71,7 @@ export default enhanceWithConsent(DefaultTheme, {
 ```typescript
 // src/boot/consent.ts
 import { boot } from 'quasar/wrappers';
-import { consentBoot } from '@structured-world/consent/quasar';
+import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot({
   gaId: 'G-XXXXXXXXXX',
@@ -164,7 +164,7 @@ export default {
 
 ```vue
 <script setup>
-import { useConsent } from '@structured-world/consent/vue';
+import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const { acceptAll, rejectAll, hasConsent, resetConsent } = useConsent();
 </script>
@@ -177,7 +177,7 @@ const { acceptAll, rejectAll, hasConsent, resetConsent } = useConsent();
 ## Core API (Framework-agnostic)
 
 ```typescript
-import { createConsentManager } from '@structured-world/consent';
+import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
@@ -223,6 +223,6 @@ Apache 2.0 - see [LICENSE](LICENSE)
 
 ## Links
 
-- [Documentation](https://consent.sw.foundation)
-- [GitHub](https://github.com/structured-world/consent)
-- [npm](https://www.npmjs.com/package/@structured-world/consent)
+- [Documentation](https://privacy.sw.foundation)
+- [GitHub](https://github.com/structured-world/vue-privacy)
+- [npm](https://www.npmjs.com/package/@structured-world/vue-privacy)

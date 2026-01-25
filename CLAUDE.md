@@ -1,12 +1,12 @@
-# @structured-world/consent - Project Instructions
+# @structured-world/vue-privacy - Project Instructions
 
 ## Project Overview
 
 GDPR-compliant cookie consent library with Google Consent Mode v2 support for Vue 3, Quasar, and VitePress.
 
-- **npm**: `@structured-world/consent`
+- **npm**: `@structured-world/vue-privacy`
 - **License**: Apache 2.0
-- **Website**: https://consent.sw.foundation
+- **Website**: https://privacy.sw.foundation
 
 ## Architecture
 

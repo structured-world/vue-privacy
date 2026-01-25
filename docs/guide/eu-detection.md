@@ -79,7 +79,7 @@ This is not 100% accurate but provides a reasonable fallback.
 Implement your own detection logic:
 
 ```typescript
-import type { GeoDetector } from '@structured-world/consent';
+import type { GeoDetector } from '@structured-world/vue-privacy';
 
 const myDetector: GeoDetector = {
   async detect() {

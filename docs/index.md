@@ -2,16 +2,16 @@
 layout: home
 
 hero:
-  name: "@structured-world/consent"
-  text: GDPR Cookie Consent
-  tagline: Google Consent Mode v2 for Vue 3, Quasar & VitePress
+  name: "Vue Privacy"
+  text: Privacy-first Consent & Analytics
+  tagline: GDPR/CCPA compliant with Google Consent Mode v2 for Vue 3, Nuxt 3, VitePress & Quasar
   actions:
     - theme: brand
       text: Get Started
       link: /guide/
     - theme: alt
       text: View on GitHub
-      link: https://github.com/structured-world/consent
+      link: https://github.com/structured-world/vue-privacy
 
 features:
   - icon: 🔒

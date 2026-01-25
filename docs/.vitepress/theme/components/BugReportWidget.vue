@@ -293,7 +293,7 @@ onUnmounted(() => {
 
         <div class="bug-footer">
           <a
-            href="https://github.com/structured-world/consent/issues/new"
+            href="https://github.com/structured-world/vue-privacy/issues/new"
             target="_blank"
             rel="noopener"
           >

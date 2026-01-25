@@ -1,11 +1,11 @@
 /**
- * @structured-world/consent
+ * @structured-world/vue-privacy
  *
  * GDPR-compliant cookie consent with Google Consent Mode v2 support
  *
  * @example
  * ```ts
- * import { createConsentManager } from '@structured-world/consent';
+ * import { createConsentManager } from '@structured-world/vue-privacy';
  *
  * const manager = createConsentManager({
  *   gaId: 'G-XXXXXXXXXX',

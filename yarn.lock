@@ -1887,9 +1887,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@structured-world/consent@workspace:.":
+"@structured-world/vue-privacy@workspace:.":
   version: 0.0.0-use.local
-  resolution: "@structured-world/consent@workspace:."
+  resolution: "@structured-world/vue-privacy@workspace:."
   dependencies:
     "@eslint/js": "npm:^9.0.0"
     "@semantic-release/changelog": "npm:^6.0.0"

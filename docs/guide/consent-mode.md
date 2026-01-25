@@ -67,7 +67,7 @@ The library maps user-friendly categories to Google signals:
 For advanced use cases:
 
 ```typescript
-import { updateConsent } from '@structured-world/consent';
+import { updateConsent } from '@structured-world/vue-privacy';
 
 // Update specific signals
 updateConsent({

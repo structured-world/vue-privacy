@@ -7,7 +7,7 @@ Create a boot file for consent:
 ```typescript
 // src/boot/consent.ts
 import { boot } from 'quasar/wrappers';
-import { consentBoot } from '@structured-world/consent/quasar';
+import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot({
   gaId: 'G-XXXXXXXXXX',
@@ -33,7 +33,7 @@ Add the banner to your main layout:
 ```vue
 <!-- src/layouts/MainLayout.vue -->
 <script setup>
-import { ConsentBanner } from '@structured-world/consent/quasar';
+import { ConsentBanner } from '@structured-world/vue-privacy/quasar';
 </script>
 
 <template>
@@ -52,7 +52,7 @@ If you prefer not to use a boot file:
 
 ```typescript
 // src/main.ts
-import { createConsentPlugin } from '@structured-world/consent/quasar';
+import { createConsentPlugin } from '@structured-world/vue-privacy/quasar';
 
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
@@ -65,7 +65,7 @@ Use the composable in any component:
 
 ```vue
 <script setup>
-import { useConsent } from '@structured-world/consent/quasar';
+import { useConsent } from '@structured-world/vue-privacy/quasar';
 
 const { hasConsent, resetConsent } = useConsent();
 </script>
@@ -86,7 +86,7 @@ Show preferences in a Quasar dialog:
 ```vue
 <script setup>
 import { useQuasar } from 'quasar';
-import { useConsent } from '@structured-world/consent/quasar';
+import { useConsent } from '@structured-world/vue-privacy/quasar';
 import PreferencesDialog from './PreferencesDialog.vue';
 
 const $q = useQuasar();
