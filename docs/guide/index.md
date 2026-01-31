@@ -37,7 +37,7 @@ app.use(createConsentPlugin({
 }));
 ```
 
-This handles everything: gtag.js loading, Consent Mode v2 defaults, EU detection, consent banner, SPA page tracking, and consent persistence.
+This handles: gtag.js loading, Consent Mode v2 defaults, EU detection, consent banner, and consent persistence. For SPA page tracking, VitePress and Quasar include automatic router integration; Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)).
 
 ## What It Does
 
@@ -70,7 +70,7 @@ Multiple detection methods with automatic fallback:
 
 ### SPA Page Tracking
 
-For single-page apps (VitePress, Vue Router, Quasar), automatic page view tracking on navigation. No manual `gtag` calls required. The VitePress adapter watches the router and sends `page_view` events with correct `page_path` and `page_title` after each navigation.
+For single-page apps, VitePress and Quasar provide automatic page view tracking on navigation. Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)). No manual `gtag` calls required — the adapters send `page_view` events with correct `page_path` and `page_title` after each navigation.
 
 ### Framework Agnostic Core
 
