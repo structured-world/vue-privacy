@@ -98,7 +98,7 @@ All standard options are supported:
 ```typescript
 enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',         // 'auto' | 'cloudflare' | 'ipapi' | 'timezone'
+  euDetection: 'auto',         // 'auto' | 'cloudflare' | 'api' | 'always' | 'never'
   banner: {
     title: 'Cookie Preferences',
     message: 'This site uses cookies for analytics.',

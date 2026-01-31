@@ -25,7 +25,7 @@ features:
     details: Automatically detects EU users via Cloudflare headers, IP geolocation, or timezone heuristics. Shows consent banner only when required.
   - icon: "\U0001F680"
     title: SPA Page Tracking
-    details: Built-in router integration for VitePress, Vue Router, and Quasar. Tracks page views on navigation without extra code.
+    details: Automatic router integration for VitePress. Use trackPageView() with Vue Router and Quasar for SPA page tracking.
   - icon: "\U0001F3A8"
     title: Customizable Banner
     details: CSS custom properties for theming, configurable UI text, and callback hooks. Adapts to your site's design.
