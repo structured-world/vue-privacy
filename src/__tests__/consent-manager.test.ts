@@ -160,3 +160,61 @@ describe("ConsentManager with remote storage", () => {
     expect(cookieStore).not.toContain("consent_preferences");
   });
 });
+
+describe("ConsentManager.getGeoResult()", () => {
+  it("returns null before init", () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    expect(manager.getGeoResult()).toBeNull();
+  });
+
+  it("returns full geo result for EU user after init", async () => {
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: true,
+        countryCode: "DE",
+        method: "cloudflare" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+
+    const result = manager.getGeoResult();
+    expect(result).toEqual({
+      isEU: true,
+      countryCode: "DE",
+      method: "cloudflare",
+    });
+  });
+
+  it("returns full geo result for non-EU user after init", async () => {
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "US",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+
+    const result = manager.getGeoResult();
+    expect(result).toEqual({
+      isEU: false,
+      countryCode: "US",
+      method: "api",
+    });
+  });
+
+  it("returns null when consent restored from cookie (geo detection skipped)", async () => {
+    // Pre-set consent cookie so init() takes fast-path
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: true, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    // Geo detection was skipped — geoResult should be null
+    expect(manager.getGeoResult()).toBeNull();
+  });
+});

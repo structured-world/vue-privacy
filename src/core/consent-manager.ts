@@ -1,4 +1,10 @@
-import type { ConsentConfig, StoredConsent, ConsentCategories, ConsentStorage } from "./types";
+import type {
+  ConsentConfig,
+  StoredConsent,
+  ConsentCategories,
+  ConsentStorage,
+  GeoDetectionResult,
+} from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import {
   getStoredConsent,
@@ -23,6 +29,7 @@ export class ConsentManager {
   private config: ConsentConfig;
   private initialized = false;
   private isEU: boolean | null = null;
+  private geoResult: GeoDetectionResult | null = null;
   private userId: string | null = null;
   private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
@@ -91,6 +98,7 @@ export class ConsentManager {
       this.config.geoDetector ?? createGeoDetector(this.config.euDetection ?? "auto");
     const geoResult = await detector.detect();
     this.isEU = geoResult.isEU;
+    this.geoResult = geoResult;
 
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
@@ -267,6 +275,14 @@ export class ConsentManager {
    */
   isEUUser(): boolean | null {
     return this.isEU;
+  }
+
+  /**
+   * Get geo-detection result (country, method, isEU).
+   * Returns null if geo detection has not run yet (e.g., consent was restored from cookie).
+   */
+  getGeoResult(): GeoDetectionResult | null {
+    return this.geoResult;
   }
 
   /**
