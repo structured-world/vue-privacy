@@ -145,19 +145,17 @@ const BANNER_CSS = `
 `;
 
 const STYLE_ID = "vue-privacy-consent-banner";
-let injected = false;
 
 /** Inject ConsentBanner CSS into document head (idempotent, SSR-safe) */
 export function injectBannerStyles(): void {
-  if (injected || typeof document === "undefined") return;
-  if (document.getElementById(STYLE_ID)) {
-    injected = true;
-    return;
-  }
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
 
+  // CSP note: sites with strict style-src (no 'unsafe-inline') will block this.
+  // In that case consumers should add the CSS hash to their CSP policy or
+  // include the styles via a build-time import from the source .ts file.
   const style = document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = BANNER_CSS;
   document.head.appendChild(style);
-  injected = true;
 }

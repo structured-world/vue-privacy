@@ -58,10 +58,8 @@ const positionClasses = computed(() => {
   }
 });
 
-// Inject CSS on first mount (works for both npm and source imports)
-onMounted(() => {
-  injectBannerStyles();
-});
+// Inject CSS before first render to avoid FOUC (SSR-safe: guard inside injectBannerStyles)
+injectBannerStyles();
 
 // Register show/hide callbacks with manager
 onMounted(() => {
