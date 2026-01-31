@@ -56,7 +56,15 @@ That's it! The banner automatically shows for EU users who haven't given consent
 
 ### 3. SPA Page Tracking (Vue Router)
 
-For single-page apps with Vue Router, use `trackPageView` from the composable:
+For single-page apps with Vue Router, disable the automatic initial `page_view` and track navigations manually:
+
+```typescript
+// main.ts — note sendPageView: false
+app.use(createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  sendPageView: false, // Disable automatic page_view — we track manually
+}));
+```
 
 ```vue
 <!-- App.vue or a layout component -->
@@ -68,10 +76,10 @@ import { useRoute } from 'vue-router';
 const { trackPageView } = useConsent();
 const route = useRoute();
 
-// { immediate: false } is Vue default — watch only fires on subsequent navigations
+// Track initial page + all subsequent navigations
 watch(() => route.path, (path) => {
   trackPageView(path);
-});
+}, { immediate: true });
 </script>
 ```
 
