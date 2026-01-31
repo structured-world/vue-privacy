@@ -22,17 +22,23 @@ export default defineConfig({
     head.push(["meta", { name: "twitter:card", content: "summary_large_image" }]);
     head.push(["meta", { name: "twitter:title", content: title }]);
     head.push(["meta", { name: "twitter:description", content: description }]);
+    head.push(["meta", { name: "twitter:image", content: `${hostname}/og-image.png` }]);
+    head.push(["meta", { name: "twitter:image:alt", content: title }]);
     head.push(["link", { rel: "canonical", href: url }]);
 
     return head;
   },
+
+  // Enable git-based lastUpdated timestamps for sitemap and page metadata
+  lastUpdated: true,
 
   sitemap: {
     hostname,
     transformItems: (items) =>
       items.map((item) => ({
         ...item,
-        lastmod: new Date().toISOString().split("T")[0],
+        // Prefer existing lastmod from git timestamps; fall back to build date
+        lastmod: item.lastmod || new Date().toISOString().split("T")[0],
       })),
   },
 
