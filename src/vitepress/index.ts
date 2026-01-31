@@ -1,5 +1,4 @@
 import type { Theme } from "vitepress";
-import { inBrowser } from "vitepress";
 import { watch, nextTick } from "vue";
 import type { ConsentConfig } from "../core/types";
 import { createConsentPlugin, ConsentBanner, CONSENT_MANAGER_KEY } from "../vue/index";
@@ -45,7 +44,9 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
       // Register global component
       ctx.app.component("ConsentBanner", ConsentBanner);
 
-      if (inBrowser) {
+      // SSR-safe browser check — avoid importing inBrowser from vitepress
+      // which is not available as a named export during SSR bundle compilation
+      if (typeof window !== "undefined") {
         // Initialize consent manager
         manager
           .init()
