@@ -1,7 +1,7 @@
 import { h } from "vue";
 import DefaultTheme from "vitepress/theme";
 import type { Theme } from "vitepress";
-import { enhanceWithConsent } from "../../../src/vitepress/index";
+import { enhanceWithConsent, ConsentBanner } from "../../../src/vitepress/index";
 import { createKVStorage } from "../../../src/index";
 import "./style.css";
 import BugReportWidget from "./components/BugReportWidget.vue";
@@ -17,7 +17,7 @@ export default {
   ...consentTheme,
   Layout() {
     return h(consentTheme.Layout ?? DefaultTheme.Layout, null, {
-      "layout-bottom": () => [h(BugReportWidget), h(ConsentDebugPanel)],
+      "layout-bottom": () => [h(ConsentBanner), h(BugReportWidget), h(ConsentDebugPanel)],
     });
   },
 } satisfies Theme;

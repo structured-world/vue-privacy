@@ -34,6 +34,7 @@ export class ConsentManager {
   private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
+  private bannerPending = false;
 
   constructor(config: ConsentConfig = {}) {
     this.config = {
@@ -49,10 +50,16 @@ export class ConsentManager {
   }
 
   /**
-   * Register callback to show banner
+   * Register callback to show banner.
+   * If init() already requested the banner before this callback was registered,
+   * fires immediately (handles race condition with component mount timing).
    */
   onShowBanner(callback: () => void): void {
     this.showBannerCallback = callback;
+    if (this.bannerPending) {
+      this.bannerPending = false;
+      callback();
+    }
   }
 
   /**
@@ -111,8 +118,12 @@ export class ConsentManager {
         await initGoogleAnalytics(this.config.gaId, true, sendPageView);
       }
 
-      // Show banner
-      this.showBannerCallback?.();
+      // Show banner (or defer if component hasn't mounted yet)
+      if (this.showBannerCallback) {
+        this.showBannerCallback();
+      } else {
+        this.bannerPending = true;
+      }
       this.config.onBannerShow?.();
     } else {
       // Non-EU user: grant consent silently
