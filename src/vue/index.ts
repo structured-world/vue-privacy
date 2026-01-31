@@ -100,6 +100,8 @@ export function useConsent() {
     hasConsent: () => manager.hasConsent(),
     /** Reset consent and show banner again */
     resetConsent: () => manager.resetConsent(),
+    /** Track a page view manually (for SPA navigation) */
+    trackPageView: (path: string, title?: string) => manager.trackPageView(path, title),
     /** Check if user is detected as EU */
     isEUUser: () => manager.isEUUser(),
     /** Get the underlying manager instance */

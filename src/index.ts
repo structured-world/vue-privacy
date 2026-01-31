@@ -26,6 +26,7 @@ export {
   loadGtagScript,
   initGoogleAnalytics,
   categoriesToGoogleSignals,
+  trackPageView,
 } from "./core/gtag";
 export { DEFAULT_CONFIG } from "./core/types";
 
