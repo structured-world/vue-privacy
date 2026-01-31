@@ -68,6 +68,7 @@ import { useRoute } from 'vue-router';
 const { trackPageView } = useConsent();
 const route = useRoute();
 
+// { immediate: false } is Vue default — watch only fires on subsequent navigations
 watch(() => route.path, (path) => {
   trackPageView(path);
 });
@@ -120,6 +121,6 @@ await manager.rejectAll();
 3. **Consent defaults** — EU users start with `denied`, non-EU with `granted`
 4. **Banner display** — shows only for EU users without stored consent
 5. **User choice** — consent stored in cookie, Google Consent Mode signals updated
-6. **Page tracking** — page views sent on every SPA navigation
+6. **Page tracking** — automatic in VitePress and Quasar; use `trackPageView()` with Vue Router (see example above)
 
 Non-EU users automatically get analytics enabled without seeing the banner.
