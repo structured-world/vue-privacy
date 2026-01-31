@@ -184,9 +184,14 @@ export class ConsentManager {
   }
 
   /**
-   * Track a page view manually (for SPA navigation)
+   * Track a page view manually (for SPA navigation).
+   * Skips sending if analytics consent has not been granted.
    */
   trackPageView(path: string, title?: string): void {
+    const stored = getStoredConsent(this.config);
+    if (stored && !stored.categories.analytics) {
+      return;
+    }
     gtagTrackPageView(path, title);
   }
 
