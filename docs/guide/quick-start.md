@@ -1,5 +1,21 @@
 # Quick Start
 
+## VitePress
+
+One line — Google Analytics with GDPR consent and SPA page tracking:
+
+```typescript
+// docs/.vitepress/theme/index.ts
+import DefaultTheme from 'vitepress/theme';
+import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
+
+export default enhanceWithConsent(DefaultTheme, {
+  gaId: 'G-XXXXXXXXXX', // Your GA4 measurement ID
+});
+```
+
+Page views are tracked automatically on every navigation. [Full VitePress guide](/guide/vitepress)
+
 ## Vue 3
 
 ### 1. Install the Plugin
@@ -36,18 +52,28 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </template>
 ```
 
-That's it! The banner will automatically show for EU users who haven't given consent.
+That's it! The banner automatically shows for EU users who haven't given consent.
 
-## VitePress
+### 3. SPA Page Tracking (Vue Router)
 
-```typescript
-// docs/.vitepress/theme/index.ts
-import DefaultTheme from 'vitepress/theme';
-import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
+For single-page apps with Vue Router, use `trackPageView` to track navigations:
 
-export default enhanceWithConsent(DefaultTheme, {
-  gaId: 'G-XXXXXXXXXX',
+```vue
+<!-- App.vue or a layout component -->
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+import { watch } from 'vue';
+import { useRoute } from 'vue-router';
+
+const { trackPageView } = useConsent();
+const route = useRoute();
+
+// Initial page view is sent automatically by gtag (sendPageView defaults to true).
+// Watch fires only on subsequent navigations — no duplicate tracking.
+watch(() => route.path, (path) => {
+  trackPageView(path);
 });
+</script>
 ```
 
 ## Quasar
@@ -68,6 +94,23 @@ Don't forget to add the boot file to `quasar.config.js`:
 boot: ['consent'],
 ```
 
+## Nuxt 3
+
+Nuxt 3 uses the standard Vue plugin. Create a Nuxt plugin file:
+
+```typescript
+// plugins/consent.client.ts
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createConsentPlugin({
+    gaId: 'G-XXXXXXXXXX',
+  }));
+});
+```
+
+Then add the `ConsentBanner` component to your layout. [Full Nuxt guide](/guide/nuxt)
+
 ## Framework-Agnostic
 
 ```typescript
@@ -78,8 +121,11 @@ const manager = createConsentManager({
   euDetection: 'auto',
 });
 
-// Initialize (shows banner for EU users)
+// Initialize (loads GA, shows banner for EU users)
 await manager.init();
+
+// Track page views manually (for SPAs)
+manager.trackPageView('/new-page');
 
 // Programmatic consent
 await manager.acceptAll();
@@ -88,10 +134,11 @@ await manager.rejectAll();
 
 ## What Happens
 
-1. **EU Detection** - The library checks if the user is in the EU
-2. **Consent Defaults** - Google Consent Mode is initialized with `denied` defaults
-3. **Banner Display** - If no consent stored, banner shows for EU users
-4. **User Choice** - User accepts/rejects, consent stored in cookie
-5. **Google Update** - Consent Mode signals updated to `granted`/`denied`
+1. **Google Analytics loads** — `gtag.js` injected with Consent Mode v2 defaults
+2. **EU detection** — checks if user is in the EU (Cloudflare → IP API → timezone)
+3. **Consent defaults** — EU users start with `denied`, non-EU with `granted`
+4. **Banner display** — shows only for EU users without stored consent
+5. **User choice** — consent stored in cookie, Google Consent Mode signals updated
+6. **Page tracking** — automatic in VitePress and Quasar; use `trackPageView()` with Vue Router (see example above)
 
-Non-EU users automatically get consent granted without seeing the banner.
+Non-EU users automatically get analytics enabled without seeing the banner.
