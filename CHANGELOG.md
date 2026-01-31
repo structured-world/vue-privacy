@@ -1,3 +1,9 @@
+## [1.2.2](https://github.com/structured-world/vue-privacy/compare/v1.2.1...v1.2.2) (2026-01-31)
+
+### Bug Fixes
+
+* **gtag:** use Arguments object instead of Array in dataLayer.push ([#36](https://github.com/structured-world/vue-privacy/issues/36)) ([4247b18](https://github.com/structured-world/vue-privacy/commit/4247b188e573839185b6037a98959468b743b938))
+
 ## [1.2.1](https://github.com/structured-world/vue-privacy/compare/v1.2.0...v1.2.1) (2026-01-31)
 
 ### Bug Fixes
