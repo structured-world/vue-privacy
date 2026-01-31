@@ -1,3 +1,9 @@
+## [1.2.1](https://github.com/structured-world/vue-privacy/compare/v1.2.0...v1.2.1) (2026-01-31)
+
+### Bug Fixes
+
+* **core:** resolve consent banner race condition ([#34](https://github.com/structured-world/vue-privacy/issues/34)) ([055c560](https://github.com/structured-world/vue-privacy/commit/055c5600f1a2e96e7e6a1e337c184a6237fb03b5)), closes [#33](https://github.com/structured-world/vue-privacy/issues/33)
+
 ## [1.2.0](https://github.com/structured-world/vue-privacy/compare/v1.1.2...v1.2.0) (2026-01-31)
 
 ### Features
