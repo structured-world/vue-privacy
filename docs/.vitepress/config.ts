@@ -34,12 +34,6 @@ export default defineConfig({
 
   sitemap: {
     hostname,
-    transformItems: (items) =>
-      items.map((item) => ({
-        ...item,
-        // Prefer existing lastmod from git timestamps; fall back to build date
-        lastmod: item.lastmod || new Date().toISOString().split("T")[0],
-      })),
   },
 
   head: [
