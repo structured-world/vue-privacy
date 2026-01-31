@@ -29,10 +29,10 @@ import {
  * ```
  */
 export function consentBoot(config: ConsentConfig) {
-  return ({ app, router }: { app: App; router: Router }) => {
+  return ({ app, router }: { app: App; router?: Router }) => {
     const manager = createConsentManager({
       ...config,
-      sendPageView: false,
+      sendPageView: !router,
     });
 
     // Provide manager for injection
@@ -42,27 +42,34 @@ export function consentBoot(config: ConsentConfig) {
     // Register global component
     app.component("ConsentBanner", ConsentBanner);
 
-    // Initialize and set up SPA tracking
-    manager
-      .init()
-      .then(() => {
-        nextTick(() => {
-          manager.trackPageView(router.currentRoute.value.fullPath);
+    if (router) {
+      // SPA mode: track initial page view after init, watch route changes
+      manager
+        .init()
+        .then(() => {
+          nextTick(() => {
+            manager.trackPageView(router.currentRoute.value.fullPath);
+          });
+        })
+        .catch((err) => {
+          console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
         });
-      })
-      .catch((err) => {
+
+      // Vue watch does NOT fire on initial value by default — no duplicate tracking
+      watch(
+        () => router.currentRoute.value.fullPath,
+        (path) => {
+          nextTick(() => {
+            manager.trackPageView(path, document.title);
+          });
+        }
+      );
+    } else {
+      // No router — fallback to automatic page_view from gtag
+      manager.init().catch((err) => {
         console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
       });
-
-    // Track subsequent SPA navigations
-    watch(
-      () => router.currentRoute.value.fullPath,
-      (path) => {
-        nextTick(() => {
-          manager.trackPageView(path, document.title);
-        });
-      }
-    );
+    }
   };
 }
 
