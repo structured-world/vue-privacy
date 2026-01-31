@@ -6,13 +6,15 @@ export default defineConfig({
   title: "Vue Privacy",
   titleTemplate: ":title | Vue Privacy",
   cleanUrls: true,
-  description: "Privacy-first consent & analytics for Vue ecosystem",
+  description:
+    "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.",
 
   transformHead({ pageData }) {
     const head: HeadConfig[] = [];
     const title = pageData.title || "Vue Privacy";
     const description =
-      pageData.description || "Privacy-first consent & analytics for Vue ecosystem";
+      pageData.description ||
+      "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.";
     const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "");
     const url = `${hostname}/${cleanPath}`;
 

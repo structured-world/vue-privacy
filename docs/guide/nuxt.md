@@ -1,0 +1,88 @@
+# Nuxt 3
+
+vue-privacy works with Nuxt 3 via the standard Vue plugin system.
+
+## Setup
+
+### 1. Create a Client Plugin
+
+```typescript
+// plugins/consent.client.ts
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createConsentPlugin({
+    gaId: 'G-XXXXXXXXXX', // Your GA4 measurement ID
+    euDetection: 'auto',
+  }));
+});
+```
+
+::: tip Client-only
+The `.client.ts` suffix ensures this plugin only runs in the browser — no SSR issues.
+:::
+
+### 2. Add the Banner
+
+```vue
+<!-- layouts/default.vue or app.vue -->
+<script setup>
+import { ConsentBanner } from '@structured-world/vue-privacy/vue';
+</script>
+
+<template>
+  <div>
+    <NuxtPage />
+    <ConsentBanner />
+  </div>
+</template>
+```
+
+### 3. SPA Page Tracking
+
+Nuxt handles page transitions as SPA navigations. Track them with the `useConsent` composable:
+
+```vue
+<!-- app.vue or layouts/default.vue -->
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+import { watch } from 'vue';
+
+const route = useRoute();
+const { trackPageView } = useConsent();
+
+// Initial page view is sent automatically by gtag.
+// Watch fires only on subsequent navigations.
+watch(() => route.path, (path) => {
+  trackPageView(path);
+});
+</script>
+```
+
+## Configuration
+
+All standard options are supported:
+
+```typescript
+// plugins/consent.client.ts
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createConsentPlugin({
+    gaId: 'G-XXXXXXXXXX',
+    euDetection: 'auto',
+    banner: {
+      title: 'Cookie Preferences',
+      message: 'This site uses cookies for analytics.',
+      acceptAll: 'Accept',
+      rejectAll: 'Decline',
+    },
+    cookie: {
+      name: 'my_consent',
+      expiry: 365,
+    },
+  }));
+});
+```
+
+## Why Not a Nuxt Module?
+
+vue-privacy uses the standard Vue plugin API, which works perfectly with Nuxt 3's `defineNuxtPlugin`. A dedicated Nuxt module would add complexity without significant benefit — the Vue plugin already handles everything including SSR safety (via the `.client.ts` suffix).
