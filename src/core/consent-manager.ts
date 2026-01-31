@@ -83,12 +83,16 @@ export class ConsentManager {
       if (uid) {
         this.userId = uid;
         const version = this.config.version ?? DEFAULT_CONFIG.version;
-        const remote = await this.remoteStorage.get(uid, version);
-        if (remote) {
-          // consent_uid cookie exists only for users who accepted — safe to restore cookie
-          storeConsent({ categories: remote.categories }, this.config);
-          await this.applyConsent(remote.categories);
-          return;
+        try {
+          const remote = await this.remoteStorage.get(uid, version);
+          if (remote) {
+            // consent_uid cookie exists only for users who accepted — safe to restore cookie
+            storeConsent({ categories: remote.categories }, this.config);
+            await this.applyConsent(remote.categories);
+            return;
+          }
+        } catch {
+          // Remote storage failed — fall through to geo detection
         }
       }
     }

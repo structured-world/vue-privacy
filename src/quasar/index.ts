@@ -55,7 +55,9 @@ export function consentBoot(config: ConsentConfig) {
           console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
         });
 
-      // Vue watch does NOT fire on initial value by default — no duplicate tracking
+      // Vue watch does NOT fire on initial value by default — no duplicate tracking.
+      // No race condition: watch fires only on subsequent navigations (after init),
+      // and trackPageView() safely checks consent state on each call.
       watch(
         () => router.currentRoute.value.fullPath,
         (path) => {

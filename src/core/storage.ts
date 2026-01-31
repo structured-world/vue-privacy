@@ -60,9 +60,11 @@ export function setCookie(
 /**
  * Delete cookie
  */
-export function deleteCookie(name: string, path = "/"): void {
+export function deleteCookie(name: string, path = "/", domain?: string): void {
   if (typeof document === "undefined") return;
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path}`;
+  let cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path}`;
+  if (domain) cookie += `; domain=${domain}`;
+  document.cookie = cookie;
 }
 
 /**
@@ -121,7 +123,7 @@ export function storeConsent(
 export function clearConsent(config: Partial<ConsentConfig> = {}): void {
   const cookieName = config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
   const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
-  deleteCookie(cookieName, path);
+  deleteCookie(cookieName, path, config.cookie?.domain);
 }
 
 /**
@@ -147,7 +149,7 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
  */
 export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
   const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
-  deleteCookie("consent_uid", path);
+  deleteCookie("consent_uid", path, config.cookie?.domain);
 }
 
 /**
@@ -183,6 +185,7 @@ export async function pushRemoteConsent(
   consent: StoredConsent
 ): Promise<string | null> {
   try {
+    // Only send categories and version — timestamp is generated server-side by the worker
     const body: Record<string, unknown> = {
       categories: consent.categories,
       version: consent.version,
