@@ -22,8 +22,7 @@
     "./quasar": {
       "types": "./dist/quasar/index.d.ts",
       "import": "./dist/quasar/index.js"
-    },
-    "./styles": "./dist/styles/consent.css"
+    }
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
