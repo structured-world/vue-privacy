@@ -77,10 +77,14 @@
     "semantic-release": "semantic-release"
   },
   "peerDependencies": {
-    "vue": "^3.3.0"
+    "vue": "^3.3.0",
+    "vue-router": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "vue": {
+      "optional": true
+    },
+    "vue-router": {
       "optional": true
     }
   },
@@ -106,6 +110,7 @@
     "vitest": "^2.0.0",
     "vue": "^3.5.0",
     "vue-eslint-parser": "^9.0.0",
+    "vue-router": "^4",
     "vue-tsc": "^2.0.0"
   }
 }
