@@ -117,5 +117,8 @@ import { inject } from "vue";
 // Re-export component
 export { ConsentBanner };
 
+// Re-export raw CSS for consumers with strict CSP
+export { consentBannerCSS } from "./banner-styles";
+
 // Re-export types
 export type { ConsentConfig, ConsentManager };
