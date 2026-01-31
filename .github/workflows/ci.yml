@@ -46,3 +46,149 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  review-thread-gate:
+    name: Review Threads Gate
+    runs-on: ubuntu-latest
+    # 5 minutes is sufficient: MAX_PAGES=100 × 100 threads/page = 10,000 threads.
+    # Each GraphQL call takes ~200ms, so full scan ≈ 20s worst case.
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      pull-requests: read
+      contents: read
+
+    steps:
+      - name: Check unresolved review threads
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Verify required CLI tools are available (fail-open if missing)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "gh CLI not available; passing (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq not available; passing (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "$PR_NUMBER" ]; then
+            echo "PR_NUMBER is empty; passing (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          OWNER="${REPO%/*}"
+          NAME="${REPO#*/}"
+          UNRESOLVED=0
+          AFTER=""
+          # With MAX_PAGES=100 and reviewThreads(first:100), we can scan up to
+          # 10,000 review threads before failing closed for safety.
+          MAX_PAGES=100
+          PAGE_COUNT=0
+          while [ "$PAGE_COUNT" -lt "$MAX_PAGES" ]; do
+            PAGE_COUNT=$((PAGE_COUNT + 1))
+            if [ -z "$AFTER" ]; then
+              QUERY='query($owner:String!, $name:String!, $number:Int!) {
+                repository(owner:$owner, name:$name) {
+                  pullRequest(number:$number) {
+                    reviewThreads(first:100) {
+                      nodes { isResolved, isOutdated }
+                      pageInfo { hasNextPage, endCursor }
+                    }
+                  }
+                }
+              }'
+              RESP=$(gh api graphql \
+                -f query="$QUERY" \
+                -f owner="$OWNER" \
+                -f name="$NAME" \
+                -F number="$PR_NUMBER") || {
+                  echo "GraphQL API failed; passing (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+                  exit 0
+                }
+            else
+              # Paginated query — $after is nullable (String, not String!) because
+              # GraphQL requires it for optional cursor-based pagination variables.
+              QUERY_AFTER='query($owner:String!, $name:String!, $number:Int!, $after:String) {
+                repository(owner:$owner, name:$name) {
+                  pullRequest(number:$number) {
+                    reviewThreads(first:100, after:$after) {
+                      nodes { isResolved, isOutdated }
+                      pageInfo { hasNextPage, endCursor }
+                    }
+                  }
+                }
+              }'
+              RESP=$(gh api graphql \
+                -f query="$QUERY_AFTER" \
+                -f owner="$OWNER" \
+                -f name="$NAME" \
+                -F number="$PR_NUMBER" \
+                -f after="$AFTER") || {
+                  echo "GraphQL API failed; passing (fail-open)." >> "$GITHUB_STEP_SUMMARY"
+                  exit 0
+                }
+            fi
+            # Count only active, unresolved, non-outdated review threads.
+            # If jq fails to parse, fail-closed to avoid missing unresolved threads.
+            PAGE_UNRESOLVED=$(echo "$RESP" | jq '[.data.repository.pullRequest.reviewThreads.nodes // [] | .[] | select(.isResolved == false and .isOutdated == false)] | length') || {
+              echo "jq failed parsing thread count; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Failed to parse review thread data from GraphQL response."
+              exit 1
+            }
+            PAGE_NODE_COUNT=$(echo "$RESP" | jq '(.data.repository.pullRequest.reviewThreads.nodes // []) | length') || {
+              echo "jq failed parsing node count; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Failed to parse review thread node count from GraphQL response."
+              exit 1
+            }
+            if ! [[ "$PAGE_UNRESOLVED" =~ ^[0-9]+$ ]]; then
+              echo "Unexpected PAGE_UNRESOLVED value: '$PAGE_UNRESOLVED'; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Non-numeric unresolved thread count in GraphQL response."
+              exit 1
+            fi
+            if ! [[ "$PAGE_NODE_COUNT" =~ ^[0-9]+$ ]]; then
+              echo "Unexpected PAGE_NODE_COUNT value: '$PAGE_NODE_COUNT'; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Non-numeric node count in GraphQL response."
+              exit 1
+            fi
+            UNRESOLVED=$((UNRESOLVED + PAGE_UNRESOLVED))
+            HAS_NEXT=$(echo "$RESP" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
+            # Validate hasNextPage is a known boolean string
+            if [ "$HAS_NEXT" != "true" ] && [ "$HAS_NEXT" != "false" ]; then
+              echo "Unexpected hasNextPage value: '$HAS_NEXT'; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Unexpected hasNextPage value in GraphQL response (expected 'true' or 'false')."
+              exit 1
+            fi
+            if [ "$HAS_NEXT" != "true" ]; then
+              break
+            fi
+            AFTER=$(echo "$RESP" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor')
+            if [ "$AFTER" = "null" ]; then
+              AFTER=""
+            fi
+            # Pagination anomalies: fail-closed to ensure complete scan
+            if [ "$PAGE_NODE_COUNT" -eq 0 ] && [ "$HAS_NEXT" = "true" ]; then
+              echo "Review thread scan incomplete: empty page while hasNextPage=true; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Encountered empty reviewThreads page while hasNextPage=true; pagination scan incomplete."
+              exit 1
+            fi
+            if [ "$HAS_NEXT" = "true" ] && [ -z "$AFTER" ]; then
+              echo "Review thread scan incomplete: missing endCursor; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Missing endCursor while hasNextPage=true; pagination scan incomplete."
+              exit 1
+            fi
+          done
+          if [ "$PAGE_COUNT" -ge "$MAX_PAGES" ]; then
+            echo "Review thread scan incomplete; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Pagination limit reached while scanning review threads."
+            exit 1
+          fi
+          if [ "$UNRESOLVED" -gt 0 ]; then
+            echo "::error::$UNRESOLVED unresolved review thread(s). Resolve all threads before merging."
+            echo "Unresolved review threads: $UNRESOLVED" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Unresolved review threads: 0" >> "$GITHUB_STEP_SUMMARY"
