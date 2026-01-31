@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/structured-world/vue-privacy/compare/v1.1.0...v1.1.1) (2026-01-31)
+
+### Bug Fixes
+
+* replace vitepress inBrowser import with SSR-safe window check ([#28](https://github.com/structured-world/vue-privacy/issues/28)) ([5c863d7](https://github.com/structured-world/vue-privacy/commit/5c863d731c4be9822d5dc0f7df5acada9162cb30)), closes [#27](https://github.com/structured-world/vue-privacy/issues/27)
+
 ## [1.1.0](https://github.com/structured-world/vue-privacy/compare/v1.0.0...v1.1.0) (2026-01-31)
 
 ### Features
