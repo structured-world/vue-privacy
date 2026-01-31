@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "Vue Privacy"
   text: Google Analytics for Vue — GDPR Out of the Box
-  tagline: Add GA4 to Vue 3, VitePress, Nuxt 3 or Quasar with one line. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking included.
+  tagline: Add GA4 to VitePress and Quasar with one line. Works with Vue 3 and Nuxt 3 via plugin. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking included.
   actions:
     - theme: brand
       text: Get Started

@@ -53,7 +53,8 @@ export default {
   ...consentTheme,
   Layout() {
     return h(DefaultTheme.Layout, null, {
-      'layout-bottom': () => h(MyCustomFooter),
+      // Replace with your own component
+      'layout-bottom': () => h('div', 'Custom footer content'),
     });
   },
 } satisfies Theme;

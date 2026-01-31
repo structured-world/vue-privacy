@@ -58,8 +58,9 @@ That's it! The banner automatically shows for EU users who haven't given consent
 
 For single-page apps with Vue Router, use `trackPageView` from the composable:
 
-```typescript
-// router/index.ts or App.vue
+```vue
+<!-- App.vue or a layout component -->
+<script setup>
 import { useConsent } from '@structured-world/vue-privacy/vue';
 import { watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -70,6 +71,7 @@ const route = useRoute();
 watch(() => route.path, (path) => {
   trackPageView(path);
 });
+</script>
 ```
 
 ## Quasar

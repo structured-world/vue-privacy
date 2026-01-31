@@ -42,10 +42,10 @@ This handles everything: gtag.js loading, Consent Mode v2 defaults, EU detection
 ## What It Does
 
 1. **Loads Google Analytics** with proper Consent Mode v2 defaults (`denied` for EU)
-2. **Detects EU users** via Cloudflare headers, IP API, or timezone heuristic
+2. **Detects EU users** via Cloudflare headers, IP API, or timezone heuristics
 3. **Shows consent banner** only to users who need it (EU without prior consent)
 4. **Stores consent** in a cookie (365 days) and updates Google Consent Mode signals
-5. **Tracks SPA navigation** automatically — no manual `gtag('event', 'page_view')` needed
+5. **Tracks SPA navigation** automatically (VitePress, Quasar) or via simple route watching (Vue Router)
 
 Non-EU users get analytics enabled silently without seeing a banner.
 
