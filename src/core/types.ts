@@ -124,6 +124,14 @@ export interface ConsentConfig {
    */
   sendPageView?: boolean;
 
+  /**
+   * Remote consent storage URL (Cloudflare KV Worker).
+   * When set, consent is persisted in remote KV and cookie is used
+   * only for re-identification. No cookies are set before consent.
+   * @example '/api/consent' or 'https://example.com/api/consent'
+   */
+  storageUrl?: string;
+
   /** Consent version (changing this resets consent for all users) */
   version?: string;
 

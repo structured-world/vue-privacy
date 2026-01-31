@@ -1,6 +1,15 @@
 import type { ConsentConfig, StoredConsent, ConsentCategories } from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { getStoredConsent, storeConsent, clearConsent } from "./storage";
+import {
+  getStoredConsent,
+  storeConsent,
+  clearConsent,
+  getConsentUid,
+  setConsentUid,
+  clearConsentUid,
+  fetchRemoteConsent,
+  pushRemoteConsent,
+} from "./storage";
 import {
   initGoogleAnalytics,
   updateConsent as updateGoogleConsent,
@@ -16,6 +25,7 @@ export class ConsentManager {
   private config: ConsentConfig;
   private initialized = false;
   private isEU: boolean | null = null;
+  private userId: string | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
 
@@ -49,13 +59,28 @@ export class ConsentManager {
     if (this.initialized) return;
     this.initialized = true;
 
-    // Check for existing consent
+    // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
 
     if (stored) {
-      // User has already made a choice
       await this.applyConsent(stored.categories);
       return;
+    }
+
+    // KV fallback: if storageUrl is set, try to restore consent from remote
+    if (this.config.storageUrl) {
+      const uid = getConsentUid();
+      if (uid) {
+        this.userId = uid;
+        const version = this.config.version ?? DEFAULT_CONFIG.version;
+        const remote = await fetchRemoteConsent(this.config.storageUrl, uid, version);
+        if (remote) {
+          // Restore consent cookie from KV and apply
+          storeConsent({ categories: remote.categories }, this.config);
+          await this.applyConsent(remote.categories);
+          return;
+        }
+      }
     }
 
     // Detect if user is in EU
@@ -83,7 +108,35 @@ export class ConsentManager {
       };
 
       await this.applyConsent(grantedCategories);
-      storeConsent({ categories: grantedCategories }, this.config);
+      this.saveConsentWithRemote(grantedCategories);
+    }
+  }
+
+  /**
+   * Persist consent locally and (if storageUrl is set) remotely.
+   * Sets cookies only when at least one non-necessary category is accepted.
+   * Fire-and-forget: remote push does not block UI.
+   */
+  private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
+    const hasNonNecessary = categories.analytics || categories.marketing;
+
+    if (hasNonNecessary) {
+      // User accepted — store preferences in cookie
+      storeConsent({ categories }, this.config);
+    }
+    // If rejected all — no cookies set (GDPR strict)
+
+    if (this.config.storageUrl) {
+      const version = this.config.version ?? DEFAULT_CONFIG.version;
+      const consent: StoredConsent = { categories, timestamp: Date.now(), version };
+
+      // Fire-and-forget: push to KV without blocking UI
+      pushRemoteConsent(this.config.storageUrl, this.userId, consent).then((id) => {
+        if (id && hasNonNecessary) {
+          this.userId = id;
+          setConsentUid(id, this.config);
+        }
+      });
     }
   }
 
@@ -120,7 +173,7 @@ export class ConsentManager {
     };
 
     await this.applyConsent(categories);
-    storeConsent({ categories }, this.config);
+    this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -133,11 +186,11 @@ export class ConsentManager {
     const categories = {
       analytics: false,
       marketing: false,
-      functional: true, // Functional is always allowed
+      functional: true,
     };
 
     await this.applyConsent(categories);
-    storeConsent({ categories }, this.config);
+    this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -154,7 +207,7 @@ export class ConsentManager {
     };
 
     await this.applyConsent(finalCategories);
-    storeConsent({ categories: finalCategories }, this.config);
+    this.saveConsentWithRemote(finalCategories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -179,6 +232,8 @@ export class ConsentManager {
    */
   resetConsent(): void {
     clearConsent(this.config);
+    clearConsentUid(this.config);
+    this.userId = null;
     this.showBannerCallback?.();
     this.config.onBannerShow?.();
   }
