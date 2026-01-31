@@ -26,7 +26,7 @@ export function initGtag(): void {
  * Convert consent categories to Google Consent Mode signals
  */
 export function categoriesToGoogleSignals(
-  categories: Partial<Omit<ConsentCategories, "necessary">>,
+  categories: Partial<Omit<ConsentCategories, "necessary">>
 ): GoogleConsentSignals {
   return {
     analytics_storage: categories.analytics ? "granted" : "denied",
@@ -44,7 +44,7 @@ export function categoriesToGoogleSignals(
  */
 export function setConsentDefaults(
   signals: Partial<GoogleConsentSignals>,
-  waitForUpdate = 500,
+  waitForUpdate = 500
 ): void {
   initGtag();
 
@@ -82,11 +82,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
     }
 
     // Check if already loaded
-    if (
-      document.querySelector(
-        `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`,
-      )
-    ) {
+    if (document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`)) {
       resolve();
       return;
     }
@@ -95,10 +91,25 @@ export function loadGtagScript(gaId: string): Promise<void> {
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
     script.onload = () => resolve();
-    script.onerror = () =>
-      reject(new Error(`Failed to load gtag.js for ${gaId}`));
+    script.onerror = () => reject(new Error(`Failed to load gtag.js for ${gaId}`));
 
     document.head.appendChild(script);
+  });
+}
+
+/**
+ * Track a page view manually (for SPA navigation)
+ *
+ * @param path - Page path (e.g., '/docs/guide')
+ * @param title - Page title (defaults to document.title)
+ */
+export function trackPageView(path: string, title?: string): void {
+  if (typeof window === "undefined" || typeof window.gtag !== "function") return;
+
+  window.gtag("event", "page_view", {
+    page_path: path,
+    page_location: window.location.href,
+    page_title: title ?? document.title,
   });
 }
 
@@ -107,10 +118,12 @@ export function loadGtagScript(gaId: string): Promise<void> {
  *
  * @param gaId - Google Analytics measurement ID
  * @param defaultDenied - Whether to default to denied consent (for EU users)
+ * @param sendPageView - Whether to send automatic page_view (false for SPA)
  */
 export async function initGoogleAnalytics(
   gaId: string,
   defaultDenied = true,
+  sendPageView = true
 ): Promise<void> {
   initGtag();
 
@@ -137,6 +150,8 @@ export async function initGoogleAnalytics(
   // Initialize GA
   if (typeof window !== "undefined") {
     window.gtag("js", new Date());
-    window.gtag("config", gaId);
+    window.gtag("config", gaId, {
+      send_page_view: sendPageView,
+    });
   }
 }
