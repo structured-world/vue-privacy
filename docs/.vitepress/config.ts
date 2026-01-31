@@ -1,34 +1,53 @@
-import { defineConfig } from "vitepress";
+import { defineConfig, type HeadConfig } from "vitepress";
 
 const hostname = "https://privacy.sw.foundation";
 
 export default defineConfig({
   title: "Vue Privacy",
+  titleTemplate: ":title | Vue Privacy",
+  cleanUrls: true,
   description:
     "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. One-line setup with Google Consent Mode v2 and SPA page tracking.",
 
-  head: [
-    ["link", { rel: "icon", href: "/favicon.ico" }],
-    ["meta", { property: "og:type", content: "website" }],
-    [
-      "meta",
-      { property: "og:title", content: "Vue Privacy — Google Analytics for Vue with GDPR Consent" },
-    ],
-    [
-      "meta",
-      {
-        property: "og:description",
-        content:
-          "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. One-line setup with Google Consent Mode v2 and SPA page tracking.",
-      },
-    ],
-    ["meta", { property: "og:url", content: hostname }],
-    ["meta", { name: "twitter:card", content: "summary" }],
-  ],
+  transformHead({ pageData }) {
+    const head: HeadConfig[] = [];
+    const title = pageData.title || "Vue Privacy";
+    const description =
+      pageData.description ||
+      "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. One-line setup with Google Consent Mode v2 and SPA page tracking.";
+    const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "");
+    const url = `${hostname}/${cleanPath}`;
+
+    head.push(["meta", { property: "og:title", content: title }]);
+    head.push(["meta", { property: "og:description", content: description }]);
+    head.push(["meta", { property: "og:url", content: url }]);
+    head.push(["meta", { name: "twitter:card", content: "summary_large_image" }]);
+    head.push(["meta", { name: "twitter:title", content: title }]);
+    head.push(["meta", { name: "twitter:description", content: description }]);
+    head.push(["meta", { name: "twitter:image", content: `${hostname}/og-image.png` }]);
+    head.push(["meta", { name: "twitter:image:alt", content: title }]);
+    head.push(["link", { rel: "canonical", href: url }]);
+
+    return head;
+  },
+
+  // Enable git-based lastUpdated timestamps for sitemap and page metadata
+  lastUpdated: true,
 
   sitemap: {
     hostname,
   },
+
+  head: [
+    ["link", { rel: "icon", type: "image/x-icon", href: "/favicon.ico" }],
+    ["link", { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" }],
+    ["link", { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" }],
+    ["meta", { property: "og:image", content: `${hostname}/og-image.png` }],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    ["meta", { property: "og:type", content: "website" }],
+    ["meta", { property: "og:site_name", content: "Vue Privacy" }],
+  ],
 
   themeConfig: {
     logo: "/logo.svg",
