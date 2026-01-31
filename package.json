@@ -1,6 +1,6 @@
 {
   "name": "@structured-world/vue-privacy",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Privacy-first consent & analytics for Vue 3, Nuxt 3, VitePress, and Quasar. GDPR/CCPA compliant with Google Consent Mode v2.",
   "license": "Apache-2.0",
   "author": "Dmitry Prudnikov <mail@polaz.com>",
