@@ -108,8 +108,8 @@ export function trackPageView(path: string, title?: string): void {
 
   window.gtag("event", "page_view", {
     page_path: path,
-    page_location: typeof window !== "undefined" ? window.location.href : undefined,
-    page_title: title ?? (typeof document !== "undefined" ? document.title : undefined),
+    page_location: window.location.href,
+    page_title: title ?? document.title,
   });
 }
 

@@ -31,7 +31,8 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
       // Call original enhanceApp if exists
       theme.enhanceApp?.(ctx);
 
-      // Create manager directly with SPA mode (no automatic page_view)
+      // VitePress is a SPA — always disable automatic page_view and track
+      // navigation manually via router watch. User's sendPageView is ignored.
       const manager = createConsentManager({
         ...config,
         sendPageView: false,
@@ -49,7 +50,9 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
         manager
           .init()
           .then(() => {
-            // Track initial page view after init
+            // Track initial page view after init completes.
+            // For EU users with denied consent, Google Consent Mode accepts
+            // the event but does not store it until consent is granted.
             nextTick(() => {
               manager.trackPageView(window.location.pathname);
             });
@@ -67,7 +70,9 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
               nextTick(() => {
                 manager.trackPageView(path);
               });
-            }
+            },
+            // Initial page view is tracked after init(); don't fire on watch setup
+            { immediate: false }
           );
         }
       }
