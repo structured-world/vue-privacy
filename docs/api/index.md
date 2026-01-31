@@ -148,7 +148,7 @@ updateConsent({
 
 ### trackPageView
 
-Low-level function that sends a `page_view` event to Google Analytics. Does not check consent state — the event is always sent (Google Consent Mode controls whether data is stored). For consent-aware tracking, use `ConsentManager.trackPageView()` or the `useConsent()` composable instead.
+Low-level function that always sends a `page_view` event to Google Analytics without checking consent state. Google Consent Mode controls whether data is stored. For consent-aware tracking that skips sending events when analytics is denied, use `ConsentManager.trackPageView()` or the `useConsent()` composable instead.
 
 ```typescript
 import { trackPageView } from '@structured-world/vue-privacy';

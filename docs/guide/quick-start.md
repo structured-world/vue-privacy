@@ -94,6 +94,23 @@ Don't forget to add the boot file to `quasar.config.js`:
 boot: ['consent'],
 ```
 
+## Nuxt 3
+
+Nuxt 3 uses the standard Vue plugin. Create a Nuxt plugin file:
+
+```typescript
+// plugins/consent.client.ts
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createConsentPlugin({
+    gaId: 'G-XXXXXXXXXX',
+  }));
+});
+```
+
+Then add the `ConsentBanner` component to your layout. [Full Nuxt guide](/guide/nuxt)
+
 ## Framework-Agnostic
 
 ```typescript
