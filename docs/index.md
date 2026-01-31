@@ -16,7 +16,7 @@ hero:
 features:
   - icon: "\U0001F4CA"
     title: Google Analytics in One Line
-    details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, tracks page views — all automatically.
+    details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, and tracks page views automatically. SPA navigation tracking built-in for VitePress and Quasar.
   - icon: "\U0001F512"
     title: Google Consent Mode v2
     details: Full support for analytics_storage, ad_storage, ad_user_data, and ad_personalization. Required by Google since March 2024 for EU traffic.

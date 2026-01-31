@@ -28,7 +28,7 @@ VitePress is a single-page app — navigating between pages doesn't trigger a fu
 `enhanceWithConsent` handles this automatically:
 
 1. Sets `send_page_view: false` to prevent duplicate page views on init
-2. Tracks the initial page view after the consent manager initializes
+2. Tracks the initial page view after initialization (skipped if analytics consent was denied)
 3. Watches VitePress router for every navigation
 4. Sends `page_view` events with correct `page_path` and `page_title` after DOM updates
 

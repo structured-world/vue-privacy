@@ -31,10 +31,10 @@ interface ConsentConfig {
 
   /**
    * Whether to send automatic page_view on GA initialization.
-   * Set to false for SPA apps (VitePress, Vue Router, Quasar) where you
-   * track navigation manually via trackPageView().
+   * Set to false for Vue Router SPA apps where you track navigation
+   * manually via trackPageView().
    * VitePress's enhanceWithConsent and Quasar's consentBoot set this
-   * to false automatically.
+   * to false automatically — no manual configuration needed.
    * @default true
    */
   sendPageView?: boolean;
