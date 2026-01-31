@@ -18,7 +18,17 @@
 
 // Core exports
 export { ConsentManager, createConsentManager } from "./core/consent-manager";
-export { getStoredConsent, storeConsent, clearConsent } from "./core/storage";
+export {
+  getStoredConsent,
+  storeConsent,
+  clearConsent,
+  getConsentUid,
+  setConsentUid,
+  clearConsentUid,
+  fetchRemoteConsent,
+  pushRemoteConsent,
+  createKVStorage,
+} from "./core/storage";
 export {
   initGtag,
   setConsentDefaults,
@@ -44,6 +54,7 @@ export type {
   ConsentConfig,
   ConsentCategories,
   StoredConsent,
+  ConsentStorage,
   GoogleConsentSignals,
   GeoDetector,
   GeoDetectionResult,
