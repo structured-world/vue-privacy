@@ -1,3 +1,9 @@
+## [1.1.2](https://github.com/structured-world/vue-privacy/compare/v1.1.1...v1.1.2) (2026-01-31)
+
+### Bug Fixes
+
+* add VitePress SEO configuration and static assets ([#26](https://github.com/structured-world/vue-privacy/issues/26)) ([5e97afb](https://github.com/structured-world/vue-privacy/commit/5e97afba557731ff8659da0aec3ffd2b36276b4c)), closes [#25](https://github.com/structured-world/vue-privacy/issues/25)
+
 ## [1.1.1](https://github.com/structured-world/vue-privacy/compare/v1.1.0...v1.1.1) (2026-01-31)
 
 ### Bug Fixes
