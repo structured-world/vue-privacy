@@ -1,3 +1,9 @@
+## [1.2.3](https://github.com/structured-world/vue-privacy/compare/v1.2.2...v1.2.3) (2026-01-31)
+
+### Bug Fixes
+
+* **vue:** embed banner CSS in JS bundle ([#40](https://github.com/structured-world/vue-privacy/issues/40)) ([2514454](https://github.com/structured-world/vue-privacy/commit/251445424e10e98e658099b59d5428f25e732dd7)), closes [#39](https://github.com/structured-world/vue-privacy/issues/39)
+
 ## [1.2.2](https://github.com/structured-world/vue-privacy/compare/v1.2.1...v1.2.2) (2026-01-31)
 
 ### Bug Fixes
