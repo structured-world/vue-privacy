@@ -5,6 +5,7 @@ import {
   initGoogleAnalytics,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
+  trackPageView as gtagTrackPageView,
 } from "./gtag";
 import { createGeoDetector } from "../geo/index";
 
@@ -59,15 +60,15 @@ export class ConsentManager {
 
     // Detect if user is in EU
     const detector =
-      this.config.geoDetector ??
-      createGeoDetector(this.config.euDetection ?? "auto");
+      this.config.geoDetector ?? createGeoDetector(this.config.euDetection ?? "auto");
     const geoResult = await detector.detect();
     this.isEU = geoResult.isEU;
 
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
       if (this.config.gaId) {
-        await initGoogleAnalytics(this.config.gaId, true);
+        const sendPageView = this.config.sendPageView ?? true;
+        await initGoogleAnalytics(this.config.gaId, true, sendPageView);
       }
 
       // Show banner
@@ -89,12 +90,11 @@ export class ConsentManager {
   /**
    * Apply consent settings
    */
-  private async applyConsent(
-    categories: Omit<ConsentCategories, "necessary">,
-  ): Promise<void> {
+  private async applyConsent(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
     // Initialize GA if configured
     if (this.config.gaId) {
-      await initGoogleAnalytics(this.config.gaId, !categories.analytics);
+      const sendPageView = this.config.sendPageView ?? true;
+      await initGoogleAnalytics(this.config.gaId, !categories.analytics, sendPageView);
     }
 
     // Update Google Consent Mode
@@ -146,9 +146,7 @@ export class ConsentManager {
   /**
    * Save custom preferences
    */
-  async savePreferences(
-    categories: Partial<Omit<ConsentCategories, "necessary">>,
-  ): Promise<void> {
+  async savePreferences(categories: Partial<Omit<ConsentCategories, "necessary">>): Promise<void> {
     const finalCategories = {
       analytics: categories.analytics ?? false,
       marketing: categories.marketing ?? false,
@@ -186,6 +184,20 @@ export class ConsentManager {
   }
 
   /**
+   * Track a page view manually (for SPA navigation)
+   */
+  trackPageView(path: string, title?: string): void {
+    gtagTrackPageView(path, title);
+  }
+
+  /**
+   * Check if consent manager has been initialized
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
    * Check if user is detected as EU
    */
   isEUUser(): boolean | null {
@@ -203,8 +215,6 @@ export class ConsentManager {
 /**
  * Create a new ConsentManager instance
  */
-export function createConsentManager(
-  config: ConsentConfig = {},
-): ConsentManager {
+export function createConsentManager(config: ConsentConfig = {}): ConsentManager {
   return new ConsentManager(config);
 }
