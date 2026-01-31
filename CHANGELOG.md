@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/structured-world/vue-privacy/compare/v1.1.2...v1.2.0) (2026-01-31)
+
+### Features
+
+* add ConsentStorage interface and Quasar SPA tracking ([#32](https://github.com/structured-world/vue-privacy/issues/32)) ([4ed7cc8](https://github.com/structured-world/vue-privacy/commit/4ed7cc8da3461d9b150a5435c5740a1804f2827f)), closes [#31](https://github.com/structured-world/vue-privacy/issues/31) [#31](https://github.com/structured-world/vue-privacy/issues/31)
+
 ## [1.1.2](https://github.com/structured-world/vue-privacy/compare/v1.1.1...v1.1.2) (2026-01-31)
 
 ### Bug Fixes
