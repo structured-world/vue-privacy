@@ -1,6 +1,19 @@
-import type { ConsentConfig, StoredConsent, ConsentCategories } from "./types";
+import type {
+  ConsentConfig,
+  StoredConsent,
+  ConsentCategories,
+  ConsentStorage,
+  GeoDetectionResult,
+} from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { getStoredConsent, storeConsent, clearConsent } from "./storage";
+import {
+  getStoredConsent,
+  storeConsent,
+  clearConsent,
+  getConsentUid,
+  setConsentUid,
+  clearConsentUid,
+} from "./storage";
 import {
   initGoogleAnalytics,
   updateConsent as updateGoogleConsent,
@@ -16,6 +29,9 @@ export class ConsentManager {
   private config: ConsentConfig;
   private initialized = false;
   private isEU: boolean | null = null;
+  private geoResult: GeoDetectionResult | null = null;
+  private userId: string | null = null;
+  private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
 
@@ -26,6 +42,10 @@ export class ConsentManager {
       banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
+
+    if (config.storage) {
+      this.remoteStorage = config.storage;
+    }
   }
 
   /**
@@ -49,13 +69,32 @@ export class ConsentManager {
     if (this.initialized) return;
     this.initialized = true;
 
-    // Check for existing consent
+    // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
 
     if (stored) {
-      // User has already made a choice
       await this.applyConsent(stored.categories);
       return;
+    }
+
+    // Remote fallback: if storage is configured, try to restore consent
+    if (this.remoteStorage) {
+      const uid = getConsentUid();
+      if (uid) {
+        this.userId = uid;
+        const version = this.config.version ?? DEFAULT_CONFIG.version;
+        try {
+          const remote = await this.remoteStorage.get(uid, version);
+          if (remote) {
+            // consent_uid cookie exists only for users who accepted — safe to restore cookie
+            storeConsent({ categories: remote.categories }, this.config);
+            await this.applyConsent(remote.categories);
+            return;
+          }
+        } catch {
+          // Remote storage failed — fall through to geo detection
+        }
+      }
     }
 
     // Detect if user is in EU
@@ -63,6 +102,7 @@ export class ConsentManager {
       this.config.geoDetector ?? createGeoDetector(this.config.euDetection ?? "auto");
     const geoResult = await detector.detect();
     this.isEU = geoResult.isEU;
+    this.geoResult = geoResult;
 
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
@@ -83,7 +123,37 @@ export class ConsentManager {
       };
 
       await this.applyConsent(grantedCategories);
-      storeConsent({ categories: grantedCategories }, this.config);
+      this.saveConsentWithRemote(grantedCategories);
+    }
+  }
+
+  /**
+   * Persist consent locally and (if remote storage is configured) remotely.
+   * Sets cookies only when at least one non-necessary category is accepted.
+   * Fire-and-forget: remote push does not block UI.
+   */
+  private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
+    const hasNonNecessary = categories.analytics || categories.marketing;
+
+    if (hasNonNecessary) {
+      storeConsent({ categories }, this.config);
+    }
+
+    if (this.remoteStorage) {
+      const version = this.config.version ?? DEFAULT_CONFIG.version;
+      const consent: StoredConsent = { categories, timestamp: Date.now(), version };
+
+      this.remoteStorage
+        .set(this.userId, consent)
+        .then((id) => {
+          if (id && hasNonNecessary) {
+            this.userId = id;
+            setConsentUid(id, this.config);
+          }
+        })
+        .catch(() => {
+          // Silent fail — remote storage is best-effort, local cookies are primary
+        });
     }
   }
 
@@ -120,7 +190,7 @@ export class ConsentManager {
     };
 
     await this.applyConsent(categories);
-    storeConsent({ categories }, this.config);
+    this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -133,11 +203,11 @@ export class ConsentManager {
     const categories = {
       analytics: false,
       marketing: false,
-      functional: true, // Functional is always allowed
+      functional: true,
     };
 
     await this.applyConsent(categories);
-    storeConsent({ categories }, this.config);
+    this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -154,7 +224,7 @@ export class ConsentManager {
     };
 
     await this.applyConsent(finalCategories);
-    storeConsent({ categories: finalCategories }, this.config);
+    this.saveConsentWithRemote(finalCategories);
 
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
@@ -179,6 +249,8 @@ export class ConsentManager {
    */
   resetConsent(): void {
     clearConsent(this.config);
+    clearConsentUid(this.config);
+    this.userId = null;
     this.showBannerCallback?.();
     this.config.onBannerShow?.();
   }
@@ -207,6 +279,14 @@ export class ConsentManager {
    */
   isEUUser(): boolean | null {
     return this.isEU;
+  }
+
+  /**
+   * Get geo-detection result (country, method, isEU).
+   * Returns null if geo detection has not run yet (e.g., consent was restored from cookie).
+   */
+  getGeoResult(): GeoDetectionResult | null {
+    return this.geoResult;
   }
 
   /**

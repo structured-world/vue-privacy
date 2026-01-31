@@ -77,10 +77,14 @@
     "semantic-release": "semantic-release"
   },
   "peerDependencies": {
-    "vue": "^3.3.0"
+    "vue": "^3.3.0",
+    "vue-router": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "vue": {
+      "optional": true
+    },
+    "vue-router": {
       "optional": true
     }
   },
@@ -88,12 +92,14 @@
     "@eslint/js": "^9.0.0",
     "@semantic-release/changelog": "^6.0.0",
     "@semantic-release/git": "^10.0.0",
+    "@types/jsdom": "^27",
     "@types/node": "^22.0.0",
     "@vitejs/plugin-vue": "^5.0.0",
     "@vitest/coverage-v8": "^2.0.0",
     "conventional-changelog-conventionalcommits": "^8.0.0",
     "eslint": "^9.0.0",
     "eslint-plugin-vue": "^9.0.0",
+    "jsdom": "^27.4.0",
     "prettier": "^3.0.0",
     "semantic-release": "^25.0.0",
     "typescript": "^5.5.0",
@@ -104,6 +110,7 @@
     "vitest": "^2.0.0",
     "vue": "^3.5.0",
     "vue-eslint-parser": "^9.0.0",
+    "vue-router": "^4",
     "vue-tsc": "^2.0.0"
   }
 }

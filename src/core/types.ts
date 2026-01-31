@@ -40,6 +40,18 @@ export interface StoredConsent {
 }
 
 /**
+ * Remote consent storage interface.
+ * Implement this to use a custom backend (REST, gRPC, IndexedDB, etc.)
+ * instead of the default Cloudflare KV Worker.
+ */
+export interface ConsentStorage {
+  /** Fetch stored consent by user ID. Return null if not found or version mismatch. */
+  get(uid: string, version: string): Promise<StoredConsent | null>;
+  /** Save consent. Return user ID (may generate a new one if uid is null). */
+  set(uid: string | null, consent: StoredConsent): Promise<string | null>;
+}
+
+/**
  * Geo-detection result
  */
 export interface GeoDetectionResult {
@@ -123,6 +135,16 @@ export interface ConsentConfig {
    * @default true
    */
   sendPageView?: boolean;
+
+  /**
+   * Remote consent storage implementation.
+   * When set, consent is persisted remotely and cookie is used
+   * only for re-identification. No cookies are set before consent.
+   *
+   * Use `createKVStorage('/api/consent')` for Cloudflare KV Worker,
+   * or implement ConsentStorage interface for custom backends.
+   */
+  storage?: ConsentStorage;
 
   /** Consent version (changing this resets consent for all users) */
   version?: string;
