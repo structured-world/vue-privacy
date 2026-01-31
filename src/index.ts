@@ -53,6 +53,7 @@ export type {
   ConsentConfig,
   ConsentCategories,
   StoredConsent,
+  ConsentStorage,
   GoogleConsentSignals,
   GeoDetector,
   GeoDetectionResult,

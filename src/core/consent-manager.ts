@@ -1,4 +1,4 @@
-import type { ConsentConfig, StoredConsent, ConsentCategories } from "./types";
+import type { ConsentConfig, StoredConsent, ConsentCategories, ConsentStorage } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import {
   getStoredConsent,
@@ -26,6 +26,7 @@ export class ConsentManager {
   private initialized = false;
   private isEU: boolean | null = null;
   private userId: string | null = null;
+  private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
 
@@ -36,6 +37,17 @@ export class ConsentManager {
       banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
+
+    // Resolve storage: custom implementation takes precedence over storageUrl
+    if (config.storage) {
+      this.remoteStorage = config.storage;
+    } else if (config.storageUrl) {
+      const url = config.storageUrl;
+      this.remoteStorage = {
+        get: (uid, version) => fetchRemoteConsent(url, uid, version),
+        set: (uid, consent) => pushRemoteConsent(url, uid, consent),
+      };
+    }
   }
 
   /**
@@ -67,15 +79,14 @@ export class ConsentManager {
       return;
     }
 
-    // KV fallback: if storageUrl is set, try to restore consent from remote
-    if (this.config.storageUrl) {
+    // Remote fallback: if storage is configured, try to restore consent
+    if (this.remoteStorage) {
       const uid = getConsentUid();
       if (uid) {
         this.userId = uid;
         const version = this.config.version ?? DEFAULT_CONFIG.version;
-        const remote = await fetchRemoteConsent(this.config.storageUrl, uid, version);
+        const remote = await this.remoteStorage.get(uid, version);
         if (remote) {
-          // Restore consent cookie from KV and apply
           storeConsent({ categories: remote.categories }, this.config);
           await this.applyConsent(remote.categories);
           return;
@@ -113,7 +124,7 @@ export class ConsentManager {
   }
 
   /**
-   * Persist consent locally and (if storageUrl is set) remotely.
+   * Persist consent locally and (if remote storage is configured) remotely.
    * Sets cookies only when at least one non-necessary category is accepted.
    * Fire-and-forget: remote push does not block UI.
    */
@@ -121,17 +132,14 @@ export class ConsentManager {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     if (hasNonNecessary) {
-      // User accepted — store preferences in cookie
       storeConsent({ categories }, this.config);
     }
-    // If rejected all — no cookies set (GDPR strict)
 
-    if (this.config.storageUrl) {
+    if (this.remoteStorage) {
       const version = this.config.version ?? DEFAULT_CONFIG.version;
       const consent: StoredConsent = { categories, timestamp: Date.now(), version };
 
-      // Fire-and-forget: push to KV without blocking UI
-      pushRemoteConsent(this.config.storageUrl, this.userId, consent).then((id) => {
+      this.remoteStorage.set(this.userId, consent).then((id) => {
         if (id && hasNonNecessary) {
           this.userId = id;
           setConsentUid(id, this.config);
