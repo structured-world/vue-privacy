@@ -16,8 +16,11 @@ export function initGtag(): void {
   window.dataLayer = window.dataLayer || [];
 
   if (typeof window.gtag !== "function") {
-    window.gtag = function gtag(...args: unknown[]) {
-      window.dataLayer.push(args);
+    // Must use `arguments` (not rest params) — gtag.js expects Arguments objects
+    // in the dataLayer, not plain Arrays. Using [...args] silently breaks collect.
+    window.gtag = function () {
+      // eslint-disable-next-line prefer-rest-params
+      window.dataLayer.push(arguments);
     };
   }
 }
