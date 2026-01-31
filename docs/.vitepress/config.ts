@@ -4,17 +4,22 @@ const hostname = "https://privacy.sw.foundation";
 
 export default defineConfig({
   title: "Vue Privacy",
-  description: "Privacy-first consent & analytics for Vue ecosystem",
+  description:
+    "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. One-line setup with Google Consent Mode v2 and SPA page tracking.",
 
   head: [
     ["link", { rel: "icon", href: "/favicon.ico" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "Vue Privacy" }],
+    [
+      "meta",
+      { property: "og:title", content: "Vue Privacy — Google Analytics for Vue with GDPR Consent" },
+    ],
     [
       "meta",
       {
         property: "og:description",
-        content: "Privacy-first consent & analytics for Vue ecosystem",
+        content:
+          "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. One-line setup with Google Consent Mode v2 and SPA page tracking.",
       },
     ],
     ["meta", { property: "og:url", content: hostname }],

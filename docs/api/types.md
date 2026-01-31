@@ -29,6 +29,15 @@ interface ConsentConfig {
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;
 
+  /**
+   * Whether to send automatic page_view on GA initialization.
+   * Set to false for SPA apps (VitePress, Vue Router) where you track
+   * navigation manually via trackPageView().
+   * The VitePress enhanceWithConsent adapter sets this to false automatically.
+   * @default true
+   */
+  sendPageView?: boolean;
+
   /** Consent version (changing resets consent) */
   version?: string;
 

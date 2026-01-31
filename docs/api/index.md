@@ -84,6 +84,31 @@ if (manager.isEUUser()) {
 }
 ```
 
+#### `trackPageView(path, title?): void`
+
+Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
+
+Skips sending if the user has explicitly denied analytics consent.
+
+```typescript
+manager.trackPageView('/docs/guide');
+manager.trackPageView('/docs/api', 'API Reference');
+```
+
+::: tip
+The VitePress `enhanceWithConsent` adapter calls this automatically on every navigation. You only need this for custom SPA setups.
+:::
+
+#### `isInitialized(): boolean`
+
+Check if the consent manager has been initialized.
+
+```typescript
+if (manager.isInitialized()) {
+  // Manager is ready
+}
+```
+
 #### `resetConsent(): void`
 
 Clear stored consent and show banner again.
@@ -121,6 +146,17 @@ updateConsent({
 });
 ```
 
+### trackPageView
+
+Track a page view event. Useful for SPA navigation where automatic `page_view` is disabled.
+
+```typescript
+import { trackPageView } from '@structured-world/vue-privacy';
+
+trackPageView('/new-page');
+trackPageView('/new-page', 'Custom Title');
+```
+
 ### initGoogleAnalytics
 
 Initialize Google Analytics with Consent Mode.
@@ -128,8 +164,11 @@ Initialize Google Analytics with Consent Mode.
 ```typescript
 import { initGoogleAnalytics } from '@structured-world/vue-privacy';
 
-await initGoogleAnalytics('G-XXXXXXXXXX', true); // true = default denied
+// Args: gaId, defaultDenied, sendPageView
+await initGoogleAnalytics('G-XXXXXXXXXX', true, false);
 ```
+
+Set `sendPageView` to `false` for SPA apps where you track navigation manually.
 
 ## Storage Functions
 
