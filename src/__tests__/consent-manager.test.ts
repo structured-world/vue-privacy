@@ -161,6 +161,57 @@ describe("ConsentManager with remote storage", () => {
   });
 });
 
+describe("ConsentManager banner deferred show (bannerPending)", () => {
+  it("fires callback immediately when registered after init() already requested banner", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    // init() completes before onShowBanner is registered
+    await manager.init();
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    // Callback fires immediately because init() set bannerPending=true
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires callback via init() when registered before init()", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    // Callback not yet fired — init() hasn't run
+    expect(showBanner).not.toHaveBeenCalled();
+
+    await manager.init();
+
+    // init() calls showBannerCallback directly
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fire callback for non-EU user", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false),
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    // Non-EU user: banner never shown, bannerPending stays false
+    expect(showBanner).not.toHaveBeenCalled();
+  });
+});
+
 describe("ConsentManager.getGeoResult()", () => {
   it("returns null before init", () => {
     const manager = new ConsentManager({ version: "1.0" });
