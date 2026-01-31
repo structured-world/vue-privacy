@@ -137,19 +137,12 @@ export interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
-   * Remote consent storage URL (Cloudflare KV Worker).
-   * When set, consent is persisted in remote KV and cookie is used
+   * Remote consent storage implementation.
+   * When set, consent is persisted remotely and cookie is used
    * only for re-identification. No cookies are set before consent.
-   * For custom backends, use `storage` instead.
-   * @example '/api/consent' or 'https://example.com/api/consent'
-   */
-  storageUrl?: string;
-
-  /**
-   * Custom remote consent storage implementation.
-   * Use this to integrate with your own backend (REST, gRPC, etc.)
-   * instead of the default Cloudflare KV Worker.
-   * Takes precedence over `storageUrl` if both are set.
+   *
+   * Use `createKVStorage('/api/consent')` for Cloudflare KV Worker,
+   * or implement ConsentStorage interface for custom backends.
    */
   storage?: ConsentStorage;
 

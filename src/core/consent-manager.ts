@@ -7,8 +7,6 @@ import {
   getConsentUid,
   setConsentUid,
   clearConsentUid,
-  fetchRemoteConsent,
-  pushRemoteConsent,
 } from "./storage";
 import {
   initGoogleAnalytics,
@@ -38,15 +36,8 @@ export class ConsentManager {
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
 
-    // Resolve storage: custom implementation takes precedence over storageUrl
     if (config.storage) {
       this.remoteStorage = config.storage;
-    } else if (config.storageUrl) {
-      const url = config.storageUrl;
-      this.remoteStorage = {
-        get: (uid, version) => fetchRemoteConsent(url, uid, version),
-        set: (uid, consent) => pushRemoteConsent(url, uid, consent),
-      };
     }
   }
 

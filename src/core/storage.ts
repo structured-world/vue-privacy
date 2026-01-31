@@ -1,4 +1,4 @@
-import type { StoredConsent, ConsentConfig, CookieConfigDefaults } from "./types";
+import type { StoredConsent, ConsentConfig, CookieConfigDefaults, ConsentStorage } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 
 /**
@@ -199,4 +199,25 @@ export async function pushRemoteConsent(
   } catch {
     return null;
   }
+}
+
+/**
+ * Create a ConsentStorage backed by a Cloudflare KV Worker
+ * (vue-privacy-worker compatible API).
+ *
+ * @example
+ * ```ts
+ * import { createKVStorage } from '@structured-world/vue-privacy';
+ *
+ * const manager = createConsentManager({
+ *   gaId: 'G-XXXXXXXXXX',
+ *   storage: createKVStorage('/api/consent'),
+ * });
+ * ```
+ */
+export function createKVStorage(url: string): ConsentStorage {
+  return {
+    get: (uid, version) => fetchRemoteConsent(url, uid, version),
+    set: (uid, consent) => pushRemoteConsent(url, uid, consent),
+  };
 }

@@ -27,6 +27,7 @@ export {
   clearConsentUid,
   fetchRemoteConsent,
   pushRemoteConsent,
+  createKVStorage,
 } from "./core/storage";
 export {
   initGtag,
