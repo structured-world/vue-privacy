@@ -104,6 +104,8 @@ export function useConsent() {
     trackPageView: (path: string, title?: string) => manager.trackPageView(path, title),
     /** Check if user is detected as EU */
     isEUUser: () => manager.isEUUser(),
+    /** Get geo-detection result (country, method, isEU) */
+    getGeoResult: () => manager.getGeoResult(),
     /** Get the underlying manager instance */
     manager,
   };
