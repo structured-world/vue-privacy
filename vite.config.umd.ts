@@ -5,7 +5,7 @@ import { resolve } from "path";
  * Separate Vite config for UMD/IIFE build.
  *
  * Produces framework-agnostic bundles for CDN usage:
- *   dist/vue-privacy.umd.js   — CommonJS/AMD/global
+ *   dist/vue-privacy.umd.cjs  — CommonJS/AMD/global
  *   dist/vue-privacy.iife.js  — self-executing script
  *
  * Run after the main ES build: `vite build --config vite.config.umd.ts`
