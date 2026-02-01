@@ -14,7 +14,7 @@ describe("WorkerGeoDetector", () => {
   it("returns EU result from worker endpoint", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ isEU: true, countryCode: "DE", method: "worker" }),
+      json: async () => ({ isEU: true, countryCode: "DE" }),
     });
 
     const detector = new WorkerGeoDetector("/api/geo");
@@ -31,7 +31,7 @@ describe("WorkerGeoDetector", () => {
   it("returns non-EU result from worker endpoint", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ isEU: false, countryCode: "US", method: "worker" }),
+      json: async () => ({ isEU: false, countryCode: "US" }),
     });
 
     const detector = new WorkerGeoDetector("/api/geo");
