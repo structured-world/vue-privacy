@@ -19,6 +19,14 @@ const rawPreferences = ref("");
 const rawUid = ref("");
 const showCookies = ref(false);
 
+const methodLabels: Record<string, string> = {
+  cloudflare: "Cloudflare Header",
+  worker: "Cloudflare Worker",
+  api: "IP API (ipapi.co)",
+  fallback: "Timezone Heuristic",
+  manual: "Manual Override",
+};
+
 let consentApi: ReturnType<typeof useConsent> | null = null;
 
 function getCookieValue(name: string): string {
@@ -144,7 +152,7 @@ onMounted(() => {
             </div>
             <div class="debug-row">
               <span class="debug-label">Method</span>
-              <span class="val-code">{{ geoResult.method }}</span>
+              <span class="val-code">{{ methodLabels[geoResult.method] || geoResult.method }}</span>
             </div>
             <div class="debug-row">
               <span class="debug-label">Is EU</span>
