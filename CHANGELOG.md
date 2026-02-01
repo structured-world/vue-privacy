@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/structured-world/vue-privacy/compare/v1.2.3...v1.3.0) (2026-02-01)
+
+### Features
+
+* **geo:** add WorkerGeoDetector for Cloudflare Worker-based EU detection ([#42](https://github.com/structured-world/vue-privacy/issues/42)) ([09dddb3](https://github.com/structured-world/vue-privacy/commit/09dddb30284b3e9fffc46774eddbe2a248f1a2ba)), closes [#41](https://github.com/structured-world/vue-privacy/issues/41)
+
 ## [1.2.3](https://github.com/structured-world/vue-privacy/compare/v1.2.2...v1.2.3) (2026-01-31)
 
 ### Bug Fixes
