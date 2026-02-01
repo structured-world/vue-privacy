@@ -116,7 +116,7 @@
     "vitepress": "^1.6.0",
     "vitest": "^2.0.0",
     "vue": "^3.5.0",
-    "vue-eslint-parser": "^9.0.0",
+    "vue-eslint-parser": "^10.2.0",
     "vue-router": "^5",
     "vue-tsc": "^3.2.4"
   },
