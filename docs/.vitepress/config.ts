@@ -77,6 +77,7 @@ export default defineConfig({
             { text: "Nuxt 3", link: "/guide/nuxt" },
             { text: "VitePress", link: "/guide/vitepress" },
             { text: "Quasar", link: "/guide/quasar" },
+            { text: "CDN / Script Tag", link: "/guide/cdn" },
           ],
         },
         {

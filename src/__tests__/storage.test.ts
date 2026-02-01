@@ -6,6 +6,7 @@ import {
   clearConsentUid,
   fetchRemoteConsent,
   pushRemoteConsent,
+  createKVStorage,
 } from "../core/storage";
 
 // Mock document.cookie
@@ -211,6 +212,82 @@ describe("pushRemoteConsent", () => {
     };
 
     const id = await pushRemoteConsent("/api/consent", null, consent);
+    expect(id).toBeNull();
+  });
+});
+
+describe("createKVStorage", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns an object with get and set methods", () => {
+    const storage = createKVStorage("/api/consent");
+    expect(typeof storage.get).toBe("function");
+    expect(typeof storage.set).toBe("function");
+  });
+
+  it("get() fetches consent from the provided URL", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          found: true,
+          consent: {
+            categories: { analytics: true, marketing: false, functional: true },
+            version: "1.0",
+            timestamp: 1700000000000,
+          },
+        })
+      )
+    );
+
+    const storage = createKVStorage("/api/consent");
+    const result = await storage.get("uid-abc", "1.0");
+
+    expect(result).not.toBeNull();
+    expect(result!.categories.analytics).toBe(true);
+    expect(fetch).toHaveBeenCalledWith("/api/consent?id=uid-abc");
+  });
+
+  it("set() pushes consent to the provided URL and returns UUID", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ success: true, id: "new-uuid" }))
+    );
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const id = await storage.set(null, consent);
+    expect(id).toBe("new-uuid");
+
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/consent");
+    expect(call[1]!.method).toBe("POST");
+  });
+
+  it("get() returns null on network error", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network error"));
+
+    const storage = createKVStorage("/api/consent");
+    const result = await storage.get("uid-123", "1.0");
+    expect(result).toBeNull();
+  });
+
+  it("set() returns null on network error", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network error"));
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: false, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const id = await storage.set(null, consent);
     expect(id).toBeNull();
   });
 });

@@ -1,0 +1,70 @@
+/**
+ * @structured-world/vue-privacy — UMD/IIFE entry point
+ *
+ * Framework-agnostic build for <script> tag usage via CDN.
+ * Exposed as global `VuePrivacy` namespace.
+ *
+ * @example
+ * ```html
+ * <script src="https://unpkg.com/@structured-world/vue-privacy"></script>
+ * <script>
+ *   const manager = VuePrivacy.createConsentManager({
+ *     gaId: 'G-XXXXXXXXXX',
+ *     euDetection: 'auto',
+ *   });
+ *   manager.init();
+ * </script>
+ * ```
+ */
+
+// Core consent management
+export { ConsentManager, createConsentManager } from "./core/consent-manager";
+
+// Storage utilities
+export {
+  getStoredConsent,
+  storeConsent,
+  clearConsent,
+  getConsentUid,
+  setConsentUid,
+  clearConsentUid,
+  fetchRemoteConsent,
+  pushRemoteConsent,
+  createKVStorage,
+} from "./core/storage";
+
+// Google Analytics integration
+export {
+  initGtag,
+  setConsentDefaults,
+  updateConsent,
+  loadGtagScript,
+  initGoogleAnalytics,
+  categoriesToGoogleSignals,
+  trackPageView,
+} from "./core/gtag";
+
+// Geo-detection
+export {
+  CloudflareGeoDetector,
+  IPAPIGeoDetector,
+  WorkerGeoDetector,
+  TimezoneGeoDetector,
+  AutoGeoDetector,
+  createGeoDetector,
+} from "./geo/index";
+
+// Config defaults
+export { DEFAULT_CONFIG } from "./core/types";
+
+// Type exports (stripped at build time, useful for TS consumers of UMD)
+export type {
+  ConsentConfig,
+  ConsentCategories,
+  StoredConsent,
+  ConsentStorage,
+  GoogleConsentSignals,
+  GeoDetector,
+  GeoDetectionResult,
+  BannerConfig,
+} from "./core/types";
