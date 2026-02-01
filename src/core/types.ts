@@ -60,7 +60,7 @@ export interface GeoDetectionResult {
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
   /** Detection method used */
-  method: "cloudflare" | "api" | "fallback" | "manual";
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
 }
 
 /**
@@ -118,13 +118,17 @@ export interface ConsentConfig {
 
   /**
    * EU detection mode:
-   * - 'auto': Try Cloudflare header, fallback to IP API
+   * - 'auto': Try Cloudflare header, then Worker /api/geo (if geoUrl set), then IP API, then timezone
    * - 'cloudflare': Only use Cloudflare header
-   * - 'api': Only use IP API
+   * - 'worker': Only use Worker /api/geo (requires geoUrl)
+   * - 'api': Only use IP API (ipapi.co)
    * - 'always': Always show banner (treat all as EU)
    * - 'never': Never show banner (treat all as non-EU)
    */
-  euDetection?: "auto" | "cloudflare" | "api" | "always" | "never";
+  euDetection?: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+
+  /** URL for Worker-based geo detection (e.g. "/api/geo"). Used by "worker" and "auto" modes. */
+  geoUrl?: string;
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;
@@ -189,7 +193,7 @@ export const DEFAULT_CONFIG: {
   categories: Omit<ConsentCategories, "necessary">;
   banner: BannerConfigDefaults;
   cookie: CookieConfigDefaults;
-  euDetection: "auto" | "cloudflare" | "api" | "always" | "never";
+  euDetection: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
   version: string;
 } = {
   categories: {

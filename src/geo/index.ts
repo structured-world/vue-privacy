@@ -76,6 +76,39 @@ export class IPAPIGeoDetector implements GeoDetector {
 }
 
 /**
+ * Worker-based geo-detection using Cloudflare Worker /api/geo endpoint
+ *
+ * Uses request.cf data from Cloudflare edge — free, no rate limits, accurate.
+ * Requires vue-privacy-worker (or compatible endpoint) deployed on the same domain.
+ */
+export class WorkerGeoDetector implements GeoDetector {
+  private geoUrl: string;
+
+  constructor(geoUrl: string) {
+    this.geoUrl = geoUrl;
+  }
+
+  async detect(): Promise<GeoDetectionResult> {
+    try {
+      const response = await fetch(this.geoUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = (await response.json()) as {
+        isEU?: boolean;
+        countryCode?: string;
+      };
+
+      return {
+        isEU: data.isEU === true,
+        countryCode: data.countryCode ?? undefined,
+        method: "worker",
+      };
+    } catch {
+      throw new Error("Worker geo-detection failed");
+    }
+  }
+}
+
+/**
  * Fallback detector that uses browser timezone heuristics
  *
  * Not 100% accurate but works without external requests
@@ -143,28 +176,40 @@ export class TimezoneGeoDetector implements GeoDetector {
 }
 
 /**
- * Auto-detection: tries Cloudflare first, then IP API, then timezone fallback
+ * Auto-detection chain:
+ * Cloudflare headers → Worker /api/geo (if geoUrl set) → IP API → Timezone
  */
 export class AutoGeoDetector implements GeoDetector {
   private cloudflare: CloudflareGeoDetector;
+  private worker: WorkerGeoDetector | null;
   private ipapi: IPAPIGeoDetector;
   private timezone: TimezoneGeoDetector;
 
-  constructor() {
+  constructor(geoUrl?: string) {
     this.cloudflare = new CloudflareGeoDetector();
+    this.worker = geoUrl ? new WorkerGeoDetector(geoUrl) : null;
     this.ipapi = new IPAPIGeoDetector();
     this.timezone = new TimezoneGeoDetector();
   }
 
   async detect(): Promise<GeoDetectionResult> {
-    // Try Cloudflare first (fastest, most reliable if available)
+    // Try Cloudflare headers first (fastest, most reliable if available)
     try {
       return await this.cloudflare.detect();
     } catch {
       // Cloudflare not available, continue
     }
 
-    // Try IP API
+    // Try Worker /api/geo (free, no rate limits, accurate)
+    if (this.worker) {
+      try {
+        return await this.worker.detect();
+      } catch {
+        // Worker not available, continue
+      }
+    }
+
+    // Try IP API (external service, rate-limited)
     try {
       return await this.ipapi.detect();
     } catch {
@@ -180,11 +225,15 @@ export class AutoGeoDetector implements GeoDetector {
  * Create a geo-detector based on mode
  */
 export function createGeoDetector(
-  mode: "auto" | "cloudflare" | "api" | "always" | "never",
+  mode: "auto" | "cloudflare" | "worker" | "api" | "always" | "never",
+  geoUrl?: string
 ): GeoDetector {
   switch (mode) {
     case "cloudflare":
       return new CloudflareGeoDetector();
+    case "worker":
+      if (!geoUrl) throw new Error("geoUrl is required for worker geo-detection mode");
+      return new WorkerGeoDetector(geoUrl);
     case "api":
       return new IPAPIGeoDetector();
     case "always":
@@ -197,6 +246,6 @@ export function createGeoDetector(
       };
     case "auto":
     default:
-      return new AutoGeoDetector();
+      return new AutoGeoDetector(geoUrl);
   }
 }

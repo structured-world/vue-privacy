@@ -44,6 +44,7 @@ export { DEFAULT_CONFIG } from "./core/types";
 export {
   CloudflareGeoDetector,
   IPAPIGeoDetector,
+  WorkerGeoDetector,
   TimezoneGeoDetector,
   AutoGeoDetector,
   createGeoDetector,
