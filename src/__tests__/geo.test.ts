@@ -58,6 +58,18 @@ describe("WorkerGeoDetector", () => {
     await expect(detector.detect()).rejects.toThrow("Worker geo-detection failed");
   });
 
+  it("treats missing or non-boolean isEU as false", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ countryCode: "XX" }),
+    });
+
+    const detector = new WorkerGeoDetector("/api/geo");
+    const result = await detector.detect();
+
+    expect(result.isEU).toBe(false);
+  });
+
   it("handles missing countryCode gracefully", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
