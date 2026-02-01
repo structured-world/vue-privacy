@@ -119,5 +119,8 @@
     "vue-eslint-parser": "^9.0.0",
     "vue-router": "^4",
     "vue-tsc": "^2.0.0"
+  },
+  "resolutions": {
+    "esbuild": ">=0.25.0"
   }
 }
