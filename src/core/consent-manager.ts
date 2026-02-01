@@ -106,7 +106,8 @@ export class ConsentManager {
 
     // Detect if user is in EU
     const detector =
-      this.config.geoDetector ?? createGeoDetector(this.config.euDetection ?? "auto");
+      this.config.geoDetector ??
+      createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
     const geoResult = await detector.detect();
     this.isEU = geoResult.isEU;
     this.geoResult = geoResult;
