@@ -9,7 +9,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/vue-privacy.umd.cjs"
     },
     "./vue": {
       "types": "./dist/vue/index.d.ts",
@@ -24,8 +25,10 @@
       "import": "./dist/quasar/index.js"
     }
   },
-  "main": "./dist/index.js",
+  "main": "./dist/vue-privacy.umd.cjs",
   "module": "./dist/index.js",
+  "unpkg": "./dist/vue-privacy.iife.js",
+  "jsdelivr": "./dist/vue-privacy.iife.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
@@ -61,13 +64,15 @@
     "eu-cookie-law",
     "privacy",
     "spa-tracking",
-    "page-view"
+    "page-view",
+    "cdn",
+    "umd"
   ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "build": "vite build && vue-tsc --emitDeclarationOnly",
+    "build": "vite build && vite build --config vite.config.umd.ts && vue-tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src/",
