@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, inject, watch, nextTick } from "vue";
+import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
 import type { ConsentCategories } from "../core/types";
 import { getTranslations } from "../i18n/index";
@@ -11,6 +11,7 @@ const emit = defineEmits<{
 }>();
 
 const consentManager = inject<ConsentManager>("consentManager");
+const modalRef = ref<HTMLElement | null>(null);
 
 const visible = ref(false);
 const categories = ref({
@@ -61,10 +62,8 @@ watch(visible, async (isVisible) => {
     }
 
     await nextTick();
-    const firstToggle = document.querySelector<HTMLInputElement>(
-      ".consent-toggle__input:not(:disabled)"
-    );
-    firstToggle?.focus();
+    // Focus the modal container for screen readers; user can Tab into controls
+    modalRef.value?.focus();
   }
 });
 
@@ -84,6 +83,14 @@ onMounted(() => {
   }
 });
 
+// Clean up callbacks on unmount to prevent stale references
+onUnmounted(() => {
+  if (consentManager) {
+    consentManager.onShowPreferenceCenter(() => {});
+    consentManager.onHidePreferenceCenter(() => {});
+  }
+});
+
 async function handleSave() {
   await consentManager?.savePreferences(categories.value);
   emit("save", categories.value);
@@ -96,6 +103,7 @@ async function handleAcceptAll() {
 
 function handleClose() {
   visible.value = false;
+  consentManager?.getConfig().onPreferenceCenterHide?.();
   emit("close");
 }
 
@@ -105,10 +113,12 @@ function handleKeydown(e: KeyboardEvent) {
     return;
   }
 
-  // Focus trap: Tab cycles within modal
+  // Focus trap: Tab cycles within this modal instance
   if (e.key === "Tab") {
-    const focusableElements = document.querySelectorAll<HTMLElement>(
-      ".consent-modal button, .consent-modal input:not(:disabled)"
+    const container = modalRef.value;
+    if (!container) return;
+    const focusableElements = container.querySelectorAll<HTMLElement>(
+      "button, input:not(:disabled)"
     );
     if (focusableElements.length === 0) return;
 
@@ -136,6 +146,7 @@ function handleKeydown(e: KeyboardEvent) {
         @keydown="handleKeydown"
       >
         <div
+          ref="modalRef"
           class="consent-modal"
           role="dialog"
           aria-modal="true"

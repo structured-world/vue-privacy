@@ -42,6 +42,9 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private bannerPending = false;
+  private consentChangeListeners: Array<
+    (categories: Omit<ConsentCategories, "necessary">) => void
+  > = [];
 
   constructor(config: ConsentConfig = {}) {
     this.locale = config.locale ?? detectLocale();
@@ -90,6 +93,14 @@ export class ConsentManager {
    */
   onHidePreferenceCenter(callback: () => void): void {
     this.hidePreferenceCenterCallback = callback;
+  }
+
+  /**
+   * Register a listener that fires whenever consent categories change.
+   * Used internally by the script blocker; also available for external consumers.
+   */
+  onConsentChange(listener: (categories: Omit<ConsentCategories, "necessary">) => void): void {
+    this.consentChangeListeners.push(listener);
   }
 
   /**
@@ -226,12 +237,17 @@ export class ConsentManager {
     const signals = categoriesToGoogleSignals(categories);
     updateGoogleConsent(signals);
 
-    // Notify callback
+    // Notify config callback
     this.config.onConsentChange?.({
       categories,
       timestamp: Date.now(),
       version: this.config.version ?? DEFAULT_CONFIG.version,
     });
+
+    // Notify registered listeners (script blocker, etc.)
+    for (const listener of this.consentChangeListeners) {
+      listener(categories);
+    }
   }
 
   /**

@@ -61,7 +61,9 @@ function unblockMatchingScripts(categories: Omit<ConsentCategories, "necessary">
  */
 function observeNewScripts(
   getCategories: () => Omit<ConsentCategories, "necessary"> | null
-): MutationObserver {
+): MutationObserver | null {
+  if (typeof document === "undefined") return null;
+
   const observer = new MutationObserver((mutations) => {
     let found = false;
     for (const mutation of mutations) {
@@ -98,14 +100,10 @@ export function initScriptBlocker(manager: ConsentManager): () => void {
 
   const getCategories = () => manager.getConsent()?.categories ?? null;
 
-  // Wrap onConsentChange to trigger unblocking
-  const originalCb = manager.getConfig().onConsentChange;
-  (
-    manager as unknown as { config: { onConsentChange: typeof originalCb } }
-  ).config.onConsentChange = (consent) => {
-    originalCb?.(consent);
-    unblockMatchingScripts(consent.categories);
-  };
+  // Listen for consent changes via public API (no monkey-patching)
+  manager.onConsentChange((categories) => {
+    unblockMatchingScripts(categories);
+  });
 
   // Initial unblock pass (consent may already exist)
   const current = getCategories();
