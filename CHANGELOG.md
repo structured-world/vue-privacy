@@ -1,3 +1,9 @@
+## [1.5.0](https://github.com/structured-world/vue-privacy/compare/v1.4.0...v1.5.0) (2026-02-02)
+
+### Features
+
+* preference center modal, script blocking, i18n (Phase 2) ([#65](https://github.com/structured-world/vue-privacy/issues/65)) ([89b3fbe](https://github.com/structured-world/vue-privacy/commit/89b3fbe43955e055e9a8265c1c064a055deb2cc9)), closes [#64](https://github.com/structured-world/vue-privacy/issues/64)
+
 ## [1.4.0](https://github.com/structured-world/vue-privacy/compare/v1.3.0...v1.4.0) (2026-02-02)
 
 ### Features
