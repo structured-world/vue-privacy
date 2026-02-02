@@ -87,7 +87,7 @@ export default defineConfig({
             { text: "Preference Center", link: "/guide/preference-center" },
             { text: "Google Consent Mode v2", link: "/guide/consent-mode" },
             { text: "Script Blocking", link: "/guide/script-blocking" },
-            { text: "Geo Detection", link: "/guide/geo-detection" },
+            { text: "EU Detection", link: "/guide/eu-detection" },
             { text: "Customization", link: "/guide/customization" },
           ],
         },
@@ -118,7 +118,7 @@ export default defineConfig({
 
     footer: {
       message: "Released under the Apache 2.0 License. Powered by structured.world",
-      copyright: "Copyright 2025 Dmitry Prudnikov",
+      copyright: "Copyright 2025-2026 Dmitry Prudnikov",
     },
 
     editLink: {
