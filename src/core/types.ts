@@ -1,3 +1,5 @@
+import type { SupportedLocale } from "../i18n/types";
+
 /**
  * Consent categories that can be managed
  */
@@ -138,7 +140,7 @@ export interface ConsentConfig {
    * Locale for UI text. Auto-detected from navigator.language if not set.
    * Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
    */
-  locale?: import("../i18n/types").SupportedLocale;
+  locale?: SupportedLocale;
 
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;

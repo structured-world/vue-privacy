@@ -42,6 +42,7 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private bannerPending = false;
+  private preferenceCenterPending = false;
   private consentChangeListeners: Array<
     (categories: Omit<ConsentCategories, "necessary">) => void
   > = [];
@@ -84,9 +85,15 @@ export class ConsentManager {
   /**
    * Register (or clear) callback to show preference center.
    * Pass null to unregister.
+   * If showPreferenceCenter() was called before this callback was registered,
+   * fires immediately (same race-condition handling as banner).
    */
   onShowPreferenceCenter(callback: (() => void) | null): void {
     this.showPreferenceCenterCallback = callback;
+    if (callback && this.preferenceCenterPending) {
+      this.preferenceCenterPending = false;
+      callback();
+    }
   }
 
   /**
@@ -109,7 +116,11 @@ export class ConsentManager {
    * Programmatically show the preference center modal
    */
   showPreferenceCenter(): void {
-    this.showPreferenceCenterCallback?.();
+    if (this.showPreferenceCenterCallback) {
+      this.showPreferenceCenterCallback();
+    } else {
+      this.preferenceCenterPending = true;
+    }
     this.config.onPreferenceCenterShow?.();
   }
 
