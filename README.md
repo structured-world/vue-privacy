@@ -1,20 +1,27 @@
 # @structured-world/vue-privacy
 
-GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3, Quasar, and VitePress.
+GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3, Quasar, VitePress, and plain HTML.
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+**[Documentation](https://privacy.sw.foundation)** · [GitHub](https://github.com/structured-world/vue-privacy) · [npm](https://www.npmjs.com/package/@structured-world/vue-privacy)
+
 ## Features
 
-- **Google Consent Mode v2** - Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
-- **EU Detection** - Auto-detect EU users via Cloudflare headers or IP API
-- **Framework Support** - Vue 3, Quasar, VitePress out of the box
-- **TypeScript** - Full type safety
-- **Lightweight** - No external dependencies for core functionality
-- **Customizable** - Fully configurable UI and behavior
-- **SSR Safe** - Works with server-side rendering
-- **Accessible** - ARIA-compliant banner component
+- **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
+- **EU Detection** — Auto-detect EU users via Cloudflare headers, IP API, or timezone heuristics
+- **Consent Banner** — Customizable GDPR/CCPA banner with dark mode support
+- **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
+- **Script Blocking** — Block third-party scripts until consent is granted
+- **i18n** — 13 built-in locales (en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko)
+- **Remote Storage** — Pluggable backend for cross-device consent sync
+- **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
+- **UMD/CDN** — Use via `<script>` tag, no build tools needed
+- **TypeScript** — Full type safety
+- **Lightweight** — ~11kB gzip (UMD), no external dependencies
+- **SSR Safe** — Works with server-side rendering
+- **Accessible** — ARIA-compliant components with focus trap
 
 ## Installation
 
@@ -48,8 +55,8 @@ app.mount('#app');
 ```vue
 <template>
   <div id="app">
-    <!-- Your app content -->
     <ConsentBanner position="bottom" />
+    <ConsentPreferenceModal />
   </div>
 </template>
 ```
@@ -78,12 +85,29 @@ export default boot(consentBoot({
 }));
 ```
 
+### CDN / Script Tag
+
+```html
+<script src="https://unpkg.com/@structured-world/vue-privacy"></script>
+<script>
+  const manager = VuePrivacy.createConsentManager({
+    gaId: 'G-XXXXXXXXXX',
+    euDetection: 'auto',
+  });
+  manager.init();
+</script>
+```
+
 ## Configuration
 
 ```typescript
 interface ConsentConfig {
   // Google Analytics measurement ID
   gaId?: string;
+
+  // Locale for UI text (auto-detected if not set)
+  // Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
+  locale?: SupportedLocale;
 
   // Consent categories
   categories?: {
@@ -103,6 +127,20 @@ interface ConsentConfig {
     privacyLinkText?: string;
   };
 
+  // Preference center UI
+  preferenceCenter?: {
+    title?: string;
+    description?: string;
+    savePreferences?: string;
+    acceptAll?: string;
+    categories?: {
+      necessary?: { name?: string; description?: string };
+      analytics?: { name?: string; description?: string };
+      marketing?: { name?: string; description?: string };
+      functional?: { name?: string; description?: string };
+    };
+  };
+
   // Cookie settings
   cookie?: {
     name?: string;    // Default: 'consent_preferences'
@@ -110,6 +148,9 @@ interface ConsentConfig {
     domain?: string;
     path?: string;    // Default: '/'
   };
+
+  // Remote consent storage (pluggable backend)
+  storage?: ConsentStorage;
 
   // EU detection mode
   euDetection?: 'auto' | 'cloudflare' | 'api' | 'always' | 'never';
@@ -121,7 +162,95 @@ interface ConsentConfig {
   onConsentChange?: (consent: StoredConsent) => void;
   onBannerShow?: () => void;
   onBannerHide?: () => void;
+  onPreferenceCenterShow?: () => void;
+  onPreferenceCenterHide?: () => void;
 }
+```
+
+## Composables
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const {
+  acceptAll,
+  rejectAll,
+  hasConsent,
+  resetConsent,
+  showPreferenceCenter,
+} = useConsent();
+</script>
+
+<template>
+  <button @click="showPreferenceCenter">Manage Cookies</button>
+</template>
+```
+
+## Script Blocking
+
+Block third-party scripts until consent is granted:
+
+```html
+<script type="text/plain" data-consent-category="analytics"
+        src="https://example.com/analytics.js"></script>
+
+<script type="text/plain" data-consent-category="marketing"
+        src="https://example.com/ads.js"></script>
+```
+
+Scripts are automatically unblocked when the matching category is accepted.
+
+## Remote Consent Storage
+
+Sync consent across devices with a pluggable backend:
+
+```typescript
+import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
+
+// Built-in Cloudflare KV adapter
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  storage: createKVStorage('/api/consent'),
+});
+
+// Or implement your own
+const manager = createConsentManager({
+  storage: {
+    get: (uid, version) => fetch(`/api/consent?id=${uid}`).then(r => r.json()),
+    set: (uid, consent) => fetch('/api/consent', {
+      method: 'POST',
+      body: JSON.stringify({ id: uid, ...consent }),
+    }).then(r => r.json()).then(d => d.id),
+  },
+});
+```
+
+## Core API (Framework-agnostic)
+
+```typescript
+import { createConsentManager } from '@structured-world/vue-privacy';
+
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+});
+
+await manager.init();
+
+// Programmatic consent
+await manager.acceptAll();
+await manager.rejectAll();
+await manager.savePreferences({ analytics: true, marketing: false });
+
+// Preference center
+manager.showPreferenceCenter();
+
+// Check state
+const consent = manager.getConsent();
+const isEU = manager.isEUUser();
+
+// Cleanup
+manager.destroy();
 ```
 
 ## EU Detection
@@ -137,69 +266,9 @@ Tries in order:
 2. IP API (ipapi.co)
 3. Timezone heuristics fallback
 
-### Cloudflare Setup
-
-Add a Transform Rule in Cloudflare Dashboard:
-
-**Rules > Transform Rules > Modify Request Header**
-
-- Header name: `X-Is-EU-Country`
-- Value: `ip.geoip.is_in_european_union`
-
-Or use a Worker:
-
-```typescript
-export default {
-  async fetch(request) {
-    const isEU = request.cf?.isEUCountry === true;
-    const response = await fetch(request);
-    const newResponse = new Response(response.body, response);
-    newResponse.headers.set('X-Is-EU-Country', isEU ? 'true' : 'false');
-    return newResponse;
-  }
-}
-```
-
-## Composables
-
-```vue
-<script setup>
-import { useConsent } from '@structured-world/vue-privacy/vue';
-
-const { acceptAll, rejectAll, hasConsent, resetConsent } = useConsent();
-</script>
-
-<template>
-  <button @click="resetConsent">Manage Cookies</button>
-</template>
-```
-
-## Core API (Framework-agnostic)
-
-```typescript
-import { createConsentManager } from '@structured-world/vue-privacy';
-
-const manager = createConsentManager({
-  gaId: 'G-XXXXXXXXXX',
-});
-
-// Initialize (shows banner for EU users)
-await manager.init();
-
-// Programmatic consent
-await manager.acceptAll();
-await manager.rejectAll();
-await manager.savePreferences({ analytics: true, marketing: false });
-
-// Check consent
-const consent = manager.getConsent();
-const hasConsent = manager.hasConsent();
-const isEU = manager.isEUUser();
-```
-
 ## Styling
 
-The banner uses CSS custom properties for theming:
+The banner and preference center use CSS custom properties:
 
 ```css
 :root {
@@ -217,41 +286,33 @@ The banner uses CSS custom properties for theming:
 
 Dark mode is automatically supported via `prefers-color-scheme`.
 
-## Status & Roadmap
-
-### Current (v1.0)
+## Current Features
 
 | Feature | Status |
 |---------|--------|
-| Consent banner component | Done |
-| Google Consent Mode v2 | Done |
-| GA4 integration | Done |
-| EU geo-detection | Done |
-| Vue 3 / VitePress / Quasar adapters | Done |
-| Local storage (cookie/localStorage) | Done |
-| Dark mode support | Done |
+| Consent banner component | ✅ |
+| Preference center modal | ✅ |
+| Google Consent Mode v2 | ✅ |
+| GA4 integration | ✅ |
+| EU geo-detection | ✅ |
+| Script blocking | ✅ |
+| i18n (13 locales) | ✅ |
+| Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
+| UMD/CDN build | ✅ |
+| Remote consent storage | ✅ |
+| Dark mode support | ✅ |
 
-### Planned
+## Planned
 
 | Feature | Description |
 |---------|-------------|
-| Preference center modal | Full-featured modal with category toggles (OneTrust-style) |
-| Script blocking | Block 3rd-party scripts until consent given |
-| Multi-language (i18n) | Built-in translations for 20+ languages |
 | CCPA support | California Consumer Privacy Act compliance |
-| Server-side storage | Optional backend via [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) |
-| Analytics dashboard | Opt-in rates, banner interactions (via privacy.structured.world) |
+| Analytics dashboard | Opt-in rates, banner interactions (via [privacy.structured.world](https://privacy.structured.world)) |
 
-### Related Projects
+## Related Projects
 
-- [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) - Cloudflare Worker for server-side consent storage
+- [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) — Cloudflare Worker for server-side consent storage
 
 ## License
 
-Apache 2.0 - see [LICENSE](LICENSE)
-
-## Links
-
-- [Documentation](https://privacy.sw.foundation)
-- [GitHub](https://github.com/structured-world/vue-privacy)
-- [npm](https://www.npmjs.com/package/@structured-world/vue-privacy)
+Apache 2.0 — see [LICENSE](LICENSE)
