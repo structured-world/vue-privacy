@@ -1,3 +1,9 @@
+## [1.4.0](https://github.com/structured-world/vue-privacy/compare/v1.3.0...v1.4.0) (2026-02-02)
+
+### Features
+
+* UMD/IIFE build for CDN usage + createKVStorage tests ([#63](https://github.com/structured-world/vue-privacy/issues/63)) ([59aa0a4](https://github.com/structured-world/vue-privacy/commit/59aa0a4b59118a514b4430223928d5255725d164)), closes [#62](https://github.com/structured-world/vue-privacy/issues/62)
+
 ## [1.3.0](https://github.com/structured-world/vue-privacy/compare/v1.2.3...v1.3.0) (2026-02-01)
 
 ### Features
