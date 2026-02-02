@@ -44,7 +44,6 @@ export default tseslint.config(
         HTMLInputElement: "readonly",
         KeyboardEvent: "readonly",
         navigator: "readonly",
-        MutationObserver: "readonly",
       },
     },
     plugins: {
