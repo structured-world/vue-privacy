@@ -2,6 +2,7 @@ import type { App, Plugin } from "vue";
 import type { ConsentConfig } from "../core/types";
 import { ConsentManager, createConsentManager } from "../core/consent-manager";
 import ConsentBanner from "./ConsentBanner.vue";
+import ConsentPreferenceModal from "./ConsentPreferenceModal.vue";
 
 /**
  * Vue plugin options
@@ -42,8 +43,9 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
       app.provide("consentManager", manager);
       app.provide(CONSENT_MANAGER_KEY, manager);
 
-      // Register global component
+      // Register global components
       app.component("ConsentBanner", ConsentBanner);
+      app.component("ConsentPreferenceModal", ConsentPreferenceModal);
 
       // Auto-initialize if requested
       if (autoInit) {
@@ -106,6 +108,8 @@ export function useConsent() {
     isEUUser: () => manager.isEUUser(),
     /** Get geo-detection result (country, method, isEU) */
     getGeoResult: () => manager.getGeoResult(),
+    /** Programmatically show the preference center modal */
+    showPreferenceCenter: () => manager.showPreferenceCenter(),
     /** Get the underlying manager instance */
     manager,
   };
@@ -114,11 +118,12 @@ export function useConsent() {
 // Need to import inject for useConsent
 import { inject } from "vue";
 
-// Re-export component
-export { ConsentBanner };
+// Re-export components
+export { ConsentBanner, ConsentPreferenceModal };
 
 // Re-export raw CSS for consumers with strict CSP
 export { consentBannerCSS } from "./banner-styles";
+export { consentModalCSS } from "./modal-styles";
 
 // Re-export types
 export type { ConsentConfig, ConsentManager };

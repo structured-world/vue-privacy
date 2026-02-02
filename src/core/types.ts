@@ -72,6 +72,37 @@ export interface GeoDetector {
 }
 
 /**
+ * Category display configuration for preference center
+ */
+export interface CategoryDisplayConfig {
+  /** Display name */
+  name: string;
+  /** Description text */
+  description: string;
+}
+
+/**
+ * Preference center modal configuration
+ */
+export interface PreferenceCenterConfig {
+  /** Modal title */
+  title: string;
+  /** Modal description/subtitle */
+  description: string;
+  /** Save preferences button text */
+  savePreferences: string;
+  /** Accept all button text */
+  acceptAll: string;
+  /** Category display text overrides */
+  categories: {
+    necessary: Partial<CategoryDisplayConfig>;
+    analytics: Partial<CategoryDisplayConfig>;
+    marketing: Partial<CategoryDisplayConfig>;
+    functional: Partial<CategoryDisplayConfig>;
+  };
+}
+
+/**
  * Banner UI configuration
  */
 export interface BannerConfig {
@@ -92,11 +123,22 @@ export interface BannerConfig {
 }
 
 /**
+ * Supported locale codes for built-in translations
+ */
+export type { SupportedLocale } from "../i18n/types";
+
+/**
  * Main plugin configuration
  */
 export interface ConsentConfig {
   /** Google Analytics measurement ID (G-XXXXXXXXXX) */
   gaId?: string;
+
+  /**
+   * Locale for UI text. Auto-detected from navigator.language if not set.
+   * Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
+   */
+  locale?: import("../i18n/types").SupportedLocale;
 
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;
@@ -161,6 +203,15 @@ export interface ConsentConfig {
 
   /** Callback when banner is hidden */
   onBannerHide?: () => void;
+
+  /** Preference center modal configuration (text overrides) */
+  preferenceCenter?: Partial<PreferenceCenterConfig>;
+
+  /** Callback when preference center is shown */
+  onPreferenceCenterShow?: () => void;
+
+  /** Callback when preference center is hidden */
+  onPreferenceCenterHide?: () => void;
 }
 
 /**

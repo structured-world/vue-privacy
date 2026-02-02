@@ -50,6 +50,12 @@ export {
   createGeoDetector,
 } from "./geo/index";
 
+// Script blocking
+export { initScriptBlocker, unblockScriptsByCategory } from "./core/script-blocker";
+
+// i18n exports
+export { detectLocale, getTranslations, mergeTranslations } from "./i18n/index";
+
 // Type exports
 export type {
   ConsentConfig,
@@ -60,4 +66,14 @@ export type {
   GeoDetector,
   GeoDetectionResult,
   BannerConfig,
+  PreferenceCenterConfig,
+  CategoryDisplayConfig,
+  SupportedLocale,
 } from "./core/types";
+
+export type {
+  Translations,
+  BannerTranslations,
+  PreferenceCenterTranslations,
+  CategoryTranslations,
+} from "./i18n/types";

@@ -2,8 +2,8 @@
 import { ref, computed, onMounted, inject } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
 import type { BannerConfig, BannerConfigDefaults } from "../core/types";
-import { DEFAULT_CONFIG } from "../core/types";
 import { injectBannerStyles } from "./banner-styles";
+import { getTranslations } from "../i18n/index";
 
 const props = defineProps<{
   /** Custom banner configuration */
@@ -24,25 +24,21 @@ const consentManager = inject<ConsentManager>("consentManager");
 // State
 const visible = ref(false);
 
-// Merged config with defaults
+// Merged config: props > manager config > i18n translations > defaults
 const bannerConfig = computed<BannerConfigDefaults>(() => {
+  const locale = consentManager?.getLocale() ?? "en";
+  const t = getTranslations(locale).banner;
   const managerConfig = consentManager?.getConfig().banner;
   const propsConfig = props.config;
   return {
-    title: propsConfig?.title ?? managerConfig?.title ?? DEFAULT_CONFIG.banner.title,
-    message: propsConfig?.message ?? managerConfig?.message ?? DEFAULT_CONFIG.banner.message,
-    acceptAll:
-      propsConfig?.acceptAll ?? managerConfig?.acceptAll ?? DEFAULT_CONFIG.banner.acceptAll,
-    rejectAll:
-      propsConfig?.rejectAll ?? managerConfig?.rejectAll ?? DEFAULT_CONFIG.banner.rejectAll,
-    customize:
-      propsConfig?.customize ?? managerConfig?.customize ?? DEFAULT_CONFIG.banner.customize,
-    privacyLink:
-      propsConfig?.privacyLink ?? managerConfig?.privacyLink ?? DEFAULT_CONFIG.banner.privacyLink,
+    title: propsConfig?.title ?? managerConfig?.title ?? t.title,
+    message: propsConfig?.message ?? managerConfig?.message ?? t.message,
+    acceptAll: propsConfig?.acceptAll ?? managerConfig?.acceptAll ?? t.acceptAll,
+    rejectAll: propsConfig?.rejectAll ?? managerConfig?.rejectAll ?? t.rejectAll,
+    customize: propsConfig?.customize ?? managerConfig?.customize ?? t.customize,
+    privacyLink: propsConfig?.privacyLink ?? managerConfig?.privacyLink ?? "/privacy",
     privacyLinkText:
-      propsConfig?.privacyLinkText ??
-      managerConfig?.privacyLinkText ??
-      DEFAULT_CONFIG.banner.privacyLinkText,
+      propsConfig?.privacyLinkText ?? managerConfig?.privacyLinkText ?? t.privacyLinkText,
   };
 });
 
@@ -86,6 +82,7 @@ async function handleReject() {
 }
 
 function handleCustomize() {
+  consentManager?.showPreferenceCenter();
   emit("customize");
 }
 </script>

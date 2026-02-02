@@ -57,6 +57,12 @@ export {
 // Config defaults
 export { DEFAULT_CONFIG } from "./core/types";
 
+// Script blocking
+export { initScriptBlocker, unblockScriptsByCategory } from "./core/script-blocker";
+
+// i18n
+export { detectLocale, getTranslations, mergeTranslations } from "./i18n/index";
+
 // Type exports (stripped at build time, useful for TS consumers of UMD)
 export type {
   ConsentConfig,
@@ -67,4 +73,9 @@ export type {
   GeoDetector,
   GeoDetectionResult,
   BannerConfig,
+  PreferenceCenterConfig,
+  CategoryDisplayConfig,
+  SupportedLocale,
 } from "./core/types";
+
+export type { Translations } from "./i18n/types";

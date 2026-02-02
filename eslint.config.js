@@ -24,10 +24,7 @@ export default tseslint.config(
       },
     },
     rules: {
-      "@typescript-eslint/no-unused-vars": [
-        "error",
-        { argsIgnorePattern: "^_" },
-      ],
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/no-explicit-any": "error",
     },
@@ -41,6 +38,14 @@ export default tseslint.config(
         extraFileExtensions: [".vue"],
         sourceType: "module",
       },
+      globals: {
+        document: "readonly",
+        HTMLElement: "readonly",
+        HTMLInputElement: "readonly",
+        KeyboardEvent: "readonly",
+        navigator: "readonly",
+        MutationObserver: "readonly",
+      },
     },
     plugins: {
       vue: pluginVue,
@@ -49,5 +54,5 @@ export default tseslint.config(
       ...pluginVue.configs["flat/recommended"].rules,
       "vue/multi-word-component-names": "off",
     },
-  },
+  }
 );
