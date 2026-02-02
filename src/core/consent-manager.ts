@@ -6,6 +6,9 @@ import type {
   GeoDetectionResult,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
+import { detectLocale } from "../i18n/index";
+import type { SupportedLocale } from "../i18n/types";
+import { initScriptBlocker } from "./script-blocker";
 import {
   getStoredConsent,
   storeConsent,
@@ -27,6 +30,7 @@ import { createGeoDetector } from "../geo/index";
  */
 export class ConsentManager {
   private config: ConsentConfig;
+  private locale: SupportedLocale;
   private initialized = false;
   private isEU: boolean | null = null;
   private geoResult: GeoDetectionResult | null = null;
@@ -34,11 +38,20 @@ export class ConsentManager {
   private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
+  private showPreferenceCenterCallback: (() => void) | null = null;
+  private hidePreferenceCenterCallback: (() => void) | null = null;
+  private scriptBlockerCleanup: (() => void) | null = null;
   private bannerPending = false;
+  private preferenceCenterPending = false;
+  private consentChangeListeners: Array<
+    (categories: Omit<ConsentCategories, "necessary">) => void
+  > = [];
 
   constructor(config: ConsentConfig = {}) {
+    this.locale = config.locale ?? detectLocale();
     this.config = {
       ...config,
+      locale: this.locale,
       categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
       banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
@@ -70,11 +83,65 @@ export class ConsentManager {
   }
 
   /**
+   * Register (or clear) callback to show preference center.
+   * Pass null to unregister.
+   * If showPreferenceCenter() was called before this callback was registered,
+   * fires immediately (same race-condition handling as banner).
+   */
+  onShowPreferenceCenter(callback: (() => void) | null): void {
+    this.showPreferenceCenterCallback = callback;
+    if (callback && this.preferenceCenterPending) {
+      this.preferenceCenterPending = false;
+      callback();
+    }
+  }
+
+  /**
+   * Register (or clear) callback to hide preference center.
+   * Pass null to unregister.
+   */
+  onHidePreferenceCenter(callback: (() => void) | null): void {
+    this.hidePreferenceCenterCallback = callback;
+  }
+
+  /**
+   * Register a listener that fires whenever consent categories change.
+   * Used internally by the script blocker; also available for external consumers.
+   */
+  onConsentChange(listener: (categories: Omit<ConsentCategories, "necessary">) => void): void {
+    this.consentChangeListeners.push(listener);
+  }
+
+  /**
+   * Programmatically show the preference center modal
+   */
+  showPreferenceCenter(): void {
+    if (this.showPreferenceCenterCallback) {
+      this.showPreferenceCenterCallback();
+    } else {
+      this.preferenceCenterPending = true;
+    }
+    this.config.onPreferenceCenterShow?.();
+  }
+
+  /**
+   * Get the resolved locale
+   */
+  getLocale(): SupportedLocale {
+    return this.locale;
+  }
+
+  /**
    * Initialize consent manager
    */
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+
+    // Initialize script blocker (auto-unblocks on consent change)
+    if (typeof document !== "undefined") {
+      this.scriptBlockerCleanup = initScriptBlocker(this);
+    }
 
     // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
@@ -183,12 +250,17 @@ export class ConsentManager {
     const signals = categoriesToGoogleSignals(categories);
     updateGoogleConsent(signals);
 
-    // Notify callback
+    // Notify config callback
     this.config.onConsentChange?.({
       categories,
       timestamp: Date.now(),
       version: this.config.version ?? DEFAULT_CONFIG.version,
     });
+
+    // Notify registered listeners (script blocker, etc.)
+    for (const listener of this.consentChangeListeners) {
+      listener(categories);
+    }
   }
 
   /**
@@ -205,7 +277,9 @@ export class ConsentManager {
     this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
+    this.hidePreferenceCenterCallback?.();
     this.config.onBannerHide?.();
+    this.config.onPreferenceCenterHide?.();
   }
 
   /**
@@ -222,7 +296,9 @@ export class ConsentManager {
     this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
+    this.hidePreferenceCenterCallback?.();
     this.config.onBannerHide?.();
+    this.config.onPreferenceCenterHide?.();
   }
 
   /**
@@ -239,7 +315,9 @@ export class ConsentManager {
     this.saveConsentWithRemote(finalCategories);
 
     this.hideBannerCallback?.();
+    this.hidePreferenceCenterCallback?.();
     this.config.onBannerHide?.();
+    this.config.onPreferenceCenterHide?.();
   }
 
   /**
@@ -306,6 +384,21 @@ export class ConsentManager {
    */
   getConfig(): ConsentConfig {
     return this.config;
+  }
+
+  /**
+   * Clean up resources (script blocker observer, etc.).
+   * Call when unmounting the app.
+   */
+  destroy(): void {
+    this.scriptBlockerCleanup?.();
+    this.scriptBlockerCleanup = null;
+
+    this.consentChangeListeners.length = 0;
+    this.showBannerCallback = null;
+    this.hideBannerCallback = null;
+    this.showPreferenceCenterCallback = null;
+    this.hidePreferenceCenterCallback = null;
   }
 }
 
