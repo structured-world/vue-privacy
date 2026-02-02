@@ -82,16 +82,18 @@ export class ConsentManager {
   }
 
   /**
-   * Register callback to show preference center
+   * Register (or clear) callback to show preference center.
+   * Pass null to unregister.
    */
-  onShowPreferenceCenter(callback: () => void): void {
+  onShowPreferenceCenter(callback: (() => void) | null): void {
     this.showPreferenceCenterCallback = callback;
   }
 
   /**
-   * Register callback to hide preference center
+   * Register (or clear) callback to hide preference center.
+   * Pass null to unregister.
    */
-  onHidePreferenceCenter(callback: () => void): void {
+  onHidePreferenceCenter(callback: (() => void) | null): void {
     this.hidePreferenceCenterCallback = callback;
   }
 
@@ -380,6 +382,12 @@ export class ConsentManager {
   destroy(): void {
     this.scriptBlockerCleanup?.();
     this.scriptBlockerCleanup = null;
+
+    this.consentChangeListeners.length = 0;
+    this.showBannerCallback = null;
+    this.hideBannerCallback = null;
+    this.showPreferenceCenterCallback = null;
+    this.hidePreferenceCenterCallback = null;
   }
 }
 

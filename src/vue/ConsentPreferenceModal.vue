@@ -86,8 +86,8 @@ onMounted(() => {
 // Clean up callbacks on unmount to prevent stale references
 onUnmounted(() => {
   if (consentManager) {
-    consentManager.onShowPreferenceCenter(() => {});
-    consentManager.onHidePreferenceCenter(() => {});
+    consentManager.onShowPreferenceCenter(null);
+    consentManager.onHidePreferenceCenter(null);
   }
 });
 
@@ -179,7 +179,13 @@ function handleKeydown(e: KeyboardEvent) {
                   {{ modalConfig.categories.necessary.name }}
                 </h3>
                 <label class="consent-toggle">
-                  <input type="checkbox" class="consent-toggle__input" checked disabled />
+                  <input
+                    type="checkbox"
+                    class="consent-toggle__input"
+                    checked
+                    disabled
+                    :aria-label="modalConfig.categories.necessary.name"
+                  />
                   <span class="consent-toggle__slider"></span>
                 </label>
               </div>
@@ -199,6 +205,7 @@ function handleKeydown(e: KeyboardEvent) {
                     v-model="categories.analytics"
                     type="checkbox"
                     class="consent-toggle__input"
+                    :aria-label="modalConfig.categories.analytics.name"
                   />
                   <span class="consent-toggle__slider"></span>
                 </label>
@@ -219,6 +226,7 @@ function handleKeydown(e: KeyboardEvent) {
                     v-model="categories.marketing"
                     type="checkbox"
                     class="consent-toggle__input"
+                    :aria-label="modalConfig.categories.marketing.name"
                   />
                   <span class="consent-toggle__slider"></span>
                 </label>
@@ -239,6 +247,7 @@ function handleKeydown(e: KeyboardEvent) {
                     v-model="categories.functional"
                     type="checkbox"
                     class="consent-toggle__input"
+                    :aria-label="modalConfig.categories.functional.name"
                   />
                   <span class="consent-toggle__slider"></span>
                 </label>
