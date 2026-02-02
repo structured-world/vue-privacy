@@ -85,7 +85,11 @@ function observeNewScripts(
     }
   });
 
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  // Observe head + body only (scripts are always added there),
+  // avoiding unnecessary callbacks from unrelated DOM mutations.
+  const opts: MutationObserverInit = { childList: true, subtree: true };
+  if (document.head) observer.observe(document.head, opts);
+  if (document.body) observer.observe(document.body, opts);
   return observer;
 }
 
