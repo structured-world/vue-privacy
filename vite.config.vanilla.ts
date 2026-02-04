@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "fs";
 /**
  * Separate Vite config for vanilla CSS files.
  *
- * Copies and minifies CSS files for CDN usage:
+ * Copies CSS files for CDN usage:
  *   dist/vue-privacy-banner.css  — Banner styles
  *   dist/vue-privacy-modal.css   — Modal styles
  *

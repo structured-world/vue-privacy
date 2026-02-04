@@ -353,13 +353,21 @@ function setThemeAttribute(el: HTMLElement, theme: VanillaTheme): void {
   el.setAttribute("data-consent-theme", theme);
 }
 
+/** HTML entity map for escaping */
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
 /**
- * Escape HTML special characters for safe DOM insertion
+ * Escape HTML special characters for safe DOM insertion.
+ * Uses string replacement for better performance than DOM-based approach.
  */
 function escapeHtml(str: string): string {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
 }
 
 // Re-export types
