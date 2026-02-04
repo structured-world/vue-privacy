@@ -1,7 +1,9 @@
 import { nextTick } from "vue";
-// vue-router types for optional router integration.
-// This module is only used when the user explicitly enables router tracking.
-// Type-only imports are erased at compile time.
+// vue-router types for router integration.
+// NOTE: TypeScript still requires vue-router to be installed to resolve these types
+// during compilation, even though they are type-only imports. If you use the router
+// integration features, vue-router must be installed. The base consent plugin works
+// without vue-router at runtime if you don't use router tracking.
 import type { Router, RouteLocationNormalized } from "vue-router";
 import type { ConsentManager } from "../core/consent-manager";
 import type { GA4RouteMeta, GA4RouteEvent } from "../core/types";
@@ -140,9 +142,14 @@ export function setupRouterTracking(
  * Type augmentation for Vue Router to support GA4RouteMeta.
  * Import this module to get type hints in route definitions.
  *
- * NOTE: This augmentation only applies when vue-router is installed.
- * If vue-router is not installed, TypeScript will skip this augmentation.
- * The base Vue plugin works without vue-router - router integration is optional.
+ * NOTE: This augmentation is only applicable when `vue-router` is installed
+ * and available in your TypeScript project. Because this file imports
+ * `vue-router` types and declares a module augmentation for `"vue-router"`,
+ * you must have `vue-router` installed for type-checking of the router
+ * integration to succeed.
+ *
+ * The base Vue plugin works without `vue-router` at runtime; only the router
+ * tracking integration and these type augmentations require `vue-router`.
  *
  * @example
  * ```typescript

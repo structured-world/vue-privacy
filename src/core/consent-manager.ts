@@ -351,7 +351,8 @@ export class ConsentManager {
 
   /**
    * Track a page view manually (for SPA navigation).
-   * Skips sending if analytics consent has not been granted.
+   * Skips sending if analytics consent is explicitly denied.
+   * Before user makes a choice, page views are sent under Consent Mode defaults (cookieless pings).
    */
   trackPageView(path: string, title?: string): void {
     const stored = getStoredConsent(this.config);

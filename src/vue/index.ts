@@ -1,8 +1,10 @@
 import type { App, Plugin } from "vue";
 import { nextTick } from "vue";
-// vue-router types are used for optional router integration.
-// Type-only imports are erased at compile time and don't require vue-router to be installed.
-// The Router type is only used when the user passes a router instance to the plugin.
+// vue-router types for optional router integration.
+// NOTE: TypeScript still requires vue-router to be installed to resolve these types
+// during compilation. If you use the router integration features (router option in
+// createConsentPlugin), vue-router must be installed. The base consent plugin works
+// without vue-router at runtime if you don't use router tracking.
 import type { Router } from "vue-router";
 import type { ConsentConfig, GA4RouteMeta } from "../core/types";
 import { ConsentManager, createConsentManager } from "../core/consent-manager";
