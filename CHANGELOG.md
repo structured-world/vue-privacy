@@ -1,3 +1,9 @@
+## [1.6.1](https://github.com/structured-world/vue-privacy/compare/v1.6.0...v1.6.1) (2026-02-04)
+
+### Bug Fixes
+
+* non-EU users get all consent granted without storing ([#71](https://github.com/structured-world/vue-privacy/issues/71)) ([ffa7e53](https://github.com/structured-world/vue-privacy/commit/ffa7e534975f5983e6b4e00f3296bb1681ab28eb)), closes [#70](https://github.com/structured-world/vue-privacy/issues/70)
+
 ## [1.6.0](https://github.com/structured-world/vue-privacy/compare/v1.5.0...v1.6.0) (2026-02-04)
 
 ### Features
