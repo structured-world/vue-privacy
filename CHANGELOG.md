@@ -1,3 +1,9 @@
+## [1.6.2](https://github.com/structured-world/vue-privacy/compare/v1.6.1...v1.6.2) (2026-02-04)
+
+### Bug Fixes
+
+* **docs:** prevent race condition in BugReportWidget on close ([#73](https://github.com/structured-world/vue-privacy/issues/73)) ([3fe63ae](https://github.com/structured-world/vue-privacy/commit/3fe63ae1de31f5e765a5f1506ae753f19a763e0e)), closes [structured-world/vue-privacy#12](https://github.com/structured-world/vue-privacy/issues/12)
+
 ## [1.6.1](https://github.com/structured-world/vue-privacy/compare/v1.6.0...v1.6.1) (2026-02-04)
 
 ### Bug Fixes
