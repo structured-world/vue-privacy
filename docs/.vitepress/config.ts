@@ -92,11 +92,15 @@ export default defineConfig({
           ],
         },
         {
-          text: "Platform Integration",
+          text: "Analytics & Tracking",
           items: [
-            { text: "Privacy Platform", link: "/guide/platform" },
-            { text: "Analytics", link: "/guide/analytics" },
+            { text: "Analytics Overview", link: "/guide/analytics" },
+            { text: "Ecommerce Tracking", link: "/guide/ecommerce" },
           ],
+        },
+        {
+          text: "Platform Integration",
+          items: [{ text: "Privacy Platform", link: "/guide/platform" }],
         },
       ],
       "/api/": [

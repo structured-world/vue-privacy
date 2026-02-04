@@ -116,3 +116,121 @@ async function save() {
   </div>
 </template>
 ```
+
+## Event Tracking
+
+Track custom events, conversions, and ecommerce:
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const {
+  trackEvent,
+  trackPurchase,
+  trackAddToCart,
+  trackSignUp,
+  trackGenerateLead,
+} = useConsent();
+
+// Generic event
+function onShare() {
+  trackEvent('share', { method: 'twitter', content_type: 'article' });
+}
+
+// Ecommerce event
+function onAddToCart(product) {
+  trackAddToCart({
+    currency: 'USD',
+    value: product.price,
+    items: [{ item_id: product.sku, item_name: product.name, price: product.price }]
+  });
+}
+
+// Conversion event
+function onPurchase(order) {
+  trackPurchase({
+    transaction_id: order.id,
+    currency: 'USD',
+    value: order.total,
+    items: order.items.map(i => ({
+      item_id: i.sku,
+      item_name: i.name,
+      price: i.price,
+      quantity: i.qty,
+    }))
+  });
+}
+</script>
+```
+
+See [Ecommerce Tracking](/guide/ecommerce) for the full guide.
+
+## Vue Router Integration
+
+### Auto-tracking with Route Meta
+
+Define `ga4Event` in route meta to fire events automatically on navigation:
+
+```typescript
+// router/index.ts
+const routes = [
+  {
+    path: '/signup/complete',
+    component: SignupComplete,
+    meta: {
+      ga4Title: 'Registration Complete',  // Custom page title
+      ga4Event: { name: 'sign_up', params: { method: 'email' } }
+    }
+  }
+]
+```
+
+### Setup Router Tracking
+
+```typescript
+// main.ts
+import { createApp } from 'vue';
+import { createConsentManager } from '@structured-world/vue-privacy';
+import { setupRouterTracking } from '@structured-world/vue-privacy/vue';
+import router from './router';
+import App from './App.vue';
+
+const app = createApp(App);
+const manager = createConsentManager({ gaId: 'G-XXX', sendPageView: false });
+
+app.use(router);
+
+// Setup automatic page and event tracking
+setupRouterTracking(router, manager, {
+  beforeTrack: (to) => {
+    // Skip tracking for admin routes
+    if (to.path.startsWith('/admin')) return false;
+  },
+  afterTrack: (to, eventName) => {
+    console.log('Tracked:', to.path, eventName);
+  }
+});
+
+manager.init();
+app.mount('#app');
+```
+
+### TypeScript Support
+
+Import types for route meta:
+
+```typescript
+import '@structured-world/vue-privacy/vue';
+
+// Now TypeScript knows about ga4Title and ga4Event
+const routes = [
+  {
+    path: '/',
+    meta: {
+      ga4Title: 'Home',           // ✓ TypeScript knows this
+      ga4Event: { name: 'home' }  // ✓ And this
+    }
+  }
+]
+```

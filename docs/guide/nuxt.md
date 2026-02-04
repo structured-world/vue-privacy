@@ -83,6 +83,84 @@ export default defineNuxtPlugin((nuxtApp) => {
 });
 ```
 
+## Event Tracking
+
+Track custom events, conversions, and ecommerce in your components:
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const {
+  trackEvent,
+  trackPurchase,
+  trackAddToCart,
+  trackSignUp,
+} = useConsent();
+
+// Add to cart
+function onAddToCart(product) {
+  trackAddToCart({
+    currency: 'USD',
+    value: product.price,
+    items: [{ item_id: product.sku, item_name: product.name, price: product.price }]
+  });
+}
+
+// Complete purchase
+async function onCheckout(order) {
+  trackPurchase({
+    transaction_id: order.id,
+    currency: 'USD',
+    value: order.total,
+    items: order.items.map(i => ({
+      item_id: i.sku,
+      item_name: i.name,
+      price: i.price,
+      quantity: i.qty,
+    }))
+  });
+}
+</script>
+```
+
+### Route Meta Events
+
+Define events in page meta to fire automatically:
+
+```vue
+<!-- pages/signup/complete.vue -->
+<script setup>
+definePageMeta({
+  ga4Title: 'Registration Complete',
+  ga4Event: { name: 'sign_up', params: { method: 'email' } }
+});
+</script>
+```
+
+Then watch for route changes with ga4Event:
+
+```vue
+<!-- app.vue -->
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const route = useRoute();
+const { trackPageView, trackEvent } = useConsent();
+
+watch(() => route.fullPath, () => {
+  const meta = route.meta;
+  trackPageView(route.fullPath, meta.ga4Title);
+
+  if (meta.ga4Event) {
+    trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+  }
+});
+</script>
+```
+
+See [Ecommerce Tracking](/guide/ecommerce) for the full guide.
+
 ## Why Not a Nuxt Module?
 
 vue-privacy uses the standard Vue plugin API, which works perfectly with Nuxt 3's `defineNuxtPlugin`. A dedicated Nuxt module would add complexity without significant benefit — the Vue plugin already handles everything including SSR safety (via the `.client.ts` suffix).

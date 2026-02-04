@@ -269,3 +269,203 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(manager.getGeoResult()).toBeNull();
   });
 });
+
+describe("ConsentManager.trackEvent()", () => {
+  it("sends event when analytics consent is granted", async () => {
+    // Pre-set consent with analytics=true
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: true, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    // Mock gtag
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackEvent("sign_up", { method: "email" });
+
+    expect(gtagCalls).toContainEqual(["event", "sign_up", { method: "email" }]);
+  });
+
+  it("does not send event when analytics consent is denied", async () => {
+    // Pre-set consent with analytics=false
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: false, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    // Mock gtag
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackEvent("sign_up", { method: "email" });
+
+    // No event should be sent
+    expect(gtagCalls.filter((c) => c[0] === "event" && c[1] === "sign_up")).toHaveLength(0);
+  });
+
+  it("sends event without params", async () => {
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: true, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackEvent("test_event");
+
+    expect(gtagCalls).toContainEqual(["event", "test_event"]);
+  });
+});
+
+describe("ConsentManager ecommerce helpers", () => {
+  beforeEach(async () => {
+    // Pre-set consent with analytics=true
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: true, marketing: true, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+  });
+
+  it("trackPurchase sends purchase event with correct params", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackPurchase({
+      transaction_id: "ORDER_123",
+      currency: "USD",
+      value: 99.99,
+      shipping: 5.99,
+      items: [{ item_id: "SKU_1", item_name: "Widget", price: 99.99, quantity: 1 }],
+    });
+
+    const purchaseCall = gtagCalls.find((c) => c[1] === "purchase");
+    expect(purchaseCall).toBeDefined();
+    expect(purchaseCall![2]).toMatchObject({
+      transaction_id: "ORDER_123",
+      currency: "USD",
+      value: 99.99,
+      shipping: 5.99,
+    });
+  });
+
+  it("trackAddToCart sends add_to_cart event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackAddToCart({
+      currency: "USD",
+      value: 29.99,
+      items: [{ item_id: "SKU_2", item_name: "Gadget", price: 29.99 }],
+    });
+
+    const addToCartCall = gtagCalls.find((c) => c[1] === "add_to_cart");
+    expect(addToCartCall).toBeDefined();
+    expect(addToCartCall![2]).toMatchObject({
+      currency: "USD",
+      value: 29.99,
+    });
+  });
+
+  it("trackBeginCheckout sends begin_checkout event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackBeginCheckout({
+      currency: "EUR",
+      value: 50,
+      coupon: "SAVE10",
+      items: [{ item_id: "SKU_3", item_name: "Product", price: 50 }],
+    });
+
+    const checkoutCall = gtagCalls.find((c) => c[1] === "begin_checkout");
+    expect(checkoutCall).toBeDefined();
+    expect(checkoutCall![2]).toMatchObject({
+      currency: "EUR",
+      value: 50,
+      coupon: "SAVE10",
+    });
+  });
+
+  it("trackSignUp sends sign_up event with method", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackSignUp("google");
+
+    const signUpCall = gtagCalls.find((c) => c[1] === "sign_up");
+    expect(signUpCall).toBeDefined();
+    expect(signUpCall![2]).toEqual({ method: "google" });
+  });
+
+  it("trackSignUp sends sign_up event without method", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackSignUp();
+
+    const signUpCall = gtagCalls.find((c) => c[1] === "sign_up");
+    expect(signUpCall).toEqual(["event", "sign_up"]);
+  });
+
+  it("trackLogin sends login event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackLogin("email");
+
+    const loginCall = gtagCalls.find((c) => c[1] === "login");
+    expect(loginCall).toBeDefined();
+    expect(loginCall![2]).toEqual({ method: "email" });
+  });
+
+  it("trackGenerateLead sends generate_lead event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackGenerateLead({ value: 100, currency: "USD" });
+
+    const leadCall = gtagCalls.find((c) => c[1] === "generate_lead");
+    expect(leadCall).toBeDefined();
+    expect(leadCall![2]).toMatchObject({
+      value: 100,
+      currency: "USD",
+    });
+  });
+
+  it("trackViewItem sends view_item event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackViewItem({
+      currency: "USD",
+      value: 19.99,
+      items: [{ item_id: "SKU_4", item_name: "Book", price: 19.99 }],
+    });
+
+    const viewItemCall = gtagCalls.find((c) => c[1] === "view_item");
+    expect(viewItemCall).toBeDefined();
+  });
+});

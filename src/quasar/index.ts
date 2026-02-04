@@ -1,13 +1,22 @@
 import type { App } from "vue";
 import { watch, nextTick } from "vue";
 import type { Router } from "vue-router";
-import type { ConsentConfig } from "../core/types";
+import type { ConsentConfig, GA4RouteMeta } from "../core/types";
 import { createConsentManager } from "../core/consent-manager";
 import {
   createConsentPlugin as createBasePlugin,
   ConsentBanner,
   CONSENT_MANAGER_KEY,
 } from "../vue/index";
+import type { RouterMiddlewareOptions } from "../vue/router-middleware";
+
+/**
+ * Quasar boot options extending ConsentConfig
+ */
+export interface QuasarBootOptions extends ConsentConfig {
+  /** Router middleware options (beforeTrack, afterTrack) */
+  routerMiddleware?: RouterMiddlewareOptions;
+}
 
 /**
  * Quasar boot file for cookie consent with automatic SPA page tracking
@@ -16,6 +25,7 @@ import {
  * - Disables automatic page_view (SPA mode)
  * - Tracks initial page view after init
  * - Watches Vue Router for SPA navigation
+ * - Fires ga4Event from route meta
  *
  * @example
  * ```ts
@@ -27,8 +37,22 @@ import {
  *   gaId: 'G-XXXXXXXXXX',
  * }));
  * ```
+ *
+ * @example
+ * ```ts
+ * // With middleware options
+ * export default boot(consentBoot({
+ *   gaId: 'G-XXXXXXXXXX',
+ *   routerMiddleware: {
+ *     beforeTrack: (to) => !to.path.startsWith('/admin'),
+ *     afterTrack: (to, eventName) => console.log('Tracked:', to.path, eventName),
+ *   }
+ * }));
+ * ```
  */
-export function consentBoot(config: ConsentConfig) {
+export function consentBoot(options: QuasarBootOptions) {
+  const { routerMiddleware, ...config } = options;
+
   return ({ app, router }: { app: App; router?: Router }) => {
     const manager = createConsentManager({
       ...config,
@@ -47,8 +71,19 @@ export function consentBoot(config: ConsentConfig) {
       manager
         .init()
         .then(() => {
+          const route = router.currentRoute.value;
+          const meta = route.meta as GA4RouteMeta;
+
           nextTick(() => {
-            manager.trackPageView(router.currentRoute.value.fullPath);
+            manager.trackPageView(route.fullPath, meta.ga4Title ?? document.title);
+
+            // Fire initial ga4Event if defined
+            if (meta.ga4Event) {
+              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+              routerMiddleware?.afterTrack?.(route, meta.ga4Event.name);
+            } else {
+              routerMiddleware?.afterTrack?.(route);
+            }
           });
         })
         .catch((err) => {
@@ -59,10 +94,26 @@ export function consentBoot(config: ConsentConfig) {
       // No race condition: watch fires only on subsequent navigations (after init),
       // and trackPageView() safely checks consent state on each call.
       watch(
-        () => router.currentRoute.value.fullPath,
-        (path) => {
+        () => router.currentRoute.value,
+        async (to, from) => {
+          // Allow user to skip tracking via middleware
+          if (routerMiddleware?.beforeTrack) {
+            const shouldTrack = await routerMiddleware.beforeTrack(to, from);
+            if (shouldTrack === false) return;
+          }
+
+          const meta = to.meta as GA4RouteMeta;
+
           nextTick(() => {
-            manager.trackPageView(path, document.title);
+            manager.trackPageView(to.fullPath, meta.ga4Title ?? document.title);
+
+            // Fire ga4Event from route meta
+            if (meta.ga4Event) {
+              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+              routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
+            } else {
+              routerMiddleware?.afterTrack?.(to);
+            }
           });
         }
       );
@@ -93,5 +144,17 @@ export { ConsentBanner };
 // Re-export composable
 export { useConsent } from "../vue/index";
 
+// Re-export router middleware
+export { setupRouterTracking } from "../vue/router-middleware";
+export type { RouterMiddlewareOptions } from "../vue/router-middleware";
+
 // Re-export types
 export type { ConsentConfig } from "../core/types";
+export type {
+  GA4Item,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
+  GA4RouteEvent,
+  GA4RouteMeta,
+} from "../core/types";

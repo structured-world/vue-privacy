@@ -4,6 +4,9 @@ import type {
   ConsentCategories,
   ConsentStorage,
   GeoDetectionResult,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
@@ -22,6 +25,7 @@ import {
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
+  trackEvent as gtagTrackEvent,
 } from "./gtag";
 import { createGeoDetector } from "../geo/index";
 
@@ -355,6 +359,111 @@ export class ConsentManager {
       return;
     }
     gtagTrackPageView(path, title);
+  }
+
+  /**
+   * Track a custom event (GA4 recommended events, ecommerce, or custom).
+   * Skips sending if analytics consent has not been granted.
+   *
+   * @param eventName - GA4 event name (e.g., 'sign_up', 'purchase', 'add_to_cart')
+   * @param params - Event parameters
+   *
+   * @example
+   * ```typescript
+   * manager.trackEvent('sign_up', { method: 'email' });
+   * manager.trackEvent('purchase', { transaction_id: 'T_123', value: 99.99, currency: 'USD', items: [...] });
+   * ```
+   */
+  trackEvent(eventName: string, params?: Record<string, unknown>): void {
+    const stored = getStoredConsent(this.config);
+    if (stored && !stored.categories.analytics) {
+      return;
+    }
+    gtagTrackEvent(eventName, params);
+  }
+
+  /**
+   * Track a purchase event with typed parameters.
+   * @see https://developers.google.com/analytics/devguides/collection/ga4/ecommerce
+   */
+  trackPurchase(params: GA4PurchaseParams): void {
+    this.trackEvent("purchase", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_to_cart event.
+   */
+  trackAddToCart(params: GA4EcommerceParams): void {
+    this.trackEvent("add_to_cart", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track begin_checkout event.
+   */
+  trackBeginCheckout(params: GA4EcommerceParams): void {
+    this.trackEvent("begin_checkout", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track view_item event.
+   */
+  trackViewItem(params: GA4EcommerceParams): void {
+    this.trackEvent("view_item", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track view_item_list event.
+   */
+  trackViewItemList(
+    params: Omit<GA4EcommerceParams, "value"> & { item_list_id?: string; item_list_name?: string }
+  ): void {
+    this.trackEvent("view_item_list", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track select_item event (click on product in list).
+   */
+  trackSelectItem(
+    params: Omit<GA4EcommerceParams, "value"> & { item_list_id?: string; item_list_name?: string }
+  ): void {
+    this.trackEvent("select_item", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_shipping_info event.
+   */
+  trackAddShippingInfo(params: GA4EcommerceParams & { shipping_tier?: string }): void {
+    this.trackEvent("add_shipping_info", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_payment_info event.
+   */
+  trackAddPaymentInfo(params: GA4EcommerceParams & { payment_type?: string }): void {
+    this.trackEvent("add_payment_info", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track sign_up event.
+   * @param method - Registration method (e.g., 'email', 'google', 'facebook')
+   */
+  trackSignUp(method?: string): void {
+    this.trackEvent("sign_up", method ? { method } : undefined);
+  }
+
+  /**
+   * Track login event.
+   * @param method - Login method (e.g., 'email', 'google', 'facebook')
+   */
+  trackLogin(method?: string): void {
+    this.trackEvent("login", method ? { method } : undefined);
+  }
+
+  /**
+   * Track generate_lead event (form submission, contact request).
+   */
+  trackGenerateLead(params?: GA4GenerateLeadParams): void {
+    this.trackEvent("generate_lead", params as unknown as Record<string, unknown>);
   }
 
   /**

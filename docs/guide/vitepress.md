@@ -113,6 +113,54 @@ enhanceWithConsent(DefaultTheme, {
 });
 ```
 
+## Event Tracking
+
+Track custom events in your VitePress components:
+
+```vue
+<!-- docs/components/DownloadButton.vue -->
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const { trackEvent } = useConsent();
+
+function onDownload(file: string) {
+  trackEvent('file_download', {
+    file_name: file,
+    file_extension: file.split('.').pop(),
+  });
+}
+</script>
+
+<template>
+  <button @click="onDownload('guide.pdf')">Download PDF</button>
+</template>
+```
+
+### Lead Generation
+
+Track documentation-specific conversions:
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const { trackGenerateLead, trackSignUp } = useConsent();
+
+// Newsletter signup
+function onSubscribe(email: string) {
+  trackGenerateLead({ lead_source: 'docs_newsletter' });
+}
+
+// Account creation
+function onCreateAccount() {
+  trackSignUp('docs');
+}
+</script>
+```
+
+See [Ecommerce Tracking](/guide/ecommerce) for more event types.
+
 ## Styling
 
 The banner inherits VitePress CSS variables when possible. Override with:

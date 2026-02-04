@@ -104,6 +104,28 @@ export function useConsent() {
     resetConsent: () => manager.resetConsent(),
     /** Track a page view manually (for SPA navigation) */
     trackPageView: (path: string, title?: string) => manager.trackPageView(path, title),
+    /** Track a custom event (GA4 recommended events, ecommerce, or custom) */
+    trackEvent: (eventName: string, params?: Record<string, unknown>) =>
+      manager.trackEvent(eventName, params),
+    /** Track purchase event */
+    trackPurchase: (params: Parameters<typeof manager.trackPurchase>[0]) =>
+      manager.trackPurchase(params),
+    /** Track add_to_cart event */
+    trackAddToCart: (params: Parameters<typeof manager.trackAddToCart>[0]) =>
+      manager.trackAddToCart(params),
+    /** Track begin_checkout event */
+    trackBeginCheckout: (params: Parameters<typeof manager.trackBeginCheckout>[0]) =>
+      manager.trackBeginCheckout(params),
+    /** Track view_item event */
+    trackViewItem: (params: Parameters<typeof manager.trackViewItem>[0]) =>
+      manager.trackViewItem(params),
+    /** Track sign_up event */
+    trackSignUp: (method?: string) => manager.trackSignUp(method),
+    /** Track login event */
+    trackLogin: (method?: string) => manager.trackLogin(method),
+    /** Track generate_lead event */
+    trackGenerateLead: (params?: Parameters<typeof manager.trackGenerateLead>[0]) =>
+      manager.trackGenerateLead(params),
     /** Check if user is detected as EU */
     isEUUser: () => manager.isEUUser(),
     /** Get geo-detection result (country, method, isEU) */
@@ -125,5 +147,17 @@ export { ConsentBanner, ConsentPreferenceModal };
 export { consentBannerCSS } from "./banner-styles";
 export { consentModalCSS } from "./modal-styles";
 
+// Re-export router middleware
+export { setupRouterTracking } from "./router-middleware";
+export type { RouterMiddlewareOptions } from "./router-middleware";
+
 // Re-export types
 export type { ConsentConfig, ConsentManager };
+export type {
+  GA4Item,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
+  GA4RouteEvent,
+  GA4RouteMeta,
+} from "../core/types";

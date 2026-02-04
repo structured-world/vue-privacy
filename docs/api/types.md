@@ -149,3 +149,136 @@ import {
 const detector = new CloudflareGeoDetector();
 const result = await detector.detect();
 ```
+
+## GA4 Event Types
+
+Types for Google Analytics 4 event tracking.
+
+### GA4Item
+
+Product/item object for ecommerce events.
+
+```typescript
+interface GA4Item {
+  /** Required: SKU or product ID */
+  item_id: string;
+  /** Required: Product name */
+  item_name: string;
+  /** Unit price */
+  price?: number;
+  /** Quantity */
+  quantity?: number;
+  /** Brand name */
+  item_brand?: string;
+  /** Primary category */
+  item_category?: string;
+  /** Category hierarchy levels 2-5 */
+  item_category2?: string;
+  item_category3?: string;
+  item_category4?: string;
+  item_category5?: string;
+  /** Variant (size, color) */
+  item_variant?: string;
+  /** Coupon code */
+  coupon?: string;
+  /** Discount amount */
+  discount?: number;
+  /** Position in list */
+  index?: number;
+  /** List ID */
+  item_list_id?: string;
+  /** List name */
+  item_list_name?: string;
+}
+```
+
+### GA4EcommerceParams
+
+Parameters for ecommerce events (add_to_cart, begin_checkout, view_item, etc.)
+
+```typescript
+interface GA4EcommerceParams {
+  /** 3-letter ISO 4217 currency code (e.g., 'USD', 'EUR') */
+  currency: string;
+  /** Monetary value */
+  value: number;
+  /** Array of items (max 200) */
+  items: GA4Item[];
+  /** Coupon code */
+  coupon?: string;
+}
+```
+
+### GA4PurchaseParams
+
+Parameters for purchase event.
+
+```typescript
+interface GA4PurchaseParams extends GA4EcommerceParams {
+  /** Unique transaction ID (required) */
+  transaction_id: string;
+  /** Shipping cost */
+  shipping?: number;
+  /** Tax amount */
+  tax?: number;
+  /** Customer type */
+  customer_type?: 'new' | 'returning';
+}
+```
+
+### GA4GenerateLeadParams
+
+Parameters for generate_lead event.
+
+```typescript
+interface GA4GenerateLeadParams {
+  /** Monetary value of the lead */
+  value?: number;
+  /** Currency code */
+  currency?: string;
+  /** Lead source */
+  lead_source?: string;
+}
+```
+
+### GA4RouteMeta
+
+Route meta fields for Vue Router auto-tracking.
+
+```typescript
+interface GA4RouteMeta {
+  /** Custom page title for GA4 page_view event */
+  ga4Title?: string;
+  /** GA4 event to fire on navigation */
+  ga4Event?: {
+    name: string;
+    params?: Record<string, unknown>;
+  };
+}
+```
+
+### Usage Example
+
+```typescript
+import type {
+  GA4Item,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4RouteMeta,
+} from '@structured-world/vue-privacy';
+
+// Type your cart items
+const cartItems: GA4Item[] = [
+  { item_id: 'SKU_1', item_name: 'Widget', price: 9.99, quantity: 2 }
+];
+
+// Type your purchase params
+const purchaseData: GA4PurchaseParams = {
+  transaction_id: 'ORDER_123',
+  currency: 'USD',
+  value: 19.98,
+  items: cartItems,
+};
+
+manager.trackPurchase(purchaseData);
+```
