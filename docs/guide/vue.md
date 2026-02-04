@@ -168,7 +168,34 @@ See [Ecommerce Tracking](/guide/ecommerce) for the full guide.
 
 ## Vue Router Integration
 
-### Auto-tracking with Route Meta
+### Automatic Tracking (Recommended)
+
+Pass `router` to the plugin for automatic page view and event tracking:
+
+```typescript
+// main.ts
+import { createApp } from 'vue';
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+import router from './router';
+import App from './App.vue';
+
+const app = createApp(App);
+
+app.use(router);
+app.use(createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  router: router,  // Enables automatic SPA tracking
+}));
+
+app.mount('#app');
+```
+
+That's it! The plugin will automatically:
+- Track `page_view` on every navigation
+- Fire `ga4Event` from route meta
+- Use `ga4Title` as custom page title
+
+### Route Meta for Events
 
 Define `ga4Event` in route meta to fire events automatically on navigation:
 
@@ -186,27 +213,15 @@ const routes = [
 ]
 ```
 
-### Setup Router Tracking
+### Middleware Options
+
+Filter routes or add callbacks:
 
 ```typescript
-// main.ts
-import { createApp } from 'vue';
-import { createConsentManager } from '@structured-world/vue-privacy';
-import { setupRouterTracking } from '@structured-world/vue-privacy/vue';
-import router from './router';
-import App from './App.vue';
-
-const app = createApp(App);
-const manager = createConsentManager({ gaId: 'G-XXX', sendPageView: false });
-
-app.use(router);
-
-async function bootstrap() {
-  // Initialize consent manager first (loads gtag.js)
-  await manager.init();
-
-  // Then setup router tracking
-  setupRouterTracking(router, manager, {
+app.use(createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  router: router,
+  routerMiddleware: {
     beforeTrack: (to) => {
       // Skip tracking for admin routes
       if (to.path.startsWith('/admin')) return false;
@@ -214,8 +229,28 @@ async function bootstrap() {
     afterTrack: (to, eventName) => {
       console.log('Tracked:', to.path, eventName);
     }
-  });
+  }
+}));
+```
 
+### Manual Setup (Advanced)
+
+For more control, use `setupRouterTracking` directly:
+
+```typescript
+import { createApp } from 'vue';
+import { createConsentManager } from '@structured-world/vue-privacy';
+import { setupRouterTracking } from '@structured-world/vue-privacy/vue';
+import router from './router';
+
+const app = createApp(App);
+const manager = createConsentManager({ gaId: 'G-XXX', sendPageView: false });
+
+app.use(router);
+
+async function bootstrap() {
+  await manager.init();
+  setupRouterTracking(router, manager);
   app.mount('#app');
 }
 

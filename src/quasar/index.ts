@@ -1,5 +1,5 @@
 import type { App } from "vue";
-import { watch, nextTick } from "vue";
+import { nextTick } from "vue";
 import type { Router } from "vue-router";
 import type { ConsentConfig, GA4RouteMeta } from "../core/types";
 import { createConsentManager } from "../core/consent-manager";
@@ -24,7 +24,7 @@ export interface QuasarBootOptions extends ConsentConfig {
  * Automatically:
  * - Disables automatic page_view (SPA mode)
  * - Tracks initial page view after init
- * - Watches Vue Router for SPA navigation
+ * - Uses router.afterEach() for SPA navigation tracking
  * - Fires ga4Event from route meta
  *
  * @example
@@ -67,12 +67,18 @@ export function consentBoot(options: QuasarBootOptions) {
     app.component("ConsentBanner", ConsentBanner);
 
     if (router) {
-      // SPA mode: track initial page view after init, watch route changes
+      // Track initial path to avoid double-tracking (afterEach fires for initial nav in Vue Router 4)
+      let initialPath: string | null = null;
+
+      // SPA mode: track initial page view after init
       manager
         .init()
         .then(() => {
           const route = router.currentRoute.value;
           const meta = route.meta as GA4RouteMeta;
+
+          // Mark as handled to skip duplicate afterEach
+          initialPath = route.fullPath;
 
           nextTick(() => {
             // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
@@ -91,34 +97,36 @@ export function consentBoot(options: QuasarBootOptions) {
           console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
         });
 
-      // Vue watch does NOT fire on initial value by default — no duplicate tracking.
-      // No race condition: watch fires only on subsequent navigations (after init),
-      // and trackPageView() safely checks consent state on each call.
-      watch(
-        () => router.currentRoute.value,
-        async (to, from) => {
-          // Allow user to skip tracking via middleware
-          if (routerMiddleware?.beforeTrack) {
-            const shouldTrack = await routerMiddleware.beforeTrack(to, from);
-            if (shouldTrack === false) return;
-          }
-
-          const meta = to.meta as GA4RouteMeta;
-
-          nextTick(() => {
-            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-            manager.trackPageView(to.fullPath, meta.ga4Title);
-
-            // Fire ga4Event from route meta
-            if (meta.ga4Event) {
-              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-              routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
-            } else {
-              routerMiddleware?.afterTrack?.(to);
-            }
-          });
+      // Track subsequent navigations via router hook
+      router.afterEach(async (to, from) => {
+        // Skip if this is the initial navigation already handled by init()
+        if (initialPath !== null && to.fullPath === initialPath && from.fullPath === "/") {
+          initialPath = null;
+          return;
         }
-      );
+        initialPath = null;
+
+        // Allow user to skip tracking via middleware
+        if (routerMiddleware?.beforeTrack) {
+          const shouldTrack = await routerMiddleware.beforeTrack(to, from);
+          if (shouldTrack === false) return;
+        }
+
+        const meta = to.meta as GA4RouteMeta;
+
+        nextTick(() => {
+          // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+          manager.trackPageView(to.fullPath, meta.ga4Title);
+
+          // Fire ga4Event from route meta
+          if (meta.ga4Event) {
+            manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+            routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
+          } else {
+            routerMiddleware?.afterTrack?.(to);
+          }
+        });
+      });
     } else {
       // No router — fallback to automatic page_view from gtag
       manager.init().catch((err) => {
