@@ -210,6 +210,28 @@ describe("ConsentManager banner deferred show (bannerPending)", () => {
     // Non-EU user: banner never shown, bannerPending stays false
     expect(showBanner).not.toHaveBeenCalled();
   });
+
+  it("does not store consent for non-EU user on init (default state)", async () => {
+    // Ensure no cookies exist before test
+    cookieStore = "";
+
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false),
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    // Non-EU user: consent is applied but NOT stored (it's the default state)
+    // No consent_preferences cookie should be set
+    expect(cookieStore).not.toContain("consent_preferences");
+
+    // But hasConsent() should return false (no stored consent)
+    expect(manager.hasConsent()).toBe(false);
+
+    // getConsent() should return null (nothing stored)
+    expect(manager.getConsent()).toBeNull();
+  });
 });
 
 describe("ConsentManager.getGeoResult()", () => {
