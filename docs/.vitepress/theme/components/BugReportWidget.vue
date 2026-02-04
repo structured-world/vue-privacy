@@ -63,7 +63,9 @@ async function submit() {
 
   // Abort any previous in-flight request
   abortController.value?.abort();
-  abortController.value = new AbortController();
+  // Capture local reference to avoid race condition with rapid close/resubmit
+  const controller = new AbortController();
+  abortController.value = controller;
 
   state.value = "submitting";
   errorMessage.value = "";
@@ -79,7 +81,7 @@ async function submit() {
         category: category.value || undefined,
         honeypot: honeypot.value,
       }),
-      signal: abortController.value.signal,
+      signal: controller.signal,
     });
 
     // Guard: ignore response if widget was closed during request
@@ -112,7 +114,10 @@ async function submit() {
     errorMessage.value = "Network error. Please try again.";
     state.value = "error";
   } finally {
-    abortController.value = null;
+    // Only clear if this is still our controller (not replaced by a new request)
+    if (abortController.value === controller) {
+      abortController.value = null;
+    }
   }
 }
 
