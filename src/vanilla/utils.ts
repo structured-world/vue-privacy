@@ -26,14 +26,16 @@ export function escapeHtml(str: string): string {
  * Does NOT escape HTML entities - use escapeHtml() on the result when inserting into HTML.
  */
 export function sanitizeUrl(url: string): string {
-  const trimmed = url.trim().toLowerCase();
+  const trimmed = url.trim();
+  const lowered = trimmed.toLowerCase();
   // Block dangerous protocols
   if (
-    trimmed.startsWith("javascript:") ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("vbscript:")
+    lowered.startsWith("javascript:") ||
+    lowered.startsWith("data:") ||
+    lowered.startsWith("vbscript:")
   ) {
     return "#";
   }
-  return url;
+  // Return trimmed URL for consistency
+  return trimmed;
 }
