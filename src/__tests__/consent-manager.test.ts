@@ -422,6 +422,35 @@ describe("ConsentManager geo data persistence", () => {
     expect(stored.geoMethod).toBe("worker");
     expect(stored.countryCode).toBe("ES");
   });
+
+  it("stores geo data for non-EU user who explicitly saves preferences", async () => {
+    // Non-EU users normally get automatic "accept all" without storing consent.
+    // But if they visit preference center and save custom preferences,
+    // the geo data (isEU=false) should be persisted.
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "US",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+
+    // Non-EU user explicitly changes preferences through preference center
+    await manager.savePreferences({ analytics: true, marketing: false });
+
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    // Geo data should be stored even for non-EU users
+    expect(stored.isEU).toBe(false);
+    expect(stored.geoMethod).toBe("api");
+    expect(stored.countryCode).toBe("US");
+  });
 });
 
 describe("ConsentManager.trackEvent()", () => {

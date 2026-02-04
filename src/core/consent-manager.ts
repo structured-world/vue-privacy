@@ -259,7 +259,9 @@ export class ConsentManager {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     if (hasNonNecessary) {
-      // Include geo data so EU status can be restored on page reload
+      // Include geo data so EU status can be restored on page reload.
+      // Use ?? undefined to omit null values — if geo detection didn't run
+      // (isEU=null), we don't store it rather than storing null explicitly.
       storeConsent(
         {
           categories,

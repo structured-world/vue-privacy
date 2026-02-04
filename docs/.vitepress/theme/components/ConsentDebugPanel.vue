@@ -221,7 +221,7 @@ onMounted(() => {
               </table>
             </div>
           </template>
-          <div v-else class="debug-note">Not detected yet</div>
+          <div v-else class="debug-note">No geo data available</div>
         </div>
 
         <!-- Consent Categories -->
