@@ -3,6 +3,10 @@
 GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3, Quasar, VitePress, and plain HTML.
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
+[![npm downloads](https://img.shields.io/npm/dm/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/@structured-world/vue-privacy)](https://bundlephobia.com/package/@structured-world/vue-privacy)
+[![CI](https://github.com/structured-world/vue-privacy/actions/workflows/ci.yml/badge.svg)](https://github.com/structured-world/vue-privacy/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 **[Documentation](https://privacy.sw.foundation)** · [GitHub](https://github.com/structured-world/vue-privacy) · [npm](https://www.npmjs.com/package/@structured-world/vue-privacy)
