@@ -1,3 +1,9 @@
+## [1.7.0](https://github.com/structured-world/vue-privacy/compare/v1.6.2...v1.7.0) (2026-02-04)
+
+### Features
+
+* **vanilla:** add vanilla JS/CSS consent banner for non-Vue users ([#77](https://github.com/structured-world/vue-privacy/issues/77)) ([14719ee](https://github.com/structured-world/vue-privacy/commit/14719ee252b3e23cb5138d64957dfb34e935d55b)), closes [#72](https://github.com/structured-world/vue-privacy/issues/72) [#fff](https://github.com/structured-world/vue-privacy/issues/fff) [#1a1a1a](https://github.com/structured-world/vue-privacy/issues/1a1a1a)
+
 ## [1.6.2](https://github.com/structured-world/vue-privacy/compare/v1.6.1...v1.6.2) (2026-02-04)
 
 ### Bug Fixes
