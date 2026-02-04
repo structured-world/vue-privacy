@@ -1,8 +1,16 @@
 import type { App, Plugin } from "vue";
+import { inject } from "vue";
+// vue-router types for optional router integration.
+// NOTE: TypeScript still requires vue-router to be installed to resolve these types
+// during compilation. If you use the router integration features (router option in
+// createConsentPlugin), vue-router must be installed. The base consent plugin works
+// without vue-router at runtime if you don't use router tracking.
+import type { Router } from "vue-router";
 import type { ConsentConfig } from "../core/types";
 import { ConsentManager, createConsentManager } from "../core/consent-manager";
 import ConsentBanner from "./ConsentBanner.vue";
 import ConsentPreferenceModal from "./ConsentPreferenceModal.vue";
+import { setupRouterTracking, type RouterMiddlewareOptions } from "./router-middleware";
 
 /**
  * Vue plugin options
@@ -10,6 +18,10 @@ import ConsentPreferenceModal from "./ConsentPreferenceModal.vue";
 export interface ConsentPluginOptions extends ConsentConfig {
   /** Auto-initialize on plugin install */
   autoInit?: boolean;
+  /** Vue Router instance for automatic SPA tracking */
+  router?: Router;
+  /** Router middleware options (beforeTrack, afterTrack) */
+  routerMiddleware?: RouterMiddlewareOptions;
 }
 
 /**
@@ -22,22 +34,44 @@ export const CONSENT_MANAGER_KEY = Symbol("consentManager");
  *
  * @example
  * ```ts
+ * // Basic usage
  * import { createApp } from 'vue';
  * import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
  *
  * const app = createApp(App);
  * app.use(createConsentPlugin({
  *   gaId: 'G-XXXXXXXXXX',
- *   autoInit: true,
+ * }));
+ * ```
+ *
+ * @example
+ * ```ts
+ * // With automatic router tracking
+ * import { createApp } from 'vue';
+ * import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+ * import router from './router';
+ *
+ * const app = createApp(App);
+ * app.use(router);
+ * app.use(createConsentPlugin({
+ *   gaId: 'G-XXXXXXXXXX',
+ *   router: router,  // Enables automatic page_view tracking
+ *   routerMiddleware: {
+ *     beforeTrack: (to) => !to.path.startsWith('/admin'),
+ *   },
  * }));
  * ```
  */
 export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin {
-  const { autoInit = true, ...config } = options;
+  const { autoInit = true, router, routerMiddleware, ...config } = options;
 
   return {
     install(app: App) {
-      const manager = createConsentManager(config);
+      // Disable automatic page_view when router is provided (SPA mode)
+      const manager = createConsentManager({
+        ...config,
+        sendPageView: router ? false : config.sendPageView,
+      });
 
       // Provide manager for injection
       app.provide("consentManager", manager);
@@ -55,9 +89,21 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
           const result = originalMount(rootContainer, ...args);
 
           // Initialize after mount
-          manager.init().catch((err) => {
-            console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
-          });
+          manager
+            .init()
+            .then(() => {
+              // Setup router tracking after init if router provided.
+              // Note: Router tracking only auto-configures when autoInit=true (default).
+              // If autoInit=false, user must call setupRouterTracking() manually.
+              if (router) {
+                const cleanup = setupRouterTracking(router, manager, routerMiddleware);
+                // Store cleanup for manager.destroy() to call
+                manager.setRouterCleanup(cleanup);
+              }
+            })
+            .catch((err) => {
+              console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
+            });
 
           return result;
         };
@@ -104,6 +150,40 @@ export function useConsent() {
     resetConsent: () => manager.resetConsent(),
     /** Track a page view manually (for SPA navigation) */
     trackPageView: (path: string, title?: string) => manager.trackPageView(path, title),
+    /** Track a custom event (GA4 recommended events, ecommerce, or custom) */
+    trackEvent: (eventName: string, params?: Record<string, unknown>) =>
+      manager.trackEvent(eventName, params),
+    /** Track purchase event */
+    trackPurchase: (params: Parameters<typeof manager.trackPurchase>[0]) =>
+      manager.trackPurchase(params),
+    /** Track add_to_cart event */
+    trackAddToCart: (params: Parameters<typeof manager.trackAddToCart>[0]) =>
+      manager.trackAddToCart(params),
+    /** Track begin_checkout event */
+    trackBeginCheckout: (params: Parameters<typeof manager.trackBeginCheckout>[0]) =>
+      manager.trackBeginCheckout(params),
+    /** Track view_item event */
+    trackViewItem: (params: Parameters<typeof manager.trackViewItem>[0]) =>
+      manager.trackViewItem(params),
+    /** Track view_item_list event */
+    trackViewItemList: (params: Parameters<typeof manager.trackViewItemList>[0]) =>
+      manager.trackViewItemList(params),
+    /** Track select_item event */
+    trackSelectItem: (params: Parameters<typeof manager.trackSelectItem>[0]) =>
+      manager.trackSelectItem(params),
+    /** Track add_shipping_info event */
+    trackAddShippingInfo: (params: Parameters<typeof manager.trackAddShippingInfo>[0]) =>
+      manager.trackAddShippingInfo(params),
+    /** Track add_payment_info event */
+    trackAddPaymentInfo: (params: Parameters<typeof manager.trackAddPaymentInfo>[0]) =>
+      manager.trackAddPaymentInfo(params),
+    /** Track sign_up event */
+    trackSignUp: (method?: string) => manager.trackSignUp(method),
+    /** Track login event */
+    trackLogin: (method?: string) => manager.trackLogin(method),
+    /** Track generate_lead event */
+    trackGenerateLead: (params?: Parameters<typeof manager.trackGenerateLead>[0]) =>
+      manager.trackGenerateLead(params),
     /** Check if user is detected as EU */
     isEUUser: () => manager.isEUUser(),
     /** Get geo-detection result (country, method, isEU) */
@@ -115,9 +195,6 @@ export function useConsent() {
   };
 }
 
-// Need to import inject for useConsent
-import { inject } from "vue";
-
 // Re-export components
 export { ConsentBanner, ConsentPreferenceModal };
 
@@ -125,5 +202,17 @@ export { ConsentBanner, ConsentPreferenceModal };
 export { consentBannerCSS } from "./banner-styles";
 export { consentModalCSS } from "./modal-styles";
 
+// Re-export router middleware
+export { setupRouterTracking } from "./router-middleware";
+export type { RouterMiddlewareOptions } from "./router-middleware";
+
 // Re-export types
 export type { ConsentConfig, ConsentManager };
+export type {
+  GA4Item,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
+  GA4RouteEvent,
+  GA4RouteMeta,
+} from "../core/types";

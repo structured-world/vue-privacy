@@ -74,6 +74,87 @@ All exports are available under the global `VuePrivacy` namespace:
 </script>
 ```
 
+## Event Tracking
+
+Track conversions and ecommerce events:
+
+```html
+<script src="https://unpkg.com/@structured-world/vue-privacy"></script>
+<script>
+var manager = VuePrivacy.createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+});
+
+manager.init().then(function() {
+  // Track sign up
+  manager.trackSignUp('email');
+
+  // Track lead generation
+  manager.trackGenerateLead({ value: 100, currency: 'USD' });
+
+  // Track purchase
+  manager.trackPurchase({
+    transaction_id: 'ORDER_123',
+    currency: 'USD',
+    value: 99.99,
+    shipping: 5.99,
+    items: [
+      { item_id: 'SKU_1', item_name: 'Widget', price: 99.99, quantity: 1 }
+    ]
+  });
+
+  // Track add to cart
+  manager.trackAddToCart({
+    currency: 'USD',
+    value: 29.99,
+    items: [
+      { item_id: 'SKU_2', item_name: 'Gadget', price: 29.99, quantity: 1 }
+    ]
+  });
+
+  // Generic event
+  manager.trackEvent('share', { method: 'twitter' });
+});
+</script>
+```
+
+### Low-level Functions
+
+For direct gtag access:
+
+```html
+<script>
+// Direct trackEvent (bypasses consent check)
+VuePrivacy.trackEvent('custom_event', { param: 'value' });
+
+// Direct trackPageView
+VuePrivacy.trackPageView('/custom/path', 'Custom Title');
+</script>
+```
+
+## SPA Page Tracking (Manual)
+
+For single-page apps without Vue Router:
+
+```html
+<script>
+var manager = VuePrivacy.createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  sendPageView: false,  // Disable auto page_view
+});
+
+manager.init().then(function() {
+  // Track initial page
+  manager.trackPageView(window.location.pathname);
+});
+
+// On navigation (e.g., with vanilla router)
+function onNavigate(path, title) {
+  manager.trackPageView(path, title);
+}
+</script>
+```
+
 ## Available Exports
 
 The UMD build exposes these under `VuePrivacy`:
@@ -87,14 +168,30 @@ The UMD build exposes these under `VuePrivacy`:
 | `DEFAULT_CONFIG` | Default configuration values |
 | `initGoogleAnalytics(gaId)` | Initialize GA4 manually |
 | `trackPageView(path, title?)` | Track a page view |
+| `trackEvent(name, params?)` | Track a custom event |
 | `getStoredConsent(config?)` | Read consent from cookie |
 | `storeConsent(consent, config?)` | Write consent to cookie |
 | `clearConsent(config?)` | Remove consent cookie |
+
+### ConsentManager Methods
+
+| Method | Description |
+|--------|-------------|
+| `trackEvent(name, params?)` | Track custom GA4 event |
+| `trackPurchase(params)` | Track purchase event |
+| `trackAddToCart(params)` | Track add to cart event |
+| `trackBeginCheckout(params)` | Track checkout start |
+| `trackViewItem(params)` | Track product view |
+| `trackSignUp(method?)` | Track registration |
+| `trackLogin(method?)` | Track login |
+| `trackGenerateLead(params?)` | Track lead generation |
+
+See [Ecommerce Tracking](/guide/ecommerce) for full parameter documentation.
 
 ## Bundle Size
 
 | Format | Size | Gzipped |
 |--------|------|---------|
-| IIFE (CDN) | ~10 kB | ~3.5 kB |
-| UMD (require) | ~10 kB | ~3.6 kB |
-| ES module | ~18 kB | ~4.8 kB |
+| IIFE (CDN) | ~31 kB | ~11 kB |
+| UMD (require) | ~31 kB | ~11 kB |
+| ES module | ~47 kB | ~13 kB |

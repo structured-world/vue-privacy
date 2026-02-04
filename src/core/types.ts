@@ -130,6 +130,128 @@ export interface BannerConfig {
 export type { SupportedLocale } from "../i18n/types";
 
 /**
+ * GA4 Item object for ecommerce events.
+ * Per GA4 spec, at least one of item_id or item_name is required.
+ * Note: TypeScript cannot enforce "at least one of" constraint with a simple interface.
+ * The GA4 API validates this at runtime and logs warnings for invalid items.
+ * @see https://developers.google.com/analytics/devguides/collection/ga4/reference/events
+ */
+export interface GA4Item {
+  /** SKU or product ID (required if item_name not provided) */
+  item_id?: string;
+  /** Product name (required if item_id not provided) */
+  item_name?: string;
+  /** Affiliate or partner name */
+  affiliation?: string;
+  /** Coupon code applied to item */
+  coupon?: string;
+  /** Discount amount */
+  discount?: number;
+  /** Index/position in list */
+  index?: number;
+  /** Brand name */
+  item_brand?: string;
+  /** Primary category */
+  item_category?: string;
+  /** Category hierarchy level 2 */
+  item_category2?: string;
+  /** Category hierarchy level 3 */
+  item_category3?: string;
+  /** Category hierarchy level 4 */
+  item_category4?: string;
+  /** Category hierarchy level 5 */
+  item_category5?: string;
+  /** List ID where item was shown */
+  item_list_id?: string;
+  /** List name */
+  item_list_name?: string;
+  /** Variant (size, color) */
+  item_variant?: string;
+  /** Google Business location ID */
+  location_id?: string;
+  /** Unit price */
+  price?: number;
+  /** Quantity */
+  quantity?: number;
+}
+
+/**
+ * GA4 Ecommerce event parameters (add_to_cart, begin_checkout, view_item, etc.)
+ */
+export interface GA4EcommerceParams {
+  /** 3-letter ISO 4217 currency code (e.g., 'USD', 'EUR') */
+  currency: string;
+  /** Monetary value */
+  value: number;
+  /** Array of items (max 200) */
+  items: GA4Item[];
+  /** Coupon code */
+  coupon?: string;
+}
+
+/**
+ * GA4 Purchase event parameters.
+ * @see https://developers.google.com/analytics/devguides/collection/ga4/ecommerce
+ */
+export interface GA4PurchaseParams extends GA4EcommerceParams {
+  /** Unique transaction ID (required for purchase) */
+  transaction_id: string;
+  /** Shipping cost */
+  shipping?: number;
+  /** Tax amount */
+  tax?: number;
+  /** Customer type */
+  customer_type?: "new" | "returning";
+}
+
+/**
+ * GA4 Generate Lead event parameters
+ */
+export interface GA4GenerateLeadParams {
+  /** Monetary value of the lead */
+  value?: number;
+  /** Currency code */
+  currency?: string;
+  /** Lead source (custom parameter) */
+  lead_source?: string;
+}
+
+/**
+ * GA4 event definition for route meta.
+ */
+export interface GA4RouteEvent {
+  /** GA4 event name (e.g., 'sign_up', 'generate_lead', 'purchase') */
+  name: string;
+  /** Event parameters */
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Route meta fields for GA4 analytics integration with Vue Router.
+ * Add these to your route definitions to automatically track events on navigation.
+ *
+ * @example
+ * ```typescript
+ * const routes = [
+ *   {
+ *     path: '/signup/complete',
+ *     component: SignupComplete,
+ *     meta: {
+ *       ga4Title: 'Registration Complete',
+ *       ga4Event: { name: 'sign_up', params: { method: 'email' } }
+ *     }
+ *   }
+ * ]
+ * ```
+ */
+export interface GA4RouteMeta {
+  /** Custom page title for GA4 page_view event (overrides document.title) */
+  ga4Title?: string;
+  /** GA4 event to fire automatically on page visit */
+  ga4Event?: GA4RouteEvent;
+}
+
+/**
  * Main plugin configuration
  */
 export interface ConsentConfig {

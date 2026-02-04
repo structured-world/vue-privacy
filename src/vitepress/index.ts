@@ -1,8 +1,35 @@
 import type { Theme } from "vitepress";
 import { watch, nextTick } from "vue";
-import type { ConsentConfig } from "../core/types";
+import type { ConsentConfig, GA4RouteEvent } from "../core/types";
+// DESIGN DECISION: vue/index imports vue-router types for router integration.
+// TypeScript requires vue-router for compilation, but peerDependenciesMeta marks it optional.
+// VitePress users: `npm i -D vue-router` satisfies TypeScript without runtime impact.
+// Alternative (extracting shared code without vue-router) adds complexity for minimal benefit.
+// See: https://github.com/structured-world/vue-privacy/issues/68
 import { createConsentPlugin, ConsentBanner, CONSENT_MANAGER_KEY } from "../vue/index";
 import { createConsentManager } from "../core/consent-manager";
+
+/**
+ * VitePress frontmatter fields for GA4 tracking.
+ * Add these to your markdown files' frontmatter.
+ *
+ * @example
+ * ```md
+ * ---
+ * ga4Title: Custom Page Title
+ * ga4Event:
+ *   name: sign_up
+ *   params:
+ *     method: docs
+ * ---
+ * ```
+ */
+export interface VitePressGA4Frontmatter {
+  /** Custom page title for GA4 page_view event */
+  ga4Title?: string;
+  /** GA4 event to fire when page is viewed */
+  ga4Event?: GA4RouteEvent;
+}
 
 /**
  * VitePress theme enhancement for cookie consent with SPA page tracking
@@ -52,10 +79,18 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           .init()
           .then(() => {
             // Track initial page view after init completes.
-            // For EU users with denied consent, Google Consent Mode accepts
-            // the event but does not store it until consent is granted.
+            // Before user choice: sent under Consent Mode defaults (cookieless).
+            // After explicit denial (analytics: false): events are NOT sent.
             nextTick(() => {
-              manager.trackPageView(window.location.pathname);
+              const frontmatter = ctx.router?.route.data.frontmatter as
+                | VitePressGA4Frontmatter
+                | undefined;
+              manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
+
+              // Fire ga4Event from frontmatter if defined
+              if (frontmatter?.ga4Event) {
+                manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+              }
             });
           })
           .catch((err) => {
@@ -67,9 +102,20 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           watch(
             () => ctx.router.route.path,
             (path: string) => {
+              // Capture frontmatter BEFORE nextTick to avoid race condition
+              // (user might navigate again before nextTick fires)
+              const frontmatter = ctx.router.route.data.frontmatter as
+                | VitePressGA4Frontmatter
+                | undefined;
+
               // Wait for Vue to update DOM (including document.title)
               nextTick(() => {
-                manager.trackPageView(path);
+                manager.trackPageView(path, frontmatter?.ga4Title);
+
+                // Fire ga4Event from frontmatter if defined
+                if (frontmatter?.ga4Event) {
+                  manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+                }
               });
             },
             // Initial page view is tracked after init(); don't fire on watch setup
@@ -110,4 +156,4 @@ export { createConsentPlugin, ConsentBanner };
 export { useConsent } from "../vue/index";
 
 // Re-export core types
-export type { ConsentConfig } from "../core/types";
+export type { ConsentConfig, GA4RouteEvent } from "../core/types";

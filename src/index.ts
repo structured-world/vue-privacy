@@ -37,6 +37,7 @@ export {
   initGoogleAnalytics,
   categoriesToGoogleSignals,
   trackPageView,
+  trackEvent,
 } from "./core/gtag";
 export { DEFAULT_CONFIG } from "./core/types";
 
@@ -69,6 +70,13 @@ export type {
   PreferenceCenterConfig,
   CategoryDisplayConfig,
   SupportedLocale,
+  // GA4 event types
+  GA4Item,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
+  GA4RouteEvent,
+  GA4RouteMeta,
 } from "./core/types";
 
 export type {

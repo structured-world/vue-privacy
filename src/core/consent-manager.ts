@@ -4,6 +4,9 @@ import type {
   ConsentCategories,
   ConsentStorage,
   GeoDetectionResult,
+  GA4EcommerceParams,
+  GA4PurchaseParams,
+  GA4GenerateLeadParams,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
@@ -22,6 +25,7 @@ import {
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
+  trackEvent as gtagTrackEvent,
 } from "./gtag";
 import { createGeoDetector } from "../geo/index";
 
@@ -41,6 +45,7 @@ export class ConsentManager {
   private showPreferenceCenterCallback: (() => void) | null = null;
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
+  private routerCleanup: (() => void) | null = null;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -347,14 +352,136 @@ export class ConsentManager {
 
   /**
    * Track a page view manually (for SPA navigation).
-   * Skips sending if analytics consent has not been granted.
+   * Skips sending if analytics consent is explicitly denied.
+   * Before user makes a choice, page views are sent under Consent Mode defaults (cookieless pings).
    */
   trackPageView(path: string, title?: string): void {
     const stored = getStoredConsent(this.config);
+    // Intentional: Only suppress when user EXPLICITLY denied analytics.
+    // Before user makes a choice (no cookie), page views are sent under Google Consent Mode v2
+    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
     if (stored && !stored.categories.analytics) {
       return;
     }
     gtagTrackPageView(path, title);
+  }
+
+  /**
+   * Track a custom event (GA4 recommended events, ecommerce, or custom).
+   * Skips sending if analytics consent is explicitly denied.
+   * Before user makes a choice, events are sent under Consent Mode defaults (cookieless pings).
+   *
+   * @param eventName - GA4 event name (e.g., 'sign_up', 'purchase', 'add_to_cart')
+   * @param params - Event parameters
+   *
+   * @example
+   * ```typescript
+   * manager.trackEvent('sign_up', { method: 'email' });
+   * manager.trackEvent('purchase', { transaction_id: 'T_123', value: 99.99, currency: 'USD', items: [...] });
+   * ```
+   */
+  trackEvent(eventName: string, params?: Record<string, unknown>): void {
+    // Read consent state fresh on every call — handles runtime changes from
+    // acceptAll/rejectAll/savePreferences without needing instance state sync.
+    // NOTE: getStoredConsent() reads from cookie on each call, so consent changes
+    // made via acceptAll/rejectAll/savePreferences are reflected immediately.
+    const stored = getStoredConsent(this.config);
+    // Intentional: Only suppress when user EXPLICITLY denied analytics.
+    // Before user makes a choice (no cookie), events are sent under Google Consent Mode v2
+    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
+    if (stored && !stored.categories.analytics) {
+      return;
+    }
+    gtagTrackEvent(eventName, params);
+  }
+
+  // --- Typed GA4 Ecommerce Helpers ---
+  // Cast to Record<string, unknown> is intentional: these methods provide strict
+  // compile-time types for GA4 params while trackEvent() stays flexible for custom events.
+  // The cast is safe because GA4 params are plain objects compatible with gtag().
+
+  /**
+   * Track a purchase event with typed parameters.
+   * @see https://developers.google.com/analytics/devguides/collection/ga4/ecommerce
+   */
+  trackPurchase(params: GA4PurchaseParams): void {
+    this.trackEvent("purchase", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_to_cart event.
+   */
+  trackAddToCart(params: GA4EcommerceParams): void {
+    this.trackEvent("add_to_cart", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track begin_checkout event.
+   */
+  trackBeginCheckout(params: GA4EcommerceParams): void {
+    this.trackEvent("begin_checkout", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track view_item event.
+   */
+  trackViewItem(params: GA4EcommerceParams): void {
+    this.trackEvent("view_item", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track view_item_list event.
+   */
+  trackViewItemList(
+    params: Omit<GA4EcommerceParams, "value"> & { item_list_id?: string; item_list_name?: string }
+  ): void {
+    this.trackEvent("view_item_list", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track select_item event (click on product in list).
+   */
+  trackSelectItem(
+    params: Omit<GA4EcommerceParams, "value"> & { item_list_id?: string; item_list_name?: string }
+  ): void {
+    this.trackEvent("select_item", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_shipping_info event.
+   */
+  trackAddShippingInfo(params: GA4EcommerceParams & { shipping_tier?: string }): void {
+    this.trackEvent("add_shipping_info", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track add_payment_info event.
+   */
+  trackAddPaymentInfo(params: GA4EcommerceParams & { payment_type?: string }): void {
+    this.trackEvent("add_payment_info", params as unknown as Record<string, unknown>);
+  }
+
+  /**
+   * Track sign_up event.
+   * @param method - Registration method (e.g., 'email', 'google', 'facebook')
+   */
+  trackSignUp(method?: string): void {
+    this.trackEvent("sign_up", method ? { method } : undefined);
+  }
+
+  /**
+   * Track login event.
+   * @param method - Login method (e.g., 'email', 'google', 'facebook')
+   */
+  trackLogin(method?: string): void {
+    this.trackEvent("login", method ? { method } : undefined);
+  }
+
+  /**
+   * Track generate_lead event (form submission, contact request).
+   */
+  trackGenerateLead(params?: GA4GenerateLeadParams): void {
+    this.trackEvent("generate_lead", params as Record<string, unknown> | undefined);
   }
 
   /**
@@ -387,12 +514,26 @@ export class ConsentManager {
   }
 
   /**
-   * Clean up resources (script blocker observer, etc.).
+   * Register router tracking cleanup function.
+   * Called internally by setupRouterTracking when used with the Vue plugin.
+   * @internal
+   */
+  setRouterCleanup(cleanup: (() => void) | null): void {
+    // Call previous cleanup before overwriting (in case router tracking is re-initialized)
+    this.routerCleanup?.();
+    this.routerCleanup = cleanup;
+  }
+
+  /**
+   * Clean up resources (script blocker observer, router tracking, etc.).
    * Call when unmounting the app.
    */
   destroy(): void {
     this.scriptBlockerCleanup?.();
     this.scriptBlockerCleanup = null;
+
+    this.routerCleanup?.();
+    this.routerCleanup = null;
 
     this.consentChangeListeners.length = 0;
     this.showBannerCallback = null;

@@ -14,6 +14,12 @@ export default enhanceWithConsent(DefaultTheme, {
 });
 ```
 
+::: tip TypeScript Users
+Add `vue-router` as a dev dependency for type resolution: `npm i -D vue-router`
+
+This is only needed for TypeScript compilation — vue-router is not used at runtime (VitePress has its own router).
+:::
+
 That's it. This automatically:
 
 - **Loads `gtag.js`** with Google Consent Mode v2 defaults
@@ -33,6 +39,52 @@ VitePress is a single-page app — navigating between pages doesn't trigger a fu
 4. Sends `page_view` events with correct `page_path` and `page_title` after DOM updates
 
 You don't need to write any router watching code.
+
+## Frontmatter Events
+
+Fire GA4 events automatically when users visit specific pages using frontmatter:
+
+```md
+---
+# docs/pricing.md
+ga4Title: Pricing Page
+ga4Event:
+  name: view_pricing
+  params:
+    page_type: pricing
+---
+
+# Pricing
+
+Choose your plan...
+```
+
+```md
+---
+# docs/signup-success.md
+ga4Title: Registration Complete
+ga4Event:
+  name: sign_up
+  params:
+    method: docs
+---
+
+# Welcome!
+
+Thank you for signing up.
+```
+
+**Supported frontmatter fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ga4Title` | `string` | Custom page title for `page_view` event |
+| `ga4Event` | `{ name, params? }` | GA4 event to fire on page view |
+
+Events fire automatically when the user navigates to the page. This is useful for:
+- Tracking conversions (sign up pages, thank you pages)
+- Measuring engagement with specific content
+- A/B testing page variations
 
 ## Custom Theme with Layout Slots
 
@@ -91,6 +143,10 @@ export default {
 When using manual setup, you'll need to implement your own router watching for SPA page tracking. The `enhanceWithConsent` function does this automatically.
 :::
 
+::: tip Skip Initial Tracking
+`enhanceWithConsent` always tracks the initial page view. If you need to skip it (e.g., for custom analytics logic), use the manual setup and implement your own tracking with `useConsent().trackPageView()`.
+:::
+
 ## Configuration
 
 All standard options are supported:
@@ -112,6 +168,54 @@ enhanceWithConsent(DefaultTheme, {
   },
 });
 ```
+
+## Event Tracking
+
+Track custom events in your VitePress components:
+
+```vue
+<!-- docs/components/DownloadButton.vue -->
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const { trackEvent } = useConsent();
+
+function onDownload(file: string) {
+  trackEvent('file_download', {
+    file_name: file,
+    file_extension: file.split('.').pop(),
+  });
+}
+</script>
+
+<template>
+  <button @click="onDownload('guide.pdf')">Download PDF</button>
+</template>
+```
+
+### Lead Generation
+
+Track documentation-specific conversions:
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const { trackGenerateLead, trackSignUp } = useConsent();
+
+// Newsletter signup
+function onSubscribe(email: string) {
+  trackGenerateLead({ lead_source: 'docs_newsletter' });
+}
+
+// Account creation
+function onCreateAccount() {
+  trackSignUp('docs');
+}
+</script>
+```
+
+See [Ecommerce Tracking](/guide/ecommerce) for more event types.
 
 ## Styling
 

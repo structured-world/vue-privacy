@@ -117,6 +117,40 @@ export function trackPageView(path: string, title?: string): void {
 }
 
 /**
+ * Track a custom event (GA4 recommended events, ecommerce, or custom).
+ *
+ * **WARNING:** This is a low-level function that sends directly to gtag without
+ * checking consent. For consent-aware tracking, use `ConsentManager.trackEvent()`
+ * or the `useConsent().trackEvent()` composable instead.
+ *
+ * @param eventName - Event name (e.g., 'sign_up', 'purchase', 'add_to_cart')
+ * @param params - Event parameters
+ *
+ * @example
+ * ```typescript
+ * // Sign up event
+ * trackEvent('sign_up', { method: 'email' });
+ *
+ * // Purchase event
+ * trackEvent('purchase', {
+ *   transaction_id: 'T_12345',
+ *   value: 99.99,
+ *   currency: 'USD',
+ *   items: [{ item_id: 'SKU_1', item_name: 'Product', price: 99.99, quantity: 1 }]
+ * });
+ * ```
+ */
+export function trackEvent(eventName: string, params?: Record<string, unknown>): void {
+  if (typeof window === "undefined" || typeof window.gtag !== "function") return;
+
+  if (params && Object.keys(params).length > 0) {
+    window.gtag("event", eventName, params);
+  } else {
+    window.gtag("event", eventName);
+  }
+}
+
+/**
  * Initialize Google Analytics with consent defaults
  *
  * @param gaId - Google Analytics measurement ID
