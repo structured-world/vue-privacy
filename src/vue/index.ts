@@ -155,6 +155,10 @@ async function setupRouterTrackingInternal(
 
   // Register afterEach AFTER initial tracking is complete.
   // This ensures no race condition with Vue Router 4's initial navigation event.
+  // Note: We intentionally register afterEach after beforeTrack completes. While this
+  // means navigations during async beforeTrack won't be tracked, registering earlier
+  // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
+  // in double-tracking. The timing window is negligible in practice (app mount phase).
   router.afterEach(async (to, from) => {
     // Allow user to skip tracking
     if (beforeTrack) {

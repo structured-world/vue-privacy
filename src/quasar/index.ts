@@ -104,6 +104,9 @@ export function consentBoot(options: QuasarBootOptions) {
           // Register afterEach AFTER initial tracking is complete.
           // This prevents race condition where Vue Router 4's initial afterEach fires
           // before init() resolves, which would cause double-tracking.
+          // Note: We intentionally register afterEach after beforeTrack completes. While this
+          // means navigations during async beforeTrack won't be tracked, registering earlier
+          // would cause double-tracking. The timing window is negligible in practice.
           router.afterEach(async (to, from) => {
             // Allow user to skip tracking via middleware
             if (routerMiddleware?.beforeTrack) {
