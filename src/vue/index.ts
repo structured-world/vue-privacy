@@ -91,10 +91,13 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
           manager
             .init()
             .then(() => {
-              // Setup router tracking after init if router provided
-              // Uses setupRouterTracking which handles its own error catching
+              // Setup router tracking after init if router provided.
+              // Note: Router tracking only auto-configures when autoInit=true (default).
+              // If autoInit=false, user must call setupRouterTracking() manually.
               if (router) {
-                setupRouterTracking(router, manager, routerMiddleware);
+                const cleanup = setupRouterTracking(router, manager, routerMiddleware);
+                // Store cleanup for manager.destroy() to call
+                manager.setRouterCleanup(cleanup);
               }
             })
             .catch((err) => {

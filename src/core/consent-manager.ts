@@ -45,6 +45,7 @@ export class ConsentManager {
   private showPreferenceCenterCallback: (() => void) | null = null;
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
+  private routerCleanup: (() => void) | null = null;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -509,12 +510,24 @@ export class ConsentManager {
   }
 
   /**
-   * Clean up resources (script blocker observer, etc.).
+   * Register router tracking cleanup function.
+   * Called internally by setupRouterTracking when used with the Vue plugin.
+   * @internal
+   */
+  setRouterCleanup(cleanup: (() => void) | null): void {
+    this.routerCleanup = cleanup;
+  }
+
+  /**
+   * Clean up resources (script blocker observer, router tracking, etc.).
    * Call when unmounting the app.
    */
   destroy(): void {
     this.scriptBlockerCleanup?.();
     this.scriptBlockerCleanup = null;
+
+    this.routerCleanup?.();
+    this.routerCleanup = null;
 
     this.consentChangeListeners.length = 0;
     this.showBannerCallback = null;
