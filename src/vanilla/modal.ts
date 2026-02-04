@@ -4,10 +4,12 @@
  */
 
 import { getTranslations } from "../i18n/index";
+import { escapeHtml } from "./utils";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption
 export const MODAL_CSS = `/* Vue Privacy - Vanilla Modal Styles */
+:root,[data-consent-theme="light"]{--consent-modal-bg:#fff;--consent-modal-text:#1a1a1a;--consent-modal-text-secondary:#666;--consent-modal-border:#e0e0e0;--consent-toggle-bg-on:#0066cc;--consent-toggle-bg-off:#ccc;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-font:system-ui,-apple-system,sans-serif}
 .consent-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:1rem;box-sizing:border-box}
 .consent-modal-overlay *,.consent-modal-overlay *::before,.consent-modal-overlay *::after{box-sizing:border-box}
 .consent-modal-overlay--hidden{display:none}
@@ -361,23 +363,6 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
  */
 function setThemeAttribute(el: HTMLElement, theme: VanillaTheme): void {
   el.setAttribute("data-consent-theme", theme);
-}
-
-/** HTML entity map for escaping */
-const HTML_ESCAPE_MAP: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-/**
- * Escape HTML special characters for safe DOM insertion.
- * Uses string replacement for better performance than DOM-based approach.
- */
-function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
 }
 
 // Re-export types

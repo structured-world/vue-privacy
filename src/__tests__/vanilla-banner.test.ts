@@ -313,4 +313,79 @@ describe("createBanner", () => {
 
     banner.destroy();
   });
+
+  it("sanitizes dangerous protocols in privacy link URL", () => {
+    const managerWithJsUrl = createConsentManager({
+      euDetection: "never",
+      banner: {
+        privacyLink: "javascript:alert('xss')",
+      },
+    });
+
+    const banner = createBanner({ manager: managerWithJsUrl });
+    const linkEl = document.querySelector(".consent-banner__privacy-link") as HTMLAnchorElement;
+
+    // javascript: protocol should be replaced with #
+    expect(linkEl.href).not.toContain("javascript:");
+    expect(linkEl.getAttribute("href")).toBe("#");
+
+    banner.destroy();
+  });
+
+  it("sanitizes data: protocol in privacy link URL", () => {
+    const managerWithDataUrl = createConsentManager({
+      euDetection: "never",
+      banner: {
+        privacyLink: "data:text/html,<script>alert('xss')</script>",
+      },
+    });
+
+    const banner = createBanner({ manager: managerWithDataUrl });
+    const linkEl = document.querySelector(".consent-banner__privacy-link") as HTMLAnchorElement;
+
+    // data: protocol should be replaced with #
+    expect(linkEl.getAttribute("href")).toBe("#");
+
+    banner.destroy();
+  });
+
+  it("preserves valid URLs with query parameters", () => {
+    const managerWithQueryUrl = createConsentManager({
+      euDetection: "never",
+      banner: {
+        privacyLink: "/privacy?ref=banner&utm_source=consent",
+      },
+    });
+
+    const banner = createBanner({ manager: managerWithQueryUrl });
+    const linkEl = document.querySelector(".consent-banner__privacy-link") as HTMLAnchorElement;
+
+    // Query params should be preserved (& not double-encoded)
+    expect(linkEl.getAttribute("href")).toContain("ref=banner");
+    expect(linkEl.getAttribute("href")).toContain("utm_source=consent");
+
+    banner.destroy();
+  });
+
+  it("escapes HTML special characters in URL attributes", () => {
+    const managerWithSpecialChars = createConsentManager({
+      euDetection: "never",
+      banner: {
+        privacyLink: '/privacy" onclick="alert(1)',
+      },
+    });
+
+    const banner = createBanner({ manager: managerWithSpecialChars });
+    const linkEl = document.querySelector(".consent-banner__privacy-link") as HTMLAnchorElement;
+
+    // The raw HTML should have escaped quotes to prevent attribute injection
+    // Note: getAttribute() decodes entities, so we check outerHTML directly
+    const outerHtml = linkEl.outerHTML;
+    // Quotes should be encoded as &quot; so onclick isn't interpreted as a new attribute
+    expect(outerHtml).not.toContain('onclick="alert');
+    // The href should contain the escaped quote
+    expect(outerHtml).toContain("&quot;");
+
+    banner.destroy();
+  });
 });

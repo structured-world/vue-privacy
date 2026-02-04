@@ -4,6 +4,7 @@
  */
 
 import { getTranslations } from "../i18n/index";
+import { escapeHtml, sanitizeUrl } from "./utils";
 import type {
   VanillaBannerOptions,
   VanillaBannerInstance,
@@ -13,6 +14,7 @@ import type {
 
 // Raw CSS string for inline injection or external stylesheet consumption
 export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
+:root,[data-consent-theme="light"]{--consent-bg:#fff;--consent-text:#1a1a1a;--consent-text-secondary:#666;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#e0e0e0;--consent-btn-reject-text:#1a1a1a;--consent-font:system-ui,-apple-system,sans-serif}
 .consent-banner{position:fixed;left:0;right:0;z-index:9999;padding:1rem;background:var(--consent-bg,#fff);color:var(--consent-text,#1a1a1a);box-shadow:0 -2px 10px rgba(0,0,0,.1);font-family:var(--consent-font,system-ui,-apple-system,sans-serif);box-sizing:border-box}
 .consent-banner *,.consent-banner *::before,.consent-banner *::after{box-sizing:border-box}
 .consent-banner--bottom{bottom:0}
@@ -133,7 +135,7 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
       <h2 id="consent-banner-title" class="consent-banner__title">${escapeHtml(title)}</h2>
       <p id="consent-banner-message" class="consent-banner__message">
         ${escapeHtml(message)}
-        ${privacyLink ? ` <a href="${sanitizeUrl(privacyLink)}" class="consent-banner__privacy-link" target="_blank" rel="noopener">${escapeHtml(privacyLinkText)}</a>` : ""}
+        ${privacyLink ? ` <a href="${escapeHtml(sanitizeUrl(privacyLink))}" class="consent-banner__privacy-link" target="_blank" rel="noopener">${escapeHtml(privacyLinkText)}</a>` : ""}
       </p>
     </div>
     <div class="consent-banner__actions">
@@ -215,42 +217,6 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
  */
 function setThemeAttribute(el: HTMLElement, theme: VanillaTheme): void {
   el.setAttribute("data-consent-theme", theme);
-}
-
-/** HTML entity map for escaping */
-const HTML_ESCAPE_MAP: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-/**
- * Escape HTML special characters for safe DOM insertion.
- * Uses string replacement for better performance than DOM-based approach.
- */
-function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
-}
-
-/**
- * Sanitize URL for use in href attribute.
- * Blocks dangerous protocols (javascript:, data:, vbscript:) while allowing
- * relative paths, http/https URLs, and tel/mailto links.
- * Does NOT escape HTML entities to preserve query parameters with &.
- */
-function sanitizeUrl(url: string): string {
-  const trimmed = url.trim().toLowerCase();
-  // Block dangerous protocols
-  if (
-    trimmed.startsWith("javascript:") ||
-    trimmed.startsWith("data:") ||
-    trimmed.startsWith("vbscript:")
-  ) {
-    return "#";
-  }
-  return url;
 }
 
 // Re-export types
