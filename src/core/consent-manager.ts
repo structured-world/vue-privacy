@@ -199,15 +199,16 @@ export class ConsentManager {
       }
       this.config.onBannerShow?.();
     } else {
-      // Non-EU user: grant consent silently
+      // Non-EU user: grant all consent silently (same as "Accept All").
+      // Don't store — this is the default state for unrestricted jurisdictions.
+      // Consent will only be stored if user explicitly changes preferences.
       const grantedCategories = {
         analytics: true,
-        marketing: this.config.categories?.marketing ?? false,
+        marketing: true,
         functional: true,
       };
 
       await this.applyConsent(grantedCategories);
-      this.saveConsentWithRemote(grantedCategories);
     }
   }
 
