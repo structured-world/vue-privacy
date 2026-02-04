@@ -20,6 +20,7 @@ export default defineConfig({
         "vue/index": resolve(__dirname, "src/vue/index.ts"),
         "vitepress/index": resolve(__dirname, "src/vitepress/index.ts"),
         "quasar/index": resolve(__dirname, "src/quasar/index.ts"),
+        "vanilla/index": resolve(__dirname, "src/vanilla/index.ts"),
       },
       formats: ["es"],
     },

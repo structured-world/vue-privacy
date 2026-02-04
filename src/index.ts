@@ -57,6 +57,16 @@ export { initScriptBlocker, unblockScriptsByCategory } from "./core/script-block
 // i18n exports
 export { detectLocale, getTranslations, mergeTranslations } from "./i18n/index";
 
+// Vanilla JS components (banner and modal for non-Vue users)
+export {
+  createBanner,
+  createModal,
+  injectVanillaBannerStyles,
+  injectVanillaModalStyles,
+  BANNER_CSS,
+  MODAL_CSS,
+} from "./vanilla/index";
+
 // Type exports
 export type {
   ConsentConfig,
@@ -85,3 +95,13 @@ export type {
   PreferenceCenterTranslations,
   CategoryTranslations,
 } from "./i18n/types";
+
+// Vanilla component types
+export type {
+  VanillaBannerOptions,
+  VanillaBannerInstance,
+  VanillaModalOptions,
+  VanillaModalInstance,
+  VanillaTheme,
+  BannerPosition,
+} from "./vanilla/types";
