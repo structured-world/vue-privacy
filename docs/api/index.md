@@ -203,3 +203,44 @@ import { clearConsent } from '@structured-world/vue-privacy';
 
 clearConsent();
 ```
+
+### createKVStorage
+
+Create a remote consent storage backed by a Cloudflare KV Worker (vue-privacy-worker compatible API).
+
+```typescript
+import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
+
+// Basic usage
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  storage: createKVStorage('/api/consent'),
+});
+
+// With rate limiting options
+const storage = createKVStorage('/api/consent', {
+  maxRetries: 5,
+  onRateLimited: (retryAfter, attempt) => {
+    console.log(`Rate limited (attempt ${attempt}). Retry in ${retryAfter ?? 'exponential'}s`);
+  },
+});
+```
+
+#### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `maxRetries` | `number` | `3` | Maximum retry attempts on 429 responses |
+| `onRateLimited` | `function` | - | Callback invoked on each 429 response |
+
+#### Rate Limiting Behavior
+
+When the server returns a 429 (Too Many Requests) response:
+
+1. **Retry with exponential backoff**: 1s, 2s, 4s delays between attempts
+2. **Respect Retry-After header**: If the server sends a `Retry-After` header, that delay is used instead
+3. **Graceful fallback**: After max retries, returns `null` (consent stored locally via cookie only)
+
+The `onRateLimited` callback receives:
+- `retryAfter` - Delay from server's Retry-After header (in seconds), or `null` if not provided
+- `attempt` - Current attempt number (1-based)

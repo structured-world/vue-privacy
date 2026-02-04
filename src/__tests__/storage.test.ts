@@ -246,7 +246,7 @@ describe("createKVStorage", () => {
 
     expect(result).not.toBeNull();
     expect(result!.categories.analytics).toBe(true);
-    expect(fetch).toHaveBeenCalledWith("/api/consent?id=uid-abc");
+    expect(fetch).toHaveBeenCalledWith("/api/consent?id=uid-abc", { method: "GET" });
   });
 
   it("set() pushes consent to the provided URL and returns UUID", async () => {
@@ -289,5 +289,178 @@ describe("createKVStorage", () => {
 
     const id = await storage.set(null, consent);
     expect(id).toBeNull();
+  });
+});
+
+describe("createKVStorage rate limiting", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("retries on 429 with exponential backoff (default 3 retries)", async () => {
+    // First 2 calls return 429, third succeeds
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "retry-success" })));
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    // Start the set operation
+    const setPromise = storage.set(null, consent);
+
+    // First attempt fails with 429, waits 1s (2^0 * 1000)
+    await vi.advanceTimersByTimeAsync(1000);
+
+    // Second attempt fails with 429, waits 2s (2^1 * 1000)
+    await vi.advanceTimersByTimeAsync(2000);
+
+    // Third attempt succeeds
+    const id = await setPromise;
+
+    expect(id).toBe("retry-success");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("respects Retry-After header when present", async () => {
+    // Return 429 with Retry-After: 5 (seconds)
+    const headers = new Headers();
+    headers.set("Retry-After", "5");
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "after-retry" })));
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Should wait 5 seconds as specified in Retry-After header
+    await vi.advanceTimersByTimeAsync(5000);
+
+    const id = await setPromise;
+    expect(id).toBe("after-retry");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns null after max retries exhausted", async () => {
+    // All 3 attempts return 429
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 429 }));
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: false, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Wait for all retry delays: 1s + 2s = 3s (no wait after 3rd attempt)
+    await vi.advanceTimersByTimeAsync(1000); // After 1st retry
+    await vi.advanceTimersByTimeAsync(2000); // After 2nd retry
+
+    const id = await setPromise;
+
+    // Should return null (graceful fallback to local storage)
+    expect(id).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("calls onRateLimited callback on each 429 response", async () => {
+    const headers = new Headers();
+    headers.set("Retry-After", "10");
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(new Response(null, { status: 429 })) // No Retry-After
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "callback-test" })));
+
+    const onRateLimited = vi.fn();
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // First 429 with Retry-After: 10
+    await vi.advanceTimersByTimeAsync(10000);
+
+    // Second 429 without Retry-After (exponential: 2s)
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await setPromise;
+
+    // Callback should be called twice (once per 429)
+    expect(onRateLimited).toHaveBeenCalledTimes(2);
+    expect(onRateLimited).toHaveBeenNthCalledWith(1, 10, 1); // retryAfter=10, attempt=1
+    expect(onRateLimited).toHaveBeenNthCalledWith(2, null, 2); // retryAfter=null, attempt=2
+  });
+
+  it("supports custom maxRetries option", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "custom-retry" })));
+
+    const storage = createKVStorage("/api/consent", { maxRetries: 2 });
+    const consent = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const id = await setPromise;
+    expect(id).toBe("custom-retry");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries GET requests on 429", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            found: true,
+            consent: {
+              categories: { analytics: true, marketing: false, functional: true },
+              version: "1.0",
+              timestamp: 1700000000000,
+            },
+          })
+        )
+      );
+
+    const storage = createKVStorage("/api/consent");
+    const getPromise = storage.get("uid-retry", "1.0");
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const result = await getPromise;
+    expect(result).not.toBeNull();
+    expect(result!.categories.analytics).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
