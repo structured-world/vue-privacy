@@ -140,7 +140,11 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
   const bannerEl = document.createElement("div");
   bannerEl.className = `consent-banner consent-banner--${validatedPosition} consent-banner--hidden`;
   bannerEl.setAttribute("role", "dialog");
-  bannerEl.setAttribute("aria-modal", "true");
+  // aria-modal only appropriate for center position which blocks page interaction.
+  // Bottom/top banners don't trap focus, so aria-modal would be semantically incorrect.
+  if (validatedPosition === "center") {
+    bannerEl.setAttribute("aria-modal", "true");
+  }
   bannerEl.setAttribute("aria-labelledby", "consent-banner-title");
   bannerEl.setAttribute("aria-describedby", "consent-banner-message");
   setThemeAttribute(bannerEl, validatedTheme);

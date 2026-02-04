@@ -256,11 +256,29 @@ describe("createBanner", () => {
     const bannerEl = document.querySelector(".consent-banner");
 
     expect(bannerEl!.getAttribute("role")).toBe("dialog");
-    expect(bannerEl!.getAttribute("aria-modal")).toBe("true");
+    // aria-modal is not set for bottom position (default) since it doesn't block interaction
+    expect(bannerEl!.getAttribute("aria-modal")).toBeNull();
     expect(bannerEl!.getAttribute("aria-labelledby")).toBe("consent-banner-title");
     expect(bannerEl!.getAttribute("aria-describedby")).toBe("consent-banner-message");
 
     banner.destroy();
+  });
+
+  it("sets aria-modal only for center position", () => {
+    const bannerCenter = createBanner({ manager, position: "center" });
+    const bannerEl = document.querySelector(".consent-banner");
+    expect(bannerEl!.getAttribute("aria-modal")).toBe("true");
+    bannerCenter.destroy();
+
+    const bannerBottom = createBanner({ manager, position: "bottom" });
+    const bannerElBottom = document.querySelector(".consent-banner");
+    expect(bannerElBottom!.getAttribute("aria-modal")).toBeNull();
+    bannerBottom.destroy();
+
+    const bannerTop = createBanner({ manager, position: "top" });
+    const bannerElTop = document.querySelector(".consent-banner");
+    expect(bannerElTop!.getAttribute("aria-modal")).toBeNull();
+    bannerTop.destroy();
   });
 
   it("destroy() removes the banner from DOM", () => {
