@@ -23,7 +23,13 @@
     "./quasar": {
       "types": "./dist/quasar/index.d.ts",
       "import": "./dist/quasar/index.js"
-    }
+    },
+    "./vanilla": {
+      "types": "./dist/vanilla/index.d.ts",
+      "import": "./dist/vanilla/index.js"
+    },
+    "./banner.css": "./dist/vue-privacy-banner.css",
+    "./modal.css": "./dist/vue-privacy-modal.css"
   },
   "main": "./dist/vue-privacy.umd.cjs",
   "module": "./dist/index.js",
@@ -72,7 +78,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "vite build && vite build --config vite.config.umd.ts && vue-tsc --project tsconfig.build.json --emitDeclarationOnly",
+    "build": "vite build && vite build --config vite.config.umd.ts && vite build --config vite.config.vanilla.ts && vue-tsc --project tsconfig.build.json --emitDeclarationOnly",
     "dev": "vite build --watch",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src/",
