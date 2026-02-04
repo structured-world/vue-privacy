@@ -20,6 +20,7 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 - **Script Blocking** — Block third-party scripts until consent is granted
 - **i18n** — 13 built-in locales (en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko)
 - **Remote Storage** — Pluggable backend for cross-device consent sync
+- **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
 - **UMD/CDN** — Use via `<script>` tag, no build tools needed
 - **TypeScript** — Full type safety
@@ -78,6 +79,18 @@ import { enhanceWithConsent } from '@structured-world/vue-privacy/vitepress';
 export default enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
 });
+```
+
+Fire GA4 events from frontmatter:
+
+```md
+---
+ga4Title: Pricing Page
+ga4Event:
+  name: view_pricing
+  params:
+    page_type: pricing
+---
 ```
 
 ### Quasar
@@ -181,12 +194,31 @@ interface ConsentConfig {
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
+  // Consent management
   acceptAll,
   rejectAll,
   hasConsent,
   resetConsent,
   showPreferenceCenter,
+  // GA4 event tracking
+  trackEvent,
+  trackPurchase,
+  trackAddToCart,
+  trackViewItem,
+  trackSignUp,
+  trackLogin,
 } = useConsent();
+
+// Track custom event
+trackEvent('button_click', { button_id: 'hero-cta' });
+
+// Track purchase
+trackPurchase({
+  transaction_id: 'T12345',
+  value: 99.99,
+  currency: 'USD',
+  items: [{ item_id: 'SKU123', item_name: 'Product', price: 99.99 }],
+});
 </script>
 
 <template>
@@ -301,6 +333,7 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 | Preference center modal | ✅ |
 | Google Consent Mode v2 | ✅ |
 | GA4 integration | ✅ |
+| GA4 event tracking (ecommerce, conversions) | ✅ |
 | EU geo-detection | ✅ |
 | Script blocking | ✅ |
 | i18n (13 locales) | ✅ |
