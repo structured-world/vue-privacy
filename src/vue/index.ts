@@ -106,19 +106,28 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
 /**
  * Internal router tracking setup (used by plugin when router option is provided)
  */
-function setupRouterTrackingInternal(
+async function setupRouterTrackingInternal(
   router: Router,
   manager: ConsentManager,
   options: RouterMiddlewareOptions = {}
-): void {
+): Promise<void> {
   const { beforeTrack, afterTrack } = options;
 
   // Track initial page view
   const route = router.currentRoute.value;
-  const meta = route.meta as GA4RouteMeta;
 
-  // Store initial path to skip duplicate afterEach
-  let initialPath: string | null = route.fullPath;
+  // Apply beforeTrack to initial navigation too
+  if (beforeTrack) {
+    const shouldTrack = await beforeTrack(route, route);
+    if (shouldTrack === false) {
+      // Skip initial tracking but still setup afterEach
+      setupAfterEach();
+      return;
+    }
+  }
+
+  const meta = route.meta as GA4RouteMeta;
+  let initialHandled = true;
 
   nextTick(() => {
     manager.trackPageView(route.fullPath, meta.ga4Title);
@@ -131,34 +140,37 @@ function setupRouterTrackingInternal(
     }
   });
 
-  // Track subsequent navigations
-  router.afterEach(async (to, from) => {
-    // Skip if this is the initial navigation already handled above
-    if (initialPath !== null && to.fullPath === initialPath && from.fullPath === "/") {
-      initialPath = null;
-      return;
-    }
-    initialPath = null;
+  setupAfterEach();
 
-    // Allow user to skip tracking
-    if (beforeTrack) {
-      const shouldTrack = await beforeTrack(to, from);
-      if (shouldTrack === false) return;
-    }
-
-    const toMeta = to.meta as GA4RouteMeta;
-
-    nextTick(() => {
-      manager.trackPageView(to.fullPath, toMeta.ga4Title);
-
-      if (toMeta.ga4Event) {
-        manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
-        afterTrack?.(to, toMeta.ga4Event.name);
-      } else {
-        afterTrack?.(to);
+  function setupAfterEach() {
+    // Track subsequent navigations
+    router.afterEach(async (to, from) => {
+      // Skip initial navigation if already handled above
+      if (initialHandled && from.fullPath === "/") {
+        initialHandled = false;
+        return;
       }
+
+      // Allow user to skip tracking
+      if (beforeTrack) {
+        const shouldTrack = await beforeTrack(to, from);
+        if (shouldTrack === false) return;
+      }
+
+      const toMeta = to.meta as GA4RouteMeta;
+
+      nextTick(() => {
+        manager.trackPageView(to.fullPath, toMeta.ga4Title);
+
+        if (toMeta.ga4Event) {
+          manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
+          afterTrack?.(to, toMeta.ga4Event.name);
+        } else {
+          afterTrack?.(to);
+        }
+      });
     });
-  });
+  }
 }
 
 /**

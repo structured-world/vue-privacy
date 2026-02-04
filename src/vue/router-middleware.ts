@@ -80,18 +80,25 @@ export function setupRouterTracking(
 ): void {
   const { beforeTrack, afterTrack, trackInitial = true } = options;
 
-  // Store the initial route path to detect and skip duplicate tracking
-  // Vue Router 4 fires afterEach for initial navigation, but we handle it via isReady()
-  let initialPath: string | null = null;
+  // Track whether initial navigation has been handled
+  let initialHandled = false;
 
   // Track initial page view via isReady (preferred - ensures route is fully resolved)
   if (trackInitial) {
-    router.isReady().then(() => {
+    router.isReady().then(async () => {
       const route = router.currentRoute.value;
-      const meta = route.meta as GA4RouteMeta;
 
-      // Mark this path as handled by isReady
-      initialPath = route.fullPath;
+      // Apply beforeTrack to initial navigation too
+      if (beforeTrack) {
+        const shouldTrack = await beforeTrack(route, route);
+        if (shouldTrack === false) {
+          initialHandled = true;
+          return;
+        }
+      }
+
+      const meta = route.meta as GA4RouteMeta;
+      initialHandled = true;
 
       nextTick(() => {
         // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
@@ -109,14 +116,12 @@ export function setupRouterTracking(
 
   // Track subsequent navigations
   router.afterEach(async (to, from) => {
-    // Skip if this is the initial navigation already handled by isReady
-    // (Vue Router 4 fires afterEach for initial navigation too)
-    if (initialPath !== null && to.fullPath === initialPath && from.fullPath === "/") {
-      // Clear after skipping so subsequent navigations to same path work
-      initialPath = null;
+    // Skip initial navigation - handled by isReady() above or disabled via trackInitial=false
+    // Vue Router 4 fires afterEach for initial navigation (from.fullPath is "/" on first load)
+    if (!initialHandled && from.fullPath === "/") {
+      initialHandled = true;
       return;
     }
-    initialPath = null; // Clear for subsequent navigations
 
     // Allow user to skip tracking
     if (beforeTrack) {

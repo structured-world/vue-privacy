@@ -67,18 +67,26 @@ export function consentBoot(options: QuasarBootOptions) {
     app.component("ConsentBanner", ConsentBanner);
 
     if (router) {
-      // Track initial path to avoid double-tracking (afterEach fires for initial nav in Vue Router 4)
-      let initialPath: string | null = null;
+      // Track whether initial navigation has been handled
+      let initialHandled = false;
 
       // SPA mode: track initial page view after init
       manager
         .init()
-        .then(() => {
+        .then(async () => {
           const route = router.currentRoute.value;
-          const meta = route.meta as GA4RouteMeta;
 
-          // Mark as handled to skip duplicate afterEach
-          initialPath = route.fullPath;
+          // Apply beforeTrack to initial navigation too
+          if (routerMiddleware?.beforeTrack) {
+            const shouldTrack = await routerMiddleware.beforeTrack(route, route);
+            if (shouldTrack === false) {
+              initialHandled = true;
+              return;
+            }
+          }
+
+          const meta = route.meta as GA4RouteMeta;
+          initialHandled = true;
 
           nextTick(() => {
             // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
@@ -99,12 +107,12 @@ export function consentBoot(options: QuasarBootOptions) {
 
       // Track subsequent navigations via router hook
       router.afterEach(async (to, from) => {
-        // Skip if this is the initial navigation already handled by init()
-        if (initialPath !== null && to.fullPath === initialPath && from.fullPath === "/") {
-          initialPath = null;
+        // Skip initial navigation - handled by init() above
+        // Vue Router 4 fires afterEach for initial navigation (from.fullPath is "/" on first load)
+        if (!initialHandled && from.fullPath === "/") {
+          initialHandled = true;
           return;
         }
-        initialPath = null;
 
         // Allow user to skip tracking via middleware
         if (routerMiddleware?.beforeTrack) {
