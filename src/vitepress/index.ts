@@ -74,8 +74,8 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           .init()
           .then(() => {
             // Track initial page view after init completes.
-            // For EU users with denied consent, Google Consent Mode accepts
-            // the event but does not store it until consent is granted.
+            // Before user choice: sent under Consent Mode defaults (cookieless).
+            // After explicit denial (analytics: false): events are NOT sent.
             nextTick(() => {
               const frontmatter = ctx.router?.route.data.frontmatter as
                 | VitePressGA4Frontmatter
