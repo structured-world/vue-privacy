@@ -208,7 +208,7 @@ describe("AutoGeoDetector detection log", () => {
 
     expect(result.log![1].method).toBe("worker");
     expect(result.log![1].status).toBe("skipped");
-    expect(result.log![1].error).toBe("No geoUrl configured");
+    expect(result.log![1].error).toBeUndefined(); // skipped != failed, no error
 
     expect(result.log![2].method).toBe("api");
     expect(result.log![2].status).toBe("success");

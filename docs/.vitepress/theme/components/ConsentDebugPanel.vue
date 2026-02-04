@@ -166,6 +166,7 @@ onMounted(() => {
             <button
               v-if="geoLog.length > 0"
               class="debug-section-toggle debug-log-toggle"
+              :aria-expanded="showGeoLog"
               @click="showGeoLog = !showGeoLog"
             >
               Detection Log {{ showGeoLog ? "▾" : "▸" }}
@@ -259,7 +260,11 @@ onMounted(() => {
 
         <!-- Cookies (collapsible) -->
         <div class="debug-section">
-          <button class="debug-section-toggle" @click="showCookies = !showCookies">
+          <button
+            class="debug-section-toggle"
+            :aria-expanded="showCookies"
+            @click="showCookies = !showCookies"
+          >
             Cookies {{ showCookies ? "▾" : "▸" }}
           </button>
           <div v-if="showCookies" class="debug-cookies">

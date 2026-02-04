@@ -154,7 +154,11 @@ export class ConsentManager {
     const stored = getStoredConsent(this.config);
 
     if (stored) {
-      // Restore EU status and geo result from stored consent
+      // Restore EU status and geo result from stored consent.
+      // This handles both EU users (isEU=true) and non-EU users who explicitly
+      // changed their preferences (isEU=false). Non-EU users normally don't store
+      // consent (they get automatic "accept all"), but if they visit preference
+      // center and save, their choice is persisted with geo data.
       if (stored.isEU !== undefined) {
         this.isEU = stored.isEU;
         this.geoResult = {

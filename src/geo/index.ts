@@ -243,10 +243,10 @@ export class AutoGeoDetector implements GeoDetector {
         });
       }
     } else {
+      // Worker skipped (not a failure, just not configured)
       log.push({
         method: "worker",
         status: "skipped",
-        error: "No geoUrl configured",
         duration: 0,
       });
     }
