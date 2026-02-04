@@ -1,3 +1,9 @@
+## [1.7.1](https://github.com/structured-world/vue-privacy/compare/v1.7.0...v1.7.1) (2026-02-04)
+
+### Bug Fixes
+
+* persist EU status in consent cookie and show in debug panel ([#80](https://github.com/structured-world/vue-privacy/issues/80)) ([f543d0a](https://github.com/structured-world/vue-privacy/commit/f543d0af51a8480de57750fd11a995917fddd9f6)), closes [structured-world/vue-privacy#76](https://github.com/structured-world/vue-privacy/issues/76)
+
 ## [1.7.0](https://github.com/structured-world/vue-privacy/compare/v1.6.2...v1.7.0) (2026-02-04)
 
 ### Features
