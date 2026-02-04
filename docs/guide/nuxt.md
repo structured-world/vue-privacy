@@ -143,6 +143,7 @@ Then watch for route changes with ga4Event:
 ```vue
 <!-- app.vue -->
 <script setup>
+import { watch } from 'vue';
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const route = useRoute();

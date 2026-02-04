@@ -89,7 +89,9 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
             .then(() => {
               // Setup router tracking after init if router provided
               if (router) {
-                setupRouterTrackingInternal(router, manager, routerMiddleware);
+                setupRouterTrackingInternal(router, manager, routerMiddleware).catch((err) => {
+                  console.error("[@structured-world/vue-privacy] Router tracking error:", err);
+                });
               }
             })
             .catch((err) => {
@@ -116,6 +118,9 @@ async function setupRouterTrackingInternal(
   // Track initial page view
   const route = router.currentRoute.value;
 
+  // Declare before setupAfterEach() which uses it
+  let initialHandled = true;
+
   // Apply beforeTrack to initial navigation too
   if (beforeTrack) {
     const shouldTrack = await beforeTrack(route, route);
@@ -127,7 +132,6 @@ async function setupRouterTrackingInternal(
   }
 
   const meta = route.meta as GA4RouteMeta;
-  let initialHandled = true;
 
   nextTick(() => {
     manager.trackPageView(route.fullPath, meta.ga4Title);

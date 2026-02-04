@@ -1,8 +1,30 @@
 import type { Theme } from "vitepress";
 import { watch, nextTick } from "vue";
-import type { ConsentConfig } from "../core/types";
+import type { ConsentConfig, GA4RouteEvent } from "../core/types";
 import { createConsentPlugin, ConsentBanner, CONSENT_MANAGER_KEY } from "../vue/index";
 import { createConsentManager } from "../core/consent-manager";
+
+/**
+ * VitePress frontmatter fields for GA4 tracking.
+ * Add these to your markdown files' frontmatter.
+ *
+ * @example
+ * ```md
+ * ---
+ * ga4Title: Custom Page Title
+ * ga4Event:
+ *   name: sign_up
+ *   params:
+ *     method: docs
+ * ---
+ * ```
+ */
+export interface VitePressGA4Frontmatter {
+  /** Custom page title for GA4 page_view event */
+  ga4Title?: string;
+  /** GA4 event to fire when page is viewed */
+  ga4Event?: GA4RouteEvent;
+}
 
 /**
  * VitePress theme enhancement for cookie consent with SPA page tracking
@@ -55,7 +77,15 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
             // For EU users with denied consent, Google Consent Mode accepts
             // the event but does not store it until consent is granted.
             nextTick(() => {
-              manager.trackPageView(window.location.pathname);
+              const frontmatter = ctx.router?.route.data.frontmatter as
+                | VitePressGA4Frontmatter
+                | undefined;
+              manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
+
+              // Fire ga4Event from frontmatter if defined
+              if (frontmatter?.ga4Event) {
+                manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+              }
             });
           })
           .catch((err) => {
@@ -69,7 +99,15 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
             (path: string) => {
               // Wait for Vue to update DOM (including document.title)
               nextTick(() => {
-                manager.trackPageView(path);
+                const frontmatter = ctx.router.route.data.frontmatter as
+                  | VitePressGA4Frontmatter
+                  | undefined;
+                manager.trackPageView(path, frontmatter?.ga4Title);
+
+                // Fire ga4Event from frontmatter if defined
+                if (frontmatter?.ga4Event) {
+                  manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+                }
               });
             },
             // Initial page view is tracked after init(); don't fire on watch setup
@@ -110,4 +148,4 @@ export { createConsentPlugin, ConsentBanner };
 export { useConsent } from "../vue/index";
 
 // Re-export core types
-export type { ConsentConfig } from "../core/types";
+export type { ConsentConfig, GA4RouteEvent } from "../core/types";

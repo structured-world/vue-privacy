@@ -34,6 +34,52 @@ VitePress is a single-page app — navigating between pages doesn't trigger a fu
 
 You don't need to write any router watching code.
 
+## Frontmatter Events
+
+Fire GA4 events automatically when users visit specific pages using frontmatter:
+
+```md
+---
+# docs/pricing.md
+ga4Title: Pricing Page
+ga4Event:
+  name: view_pricing
+  params:
+    page_type: pricing
+---
+
+# Pricing
+
+Choose your plan...
+```
+
+```md
+---
+# docs/signup-success.md
+ga4Title: Registration Complete
+ga4Event:
+  name: sign_up
+  params:
+    method: docs
+---
+
+# Welcome!
+
+Thank you for signing up.
+```
+
+**Supported frontmatter fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ga4Title` | `string` | Custom page title for `page_view` event |
+| `ga4Event` | `{ name, params? }` | GA4 event to fire on page view |
+
+Events fire automatically when the user navigates to the page. This is useful for:
+- Tracking conversions (sign up pages, thank you pages)
+- Measuring engagement with specific content
+- A/B testing page variations
+
 ## Custom Theme with Layout Slots
 
 If you need to add components to VitePress layout slots alongside the consent banner:
