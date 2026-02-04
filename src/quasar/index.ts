@@ -71,6 +71,8 @@ export function consentBoot(options: QuasarBootOptions) {
       manager
         .init()
         .then(async () => {
+          // Wait for router to be ready to ensure currentRoute has the actual landing URL
+          await router.isReady();
           const route = router.currentRoute.value;
 
           // Apply beforeTrack to initial navigation

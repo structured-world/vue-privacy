@@ -109,7 +109,9 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
 }
 
 /**
- * Internal router tracking setup (used by plugin when router option is provided)
+ * Internal router tracking setup (used by plugin when router option is provided).
+ * Uses the same race-condition-safe approach as setupRouterTracking():
+ * waits for router.isReady() before tracking initial page and registering afterEach.
  */
 async function setupRouterTrackingInternal(
   router: Router,
@@ -118,70 +120,59 @@ async function setupRouterTrackingInternal(
 ): Promise<void> {
   const { beforeTrack, afterTrack } = options;
 
-  // Track initial page view (uses current route since this runs after app.mount)
+  // Wait for router to be ready - prevents tracking "/" instead of actual landing URL.
+  // Also ensures afterEach is registered AFTER initial navigation completes,
+  // avoiding Vue Router 4's race condition where initial afterEach fires before isReady.
+  await router.isReady();
+
   const route = router.currentRoute.value;
 
-  // Flag to skip duplicate tracking in afterEach for Vue Router 4's initial navigation.
-  // Vue Router 4 fires afterEach for the initial page load (from="/" to=currentRoute).
-  // We track initial manually here, so afterEach must skip that first call.
-  let initialHandled = true;
-
-  // Apply beforeTrack to initial navigation too
+  // Apply beforeTrack to initial navigation
+  let skipInitial = false;
   if (beforeTrack) {
     const shouldTrack = await beforeTrack(route, route);
     if (shouldTrack === false) {
-      // Skip initial tracking but still setup afterEach
-      setupAfterEach();
-      return;
+      skipInitial = true;
     }
   }
 
-  const meta = route.meta as GA4RouteMeta;
+  if (!skipInitial) {
+    const meta = route.meta as GA4RouteMeta;
 
-  nextTick(() => {
-    manager.trackPageView(route.fullPath, meta.ga4Title);
+    nextTick(() => {
+      manager.trackPageView(route.fullPath, meta.ga4Title);
 
-    if (meta.ga4Event) {
-      manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-      afterTrack?.(route, meta.ga4Event.name);
-    } else {
-      afterTrack?.(route);
-    }
-  });
-
-  setupAfterEach();
-
-  function setupAfterEach() {
-    // Track subsequent navigations
-    router.afterEach(async (to, from) => {
-      // Skip Vue Router 4's initial navigation event if we already tracked it above.
-      // Vue Router 4 fires afterEach for initial load with from.fullPath="/" regardless
-      // of the actual landing page. We check initialHandled to avoid double-tracking.
-      if (initialHandled && from.fullPath === "/") {
-        initialHandled = false;
-        return;
+      if (meta.ga4Event) {
+        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+        afterTrack?.(route, meta.ga4Event.name);
+      } else {
+        afterTrack?.(route);
       }
-
-      // Allow user to skip tracking
-      if (beforeTrack) {
-        const shouldTrack = await beforeTrack(to, from);
-        if (shouldTrack === false) return;
-      }
-
-      const toMeta = to.meta as GA4RouteMeta;
-
-      nextTick(() => {
-        manager.trackPageView(to.fullPath, toMeta.ga4Title);
-
-        if (toMeta.ga4Event) {
-          manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
-          afterTrack?.(to, toMeta.ga4Event.name);
-        } else {
-          afterTrack?.(to);
-        }
-      });
     });
   }
+
+  // Register afterEach AFTER initial tracking is complete.
+  // This ensures no race condition with Vue Router 4's initial navigation event.
+  router.afterEach(async (to, from) => {
+    // Allow user to skip tracking
+    if (beforeTrack) {
+      const shouldTrack = await beforeTrack(to, from);
+      if (shouldTrack === false) return;
+    }
+
+    const toMeta = to.meta as GA4RouteMeta;
+
+    nextTick(() => {
+      manager.trackPageView(to.fullPath, toMeta.ga4Title);
+
+      if (toMeta.ga4Event) {
+        manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
+        afterTrack?.(to, toMeta.ga4Event.name);
+      } else {
+        afterTrack?.(to);
+      }
+    });
+  });
 }
 
 /**

@@ -140,6 +140,10 @@ export function setupRouterTracking(
  * Type augmentation for Vue Router to support GA4RouteMeta.
  * Import this module to get type hints in route definitions.
  *
+ * NOTE: This augmentation only applies when vue-router is installed.
+ * If vue-router is not installed, TypeScript will skip this augmentation.
+ * The base Vue plugin works without vue-router - router integration is optional.
+ *
  * @example
  * ```typescript
  * // In your router file, add:
