@@ -132,6 +132,8 @@ export type { SupportedLocale } from "../i18n/types";
 /**
  * GA4 Item object for ecommerce events.
  * Per GA4 spec, at least one of item_id or item_name is required.
+ * Note: TypeScript cannot enforce "at least one of" constraint with a simple interface.
+ * The GA4 API validates this at runtime and logs warnings for invalid items.
  * @see https://developers.google.com/analytics/devguides/collection/ga4/reference/events
  */
 export interface GA4Item {

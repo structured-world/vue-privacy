@@ -126,9 +126,14 @@ export function setupRouterTracking(
 
             if (meta.ga4Event) {
               manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-              afterTrack?.(route, meta.ga4Event.name);
+              // Fire-and-forget: catch async afterTrack rejections to prevent unhandled promise
+              Promise.resolve(afterTrack?.(route, meta.ga4Event.name)).catch((err) => {
+                console.error("[@structured-world/vue-privacy] afterTrack error:", err);
+              });
             } else {
-              afterTrack?.(route);
+              Promise.resolve(afterTrack?.(route)).catch((err) => {
+                console.error("[@structured-world/vue-privacy] afterTrack error:", err);
+              });
             }
           } catch (err) {
             console.error("[@structured-world/vue-privacy] Initial tracking error:", err);
@@ -172,9 +177,14 @@ export function setupRouterTracking(
               // Fire custom event from route meta
               if (meta.ga4Event) {
                 manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-                afterTrack?.(to, meta.ga4Event.name);
+                // Fire-and-forget: catch async afterTrack rejections to prevent unhandled promise
+                Promise.resolve(afterTrack?.(to, meta.ga4Event.name)).catch((err) => {
+                  console.error("[@structured-world/vue-privacy] afterTrack error:", err);
+                });
               } else {
-                afterTrack?.(to);
+                Promise.resolve(afterTrack?.(to)).catch((err) => {
+                  console.error("[@structured-world/vue-privacy] afterTrack error:", err);
+                });
               }
             } catch (err) {
               console.error("[@structured-world/vue-privacy] Navigation tracking error:", err);

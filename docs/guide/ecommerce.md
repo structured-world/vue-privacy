@@ -464,7 +464,9 @@ function trackOrderOnce(order: Order) {
 }
 ```
 
-### Don't send item_id without item_name
+### Always include item_id or item_name
+
+GA4 requires at least one identifier per item. Either `item_id` or `item_name` must be provided.
 
 ```typescript
 // ✅ GOOD - has item_id (item_name optional)

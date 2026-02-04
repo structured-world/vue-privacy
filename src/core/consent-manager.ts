@@ -381,6 +381,8 @@ export class ConsentManager {
    * ```
    */
   trackEvent(eventName: string, params?: Record<string, unknown>): void {
+    // Read consent state fresh on every call — handles runtime changes from
+    // acceptAll/rejectAll/savePreferences without needing instance state sync.
     const stored = getStoredConsent(this.config);
     // Intentional: Only suppress when user EXPLICITLY denied analytics.
     // Before user makes a choice (no cookie), events are sent under Google Consent Mode v2
