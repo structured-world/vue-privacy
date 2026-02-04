@@ -85,13 +85,19 @@ const VALID_THEMES = ["light", "dark", "auto"] as const;
 export function createModal(options: VanillaModalOptions): VanillaModalInstance {
   const { manager, theme = "auto", onSave, onClose } = options;
 
-  // Runtime validation for JS users (TypeScript users get compile-time checks)
-  const validatedTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number])
-    ? theme
-    : "auto";
+  // Runtime validation with warning for invalid values
+  const isValidTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number]);
+  const validatedTheme = isValidTheme ? theme : "auto";
+  if (!isValidTheme && theme !== undefined) {
+    console.warn(
+      `[Vue Privacy] Invalid modal theme "${String(theme)}" provided. ` +
+        `Falling back to "auto". Valid themes: ${VALID_THEMES.join(", ")}.`
+    );
+  }
 
-  // SSR guard
+  // SSR guard - warn developers since stub instance does nothing
   if (typeof document === "undefined") {
+    console.warn("[Vue Privacy] createModal called in SSR context. Returning no-op stub.");
     return {
       show: () => {},
       hide: () => {},
@@ -234,6 +240,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // State
   let visible = false;
+  let previouslyFocusedElement: HTMLElement | null = null;
 
   // Load current consent state into toggles
   function loadCurrentConsent() {
@@ -270,10 +277,14 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
       manager.getConfig().onPreferenceCenterHide?.();
       onClose?.();
     } else if (action === "accept-all") {
+      // Hide immediately for consistent UX, then run async manager call
+      hide();
       await manager.acceptAll();
       onClose?.();
     } else if (action === "save") {
       const cats = getCategories();
+      // Hide immediately for consistent UX, then run async manager call
+      hide();
       await manager.savePreferences(cats);
       onSave?.(cats);
     }
@@ -331,6 +342,8 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   function show() {
     if (visible) return;
     visible = true;
+    // Store currently focused element to restore on hide
+    previouslyFocusedElement = document.activeElement as HTMLElement | null;
     loadCurrentConsent();
     overlayEl.classList.remove("consent-modal-overlay--hidden");
     // Focus first interactive element for better keyboard UX
@@ -346,6 +359,10 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     if (!visible) return;
     visible = false;
     overlayEl.classList.add("consent-modal-overlay--hidden");
+    // Restore focus to previously focused element for better accessibility
+    if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === "function") {
+      previouslyFocusedElement.focus();
+    }
   }
 
   // Register callbacks with manager

@@ -82,15 +82,28 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
   const { manager, theme = "auto", position = "bottom", onAccept, onReject, onCustomize } = options;
 
   // Runtime validation for JS users (TypeScript users get compile-time checks)
-  const validatedPosition = VALID_POSITIONS.includes(position as (typeof VALID_POSITIONS)[number])
-    ? position
-    : "bottom";
-  const validatedTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number])
-    ? theme
-    : "auto";
+  // Runtime validation with warnings for invalid values
+  const isValidPosition = VALID_POSITIONS.includes(position as (typeof VALID_POSITIONS)[number]);
+  const validatedPosition = isValidPosition ? position : "bottom";
+  if (!isValidPosition && position !== undefined) {
+    console.warn(
+      `[Vue Privacy] Invalid banner position "${String(position)}" provided. ` +
+        `Falling back to "bottom". Valid positions: ${VALID_POSITIONS.join(", ")}.`
+    );
+  }
 
-  // SSR guard
+  const isValidTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number]);
+  const validatedTheme = isValidTheme ? theme : "auto";
+  if (!isValidTheme && theme !== undefined) {
+    console.warn(
+      `[Vue Privacy] Invalid banner theme "${String(theme)}" provided. ` +
+        `Falling back to "auto". Valid themes: ${VALID_THEMES.join(", ")}.`
+    );
+  }
+
+  // SSR guard - warn developers since stub instance does nothing
   if (typeof document === "undefined") {
+    console.warn("[Vue Privacy] createBanner called in SSR context. Returning no-op stub.");
     return {
       show: () => {},
       hide: () => {},
