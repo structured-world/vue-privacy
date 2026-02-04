@@ -12,7 +12,10 @@ import type {
   BannerPosition,
 } from "./types";
 
-// Raw CSS string for inline injection or external stylesheet consumption
+// Raw CSS string for inline injection or external stylesheet consumption.
+// Hardcoded color values (#fff, #1a1a1a, etc.) are CSS var() fallbacks for browsers
+// that don't support CSS custom properties or when variables aren't defined.
+// This is intentional and follows CSS best practices for progressive enhancement.
 export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
 :root,[data-consent-theme="light"]{--consent-bg:#fff;--consent-text:#1a1a1a;--consent-text-secondary:#666;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#e0e0e0;--consent-btn-reject-text:#1a1a1a;--consent-font:system-ui,-apple-system,sans-serif}
 .consent-banner{position:fixed;left:0;right:0;z-index:9999;padding:1rem;background:var(--consent-bg,#fff);color:var(--consent-text,#1a1a1a);box-shadow:0 -2px 10px rgba(0,0,0,.1);font-family:var(--consent-font,system-ui,-apple-system,sans-serif);box-sizing:border-box}
