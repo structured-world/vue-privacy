@@ -1,14 +1,13 @@
 import type { App } from "vue";
-import { nextTick } from "vue";
 import type { Router } from "vue-router";
-import type { ConsentConfig, GA4RouteMeta } from "../core/types";
+import type { ConsentConfig } from "../core/types";
 import { createConsentManager } from "../core/consent-manager";
 import {
   createConsentPlugin as createBasePlugin,
   ConsentBanner,
   CONSENT_MANAGER_KEY,
 } from "../vue/index";
-import type { RouterMiddlewareOptions } from "../vue/router-middleware";
+import { setupRouterTracking, type RouterMiddlewareOptions } from "../vue/router-middleware";
 
 /**
  * Quasar boot options extending ConsentConfig
@@ -67,72 +66,13 @@ export function consentBoot(options: QuasarBootOptions) {
     app.component("ConsentBanner", ConsentBanner);
 
     if (router) {
-      // SPA mode: track initial page view after init and register afterEach hook
+      // SPA mode: initialize consent manager, then setup router tracking
       manager
         .init()
-        .then(async () => {
-          // Wait for router to be ready to ensure currentRoute has the actual landing URL
-          await router.isReady();
-          const route = router.currentRoute.value;
-
-          // Apply beforeTrack to initial navigation
-          let skipInitial = false;
-          if (routerMiddleware?.beforeTrack) {
-            const shouldTrack = await routerMiddleware.beforeTrack(route, route);
-            if (shouldTrack === false) {
-              skipInitial = true;
-            }
-          }
-
-          if (!skipInitial) {
-            const meta = route.meta as GA4RouteMeta;
-
-            nextTick(() => {
-              // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-              manager.trackPageView(route.fullPath, meta.ga4Title);
-
-              // Fire initial ga4Event if defined
-              if (meta.ga4Event) {
-                manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-                routerMiddleware?.afterTrack?.(route, meta.ga4Event.name);
-              } else {
-                routerMiddleware?.afterTrack?.(route);
-              }
-            });
-          }
-
-          // Register afterEach AFTER initial tracking is complete.
-          // This prevents race condition where Vue Router 4's initial afterEach fires
-          // before init() resolves, which would cause double-tracking.
-          // Note: We intentionally register afterEach after beforeTrack completes. While this
-          // means navigations during async beforeTrack won't be tracked, registering earlier
-          // would cause double-tracking. The timing window is negligible in practice.
-          router.afterEach(async (to, from) => {
-            try {
-              // Allow user to skip tracking via middleware
-              if (routerMiddleware?.beforeTrack) {
-                const shouldTrack = await routerMiddleware.beforeTrack(to, from);
-                if (shouldTrack === false) return;
-              }
-
-              const meta = to.meta as GA4RouteMeta;
-
-              nextTick(() => {
-                // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-                manager.trackPageView(to.fullPath, meta.ga4Title);
-
-                // Fire ga4Event from route meta
-                if (meta.ga4Event) {
-                  manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-                  routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
-                } else {
-                  routerMiddleware?.afterTrack?.(to);
-                }
-              });
-            } catch (err) {
-              console.error("[@structured-world/vue-privacy] Router tracking error:", err);
-            }
-          });
+        .then(() => {
+          // Delegate all router tracking logic to shared setupRouterTracking
+          // which handles isReady(), initial tracking, and afterEach registration
+          setupRouterTracking(router, manager, routerMiddleware);
         })
         .catch((err) => {
           console.error("[@structured-world/vue-privacy] Failed to initialize:", err);

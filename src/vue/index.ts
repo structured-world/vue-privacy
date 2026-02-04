@@ -1,16 +1,15 @@
 import type { App, Plugin } from "vue";
-import { nextTick } from "vue";
 // vue-router types for optional router integration.
 // NOTE: TypeScript still requires vue-router to be installed to resolve these types
 // during compilation. If you use the router integration features (router option in
 // createConsentPlugin), vue-router must be installed. The base consent plugin works
 // without vue-router at runtime if you don't use router tracking.
 import type { Router } from "vue-router";
-import type { ConsentConfig, GA4RouteMeta } from "../core/types";
+import type { ConsentConfig } from "../core/types";
 import { ConsentManager, createConsentManager } from "../core/consent-manager";
 import ConsentBanner from "./ConsentBanner.vue";
 import ConsentPreferenceModal from "./ConsentPreferenceModal.vue";
-import type { RouterMiddlewareOptions } from "./router-middleware";
+import { setupRouterTracking, type RouterMiddlewareOptions } from "./router-middleware";
 
 /**
  * Vue plugin options
@@ -93,10 +92,9 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
             .init()
             .then(() => {
               // Setup router tracking after init if router provided
+              // Uses setupRouterTracking which handles its own error catching
               if (router) {
-                setupRouterTrackingInternal(router, manager, routerMiddleware).catch((err) => {
-                  console.error("[@structured-world/vue-privacy] Router tracking error:", err);
-                });
+                setupRouterTracking(router, manager, routerMiddleware);
               }
             })
             .catch((err) => {
@@ -108,81 +106,6 @@ export function createConsentPlugin(options: ConsentPluginOptions = {}): Plugin 
       }
     },
   };
-}
-
-/**
- * Internal router tracking setup (used by plugin when router option is provided).
- * Uses the same race-condition-safe approach as setupRouterTracking():
- * waits for router.isReady() before tracking initial page and registering afterEach.
- */
-async function setupRouterTrackingInternal(
-  router: Router,
-  manager: ConsentManager,
-  options: RouterMiddlewareOptions = {}
-): Promise<void> {
-  const { beforeTrack, afterTrack } = options;
-
-  // Wait for router to be ready - prevents tracking "/" instead of actual landing URL.
-  // Also ensures afterEach is registered AFTER initial navigation completes,
-  // avoiding Vue Router 4's race condition where initial afterEach fires before isReady.
-  await router.isReady();
-
-  const route = router.currentRoute.value;
-
-  // Apply beforeTrack to initial navigation
-  let skipInitial = false;
-  if (beforeTrack) {
-    const shouldTrack = await beforeTrack(route, route);
-    if (shouldTrack === false) {
-      skipInitial = true;
-    }
-  }
-
-  if (!skipInitial) {
-    const meta = route.meta as GA4RouteMeta;
-
-    nextTick(() => {
-      manager.trackPageView(route.fullPath, meta.ga4Title);
-
-      if (meta.ga4Event) {
-        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-        afterTrack?.(route, meta.ga4Event.name);
-      } else {
-        afterTrack?.(route);
-      }
-    });
-  }
-
-  // Register afterEach AFTER initial tracking is complete.
-  // This ensures no race condition with Vue Router 4's initial navigation event.
-  // Note: We intentionally register afterEach after beforeTrack completes. While this
-  // means navigations during async beforeTrack won't be tracked, registering earlier
-  // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
-  // in double-tracking. The timing window is negligible in practice (app mount phase).
-  router.afterEach(async (to, from) => {
-    try {
-      // Allow user to skip tracking
-      if (beforeTrack) {
-        const shouldTrack = await beforeTrack(to, from);
-        if (shouldTrack === false) return;
-      }
-
-      const toMeta = to.meta as GA4RouteMeta;
-
-      nextTick(() => {
-        manager.trackPageView(to.fullPath, toMeta.ga4Title);
-
-        if (toMeta.ga4Event) {
-          manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
-          afterTrack?.(to, toMeta.ga4Event.name);
-        } else {
-          afterTrack?.(to);
-        }
-      });
-    } catch (err) {
-      console.error("[@structured-world/vue-privacy] Router tracking error:", err);
-    }
-  });
 }
 
 /**
