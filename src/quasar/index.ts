@@ -71,7 +71,8 @@ export function consentBoot(options: QuasarBootOptions) {
         .init()
         .then(() => {
           // Delegate all router tracking logic to shared setupRouterTracking
-          // which handles isReady(), initial tracking, and afterEach registration
+          // which handles isReady(), initial tracking, and afterEach registration.
+          // Note: routerMiddleware may be undefined - setupRouterTracking has default `= {}`
           setupRouterTracking(router, manager, routerMiddleware);
         })
         .catch((err) => {

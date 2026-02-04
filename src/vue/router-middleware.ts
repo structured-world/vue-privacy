@@ -99,9 +99,17 @@ export function setupRouterTracking(
       // Apply beforeTrack to initial navigation
       let skipInitial = false;
       if (beforeTrack) {
-        const shouldTrack = await beforeTrack(route, route);
-        if (shouldTrack === false) {
-          skipInitial = true;
+        try {
+          const shouldTrack = await beforeTrack(route, route);
+          if (shouldTrack === false) {
+            skipInitial = true;
+          }
+        } catch (err) {
+          console.error(
+            "[@structured-world/vue-privacy] beforeTrack error on initial navigation:",
+            err
+          );
+          // Continue with tracking - don't let user callback error break the system
         }
       }
 
