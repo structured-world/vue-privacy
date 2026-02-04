@@ -515,6 +515,8 @@ export class ConsentManager {
    * @internal
    */
   setRouterCleanup(cleanup: (() => void) | null): void {
+    // Call previous cleanup before overwriting (in case router tracking is re-initialized)
+    this.routerCleanup?.();
     this.routerCleanup = cleanup;
   }
 

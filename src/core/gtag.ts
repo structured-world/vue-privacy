@@ -117,7 +117,11 @@ export function trackPageView(path: string, title?: string): void {
 }
 
 /**
- * Track a custom event (GA4 recommended events, ecommerce, or custom)
+ * Track a custom event (GA4 recommended events, ecommerce, or custom).
+ *
+ * **WARNING:** This is a low-level function that sends directly to gtag without
+ * checking consent. For consent-aware tracking, use `ConsentManager.trackEvent()`
+ * or the `useConsent().trackEvent()` composable instead.
  *
  * @param eventName - Event name (e.g., 'sign_up', 'purchase', 'add_to_cart')
  * @param params - Event parameters
