@@ -211,12 +211,7 @@ describe("setupRouterTracking", () => {
       // First call is initial page view via isReady
       expect(manager.trackPageView).toHaveBeenCalledTimes(1);
 
-      // Vue Router 4's initial afterEach (to="/", from="/") - should be skipped
-      await triggerAfterEach(createMockRoute("/"), createMockRoute("/"));
-      await Promise.resolve();
-      expect(manager.trackPageView).toHaveBeenCalledTimes(1); // Still 1
-
-      // Now navigate to another page (to="/about", from="/")
+      // Navigate to another page
       await triggerAfterEach(createMockRoute("/about"), createMockRoute("/"));
       await Promise.resolve();
 
@@ -239,29 +234,26 @@ describe("setupRouterTracking", () => {
       expect(manager.trackEvent).toHaveBeenCalledWith("begin_checkout", { value: 100 });
     });
 
-    it("skips Vue Router 4 initial afterEach when already tracked", async () => {
-      const { router, isReadyResolve, triggerAfterEach } = createMockRouter("/about");
+    it("registers afterEach only after isReady to prevent race condition", async () => {
+      // This test verifies that afterEach is registered INSIDE isReady().then()
+      // to prevent Vue Router 4's initial afterEach from racing with isReady()
+      const { router, afterEachCallbacks, isReadyResolve } = createMockRouter("/about");
 
       setupRouterTracking(router, manager);
+
+      // Before isReady resolves, no afterEach should be registered
+      expect(afterEachCallbacks.length).toBe(0);
+
+      // Resolve isReady
       isReadyResolve();
       await Promise.resolve();
 
-      // Initial tracking happened via isReady()
+      // After isReady resolves, afterEach should be registered
+      expect(afterEachCallbacks.length).toBe(1);
+
+      // And initial tracking should have happened
       expect(manager.trackPageView).toHaveBeenCalledTimes(1);
       expect(manager.trackPageView).toHaveBeenCalledWith("/about", undefined);
-
-      // Vue Router 4 fires afterEach for initial navigation with from="/"
-      // This should be skipped because initialHandled is true and from="/"
-      await triggerAfterEach(createMockRoute("/about"), createMockRoute("/"));
-      await Promise.resolve();
-
-      // Should NOT double-track (still 1)
-      expect(manager.trackPageView).toHaveBeenCalledTimes(1);
-
-      // Subsequent real navigation should work (initialHandled is now false)
-      await triggerAfterEach(createMockRoute("/contact"), createMockRoute("/about"));
-      await Promise.resolve();
-      expect(manager.trackPageView).toHaveBeenCalledTimes(2);
     });
 
     it("tracks correct page when landing on subpage (not /)", async () => {
@@ -275,11 +267,6 @@ describe("setupRouterTracking", () => {
       // Should track /pricing, NOT /
       expect(manager.trackPageView).toHaveBeenCalledTimes(1);
       expect(manager.trackPageView).toHaveBeenCalledWith("/pricing", undefined);
-
-      // Vue Router 4's initial afterEach (from="/") - skipped
-      await triggerAfterEach(createMockRoute("/pricing"), createMockRoute("/"));
-      await Promise.resolve();
-      expect(manager.trackPageView).toHaveBeenCalledTimes(1);
 
       // Navigate to another page
       await triggerAfterEach(createMockRoute("/about"), createMockRoute("/pricing"));

@@ -1,4 +1,7 @@
 import { nextTick } from "vue";
+// vue-router types for optional router integration.
+// This module is only used when the user explicitly enables router tracking.
+// Type-only imports are erased at compile time.
 import type { Router, RouteLocationNormalized } from "vue-router";
 import type { ConsentManager } from "../core/consent-manager";
 import type { GA4RouteMeta, GA4RouteEvent } from "../core/types";
@@ -74,68 +77,61 @@ export function setupRouterTracking(
 ): void {
   const { beforeTrack, afterTrack } = options;
 
-  // Track whether initial navigation has been handled
-  let initialHandled = false;
-
-  // Track initial page view via isReady (preferred - ensures route is fully resolved)
+  // Track initial page view and register afterEach ONLY after router is ready.
+  // This prevents race condition where Vue Router 4's initial afterEach fires
+  // before isReady() resolves, which would cause double-tracking.
   router.isReady().then(async () => {
     const route = router.currentRoute.value;
 
-    // Apply beforeTrack to initial navigation too
+    // Apply beforeTrack to initial navigation
+    let skipInitial = false;
     if (beforeTrack) {
       const shouldTrack = await beforeTrack(route, route);
       if (shouldTrack === false) {
-        initialHandled = true;
-        return;
+        skipInitial = true;
       }
     }
 
-    const meta = route.meta as GA4RouteMeta;
-    initialHandled = true;
+    if (!skipInitial) {
+      const meta = route.meta as GA4RouteMeta;
 
-    nextTick(() => {
-      // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-      manager.trackPageView(route.fullPath, meta.ga4Title);
+      nextTick(() => {
+        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+        manager.trackPageView(route.fullPath, meta.ga4Title);
 
-      if (meta.ga4Event) {
-        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-        afterTrack?.(route, meta.ga4Event.name);
-      } else {
-        afterTrack?.(route);
-      }
-    });
-  });
-
-  // Track subsequent navigations
-  router.afterEach(async (to, from) => {
-    // Skip Vue Router 4's initial navigation event if we already tracked it via isReady().
-    // Vue Router 4 fires afterEach for initial load with from.fullPath="/" regardless
-    // of the actual landing page. We check initialHandled to avoid double-tracking.
-    if (initialHandled && from.fullPath === "/") {
-      initialHandled = false;
-      return;
+        if (meta.ga4Event) {
+          manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+          afterTrack?.(route, meta.ga4Event.name);
+        } else {
+          afterTrack?.(route);
+        }
+      });
     }
 
-    // Allow user to skip tracking
-    if (beforeTrack) {
-      const shouldTrack = await beforeTrack(to, from);
-      if (shouldTrack === false) return;
-    }
-
-    const meta = to.meta as GA4RouteMeta;
-
-    // Use nextTick to ensure document.title is updated by the page component
-    nextTick(() => {
-      // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-      manager.trackPageView(to.fullPath, meta.ga4Title);
-
-      // Fire custom event from route meta
-      if (meta.ga4Event) {
-        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-        afterTrack?.(to, meta.ga4Event.name);
-      } else {
-        afterTrack?.(to);
+    // Register afterEach AFTER initial tracking is complete.
+    // This ensures no race condition with Vue Router 4's initial navigation event.
+    router.afterEach(async (to, from) => {
+      // Allow user to skip tracking
+      if (beforeTrack) {
+        const shouldTrack = await beforeTrack(to, from);
+        if (shouldTrack === false) return;
       }
+
+      const meta = to.meta as GA4RouteMeta;
+
+      // Use nextTick to ensure document.title is updated by the page component
+      nextTick(() => {
+        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+        manager.trackPageView(to.fullPath, meta.ga4Title);
+
+        // Fire custom event from route meta
+        if (meta.ga4Event) {
+          manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+          afterTrack?.(to, meta.ga4Event.name);
+        } else {
+          afterTrack?.(to);
+        }
+      });
     });
   });
 }
