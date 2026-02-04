@@ -4,6 +4,7 @@ import { useConsent } from "../../../../src/vue/index";
 import { categoriesToGoogleSignals } from "../../../../src/index";
 import type {
   GeoDetectionResult,
+  GeoDetectionLogEntry,
   StoredConsent,
   GoogleConsentSignals,
 } from "../../../../src/core/types";
@@ -13,11 +14,13 @@ const initialized = ref(false);
 const hasConsent = ref(false);
 const isEU = ref<boolean | null>(null);
 const geoResult = ref<GeoDetectionResult | null>(null);
+const geoLog = ref<GeoDetectionLogEntry[]>([]);
 const consent = ref<StoredConsent | null>(null);
 const googleSignals = ref<GoogleConsentSignals | null>(null);
 const rawPreferences = ref("");
 const rawUid = ref("");
 const showCookies = ref(false);
+const showGeoLog = ref(false);
 
 const methodLabels: Record<string, string> = {
   cloudflare: "Cloudflare Header",
@@ -41,6 +44,7 @@ function refresh() {
   hasConsent.value = consentApi.hasConsent();
   isEU.value = consentApi.isEUUser();
   geoResult.value = consentApi.getGeoResult();
+  geoLog.value = consentApi.manager.getGeoDetectionLog();
   consent.value = consentApi.getConsent();
 
   if (consent.value) {
@@ -158,8 +162,65 @@ onMounted(() => {
               <span class="debug-label">Is EU</span>
               <span :class="geoResult.isEU ? 'val-yes' : 'val-no'">{{ geoResult.isEU }}</span>
             </div>
+            <!-- Detection Log (collapsible) -->
+            <button
+              v-if="geoLog.length > 0"
+              class="debug-section-toggle debug-log-toggle"
+              @click="showGeoLog = !showGeoLog"
+            >
+              Detection Log {{ showGeoLog ? "▾" : "▸" }}
+            </button>
+            <div v-if="showGeoLog && geoLog.length > 0" class="debug-geo-log">
+              <table class="geo-log-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Result</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(entry, idx) in geoLog"
+                    :key="idx"
+                    :class="{
+                      'log-success': entry.status === 'success',
+                      'log-failed': entry.status === 'failed',
+                      'log-skipped': entry.status === 'skipped',
+                    }"
+                  >
+                    <td>{{ methodLabels[entry.method] || entry.method }}</td>
+                    <td>
+                      <span
+                        :class="{
+                          'val-yes': entry.status === 'success',
+                          'val-no': entry.status === 'failed',
+                          'val-pending': entry.status === 'skipped',
+                        }"
+                      >
+                        {{ entry.status }}
+                      </span>
+                    </td>
+                    <td>
+                      <template v-if="entry.result">
+                        EU: {{ entry.result.isEU ? "Yes" : "No" }}
+                        <span v-if="entry.result.countryCode"
+                          >({{ entry.result.countryCode }})</span
+                        >
+                      </template>
+                      <template v-else-if="entry.error">
+                        <span class="val-code val-error">{{ entry.error }}</span>
+                      </template>
+                      <span v-else>-</span>
+                    </td>
+                    <td class="val-code">{{ entry.duration }}ms</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </template>
-          <div v-else class="debug-note">Skipped (consent restored from cookie)</div>
+          <div v-else class="debug-note">Not detected yet</div>
         </div>
 
         <!-- Consent Categories -->
@@ -457,6 +518,56 @@ onMounted(() => {
 
 .debug-btn-refresh:hover {
   background: var(--vp-c-bg-mute);
+}
+
+/* Geo detection log styles */
+.debug-log-toggle {
+  margin-top: 8px;
+}
+
+.debug-geo-log {
+  margin-top: 8px;
+  overflow-x: auto;
+}
+
+.geo-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.geo-log-table th,
+.geo-log-table td {
+  padding: 4px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.geo-log-table th {
+  font-weight: 600;
+  color: var(--vp-c-text-2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.geo-log-table tr.log-success {
+  background: var(--vp-c-green-soft, rgba(16, 185, 129, 0.1));
+}
+
+.geo-log-table tr.log-failed {
+  background: transparent;
+}
+
+.geo-log-table tr.log-skipped {
+  background: transparent;
+  opacity: 0.7;
+}
+
+.val-error {
+  color: var(--vp-c-red-1, #ef4444);
+  font-size: 10px;
+  word-break: break-word;
 }
 
 @media (prefers-reduced-motion: reduce) {

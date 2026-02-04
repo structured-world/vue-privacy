@@ -108,6 +108,10 @@ export function storeConsent(
     categories: consent.categories,
     timestamp: Date.now(),
     version,
+    // Preserve geo data if provided
+    ...(consent.isEU !== undefined && { isEU: consent.isEU }),
+    ...(consent.geoMethod && { geoMethod: consent.geoMethod }),
+    ...(consent.countryCode && { countryCode: consent.countryCode }),
   };
 
   setCookie(cookieConfig.name, JSON.stringify(stored), {

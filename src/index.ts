@@ -66,6 +66,8 @@ export type {
   GoogleConsentSignals,
   GeoDetector,
   GeoDetectionResult,
+  GeoDetectionLogEntry,
+  GeoDetectionResultWithLog,
   BannerConfig,
   PreferenceCenterConfig,
   CategoryDisplayConfig,
