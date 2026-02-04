@@ -71,13 +71,18 @@ export interface RouterMiddlewareOptions {
  *   }
  * ]
  * ```
+ *
+ * @returns Cleanup function to unregister the afterEach hook
  */
 export function setupRouterTracking(
   router: Router,
   manager: ConsentManager,
   options: RouterMiddlewareOptions = {}
-): void {
+): () => void {
   const { beforeTrack, afterTrack } = options;
+
+  // Store unregister function when afterEach is registered (async)
+  let unregisterAfterEach: (() => void) | null = null;
 
   // Track initial page view and register afterEach ONLY after router is ready.
   // This prevents race condition where Vue Router 4's initial afterEach fires
@@ -116,13 +121,15 @@ export function setupRouterTracking(
         });
       }
 
-      // Register afterEach AFTER initial tracking is complete.
+      // Register afterEach AFTER initial tracking has been scheduled (via nextTick).
       // This ensures no race condition with Vue Router 4's initial navigation event.
       // Note: We intentionally register afterEach after beforeTrack completes. While this
       // means navigations during async beforeTrack won't be tracked, registering earlier
       // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
       // in double-tracking. The timing window is negligible in practice (app mount phase).
-      router.afterEach(async (to, from) => {
+      // Note: Initial tracking uses nextTick for document.title sync, so gtag call happens
+      // after this afterEach registration, but that's fine - they track different navigations.
+      unregisterAfterEach = router.afterEach(async (to, from) => {
         try {
           // Allow user to skip tracking
           if (beforeTrack) {
@@ -158,6 +165,11 @@ export function setupRouterTracking(
     .catch((err) => {
       console.error("[@structured-world/vue-privacy] Router tracking setup error:", err);
     });
+
+  // Return cleanup function to unregister afterEach hook
+  return () => {
+    unregisterAfterEach?.();
+  };
 }
 
 /**
