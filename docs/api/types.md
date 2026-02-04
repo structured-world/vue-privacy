@@ -156,7 +156,7 @@ Types for Google Analytics 4 event tracking.
 
 ### GA4Item
 
-Product/item object for ecommerce events.
+Product/item object for ecommerce events. Full interface matching [GA4 spec](https://developers.google.com/analytics/devguides/collection/ga4/reference/events).
 
 ```typescript
 interface GA4Item {
@@ -168,6 +168,8 @@ interface GA4Item {
   price?: number;
   /** Quantity */
   quantity?: number;
+  /** Affiliate or partner name */
+  affiliation?: string;
   /** Brand name */
   item_brand?: string;
   /** Primary category */
@@ -189,6 +191,8 @@ interface GA4Item {
   item_list_id?: string;
   /** List name */
   item_list_name?: string;
+  /** Google Business location ID */
+  location_id?: string;
 }
 ```
 

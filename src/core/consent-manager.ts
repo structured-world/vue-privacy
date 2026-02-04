@@ -363,7 +363,8 @@ export class ConsentManager {
 
   /**
    * Track a custom event (GA4 recommended events, ecommerce, or custom).
-   * Skips sending if analytics consent has not been granted.
+   * Skips sending if analytics consent is explicitly denied.
+   * Before user makes a choice, events are sent under Consent Mode defaults (cookieless pings).
    *
    * @param eventName - GA4 event name (e.g., 'sign_up', 'purchase', 'add_to_cart')
    * @param params - Event parameters

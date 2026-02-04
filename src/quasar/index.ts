@@ -75,7 +75,8 @@ export function consentBoot(options: QuasarBootOptions) {
           const meta = route.meta as GA4RouteMeta;
 
           nextTick(() => {
-            manager.trackPageView(route.fullPath, meta.ga4Title ?? document.title);
+            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+            manager.trackPageView(route.fullPath, meta.ga4Title);
 
             // Fire initial ga4Event if defined
             if (meta.ga4Event) {
@@ -105,7 +106,8 @@ export function consentBoot(options: QuasarBootOptions) {
           const meta = to.meta as GA4RouteMeta;
 
           nextTick(() => {
-            manager.trackPageView(to.fullPath, meta.ga4Title ?? document.title);
+            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+            manager.trackPageView(to.fullPath, meta.ga4Title);
 
             // Fire ga4Event from route meta
             if (meta.ga4Event) {

@@ -201,19 +201,25 @@ const manager = createConsentManager({ gaId: 'G-XXX', sendPageView: false });
 
 app.use(router);
 
-// Setup automatic page and event tracking
-setupRouterTracking(router, manager, {
-  beforeTrack: (to) => {
-    // Skip tracking for admin routes
-    if (to.path.startsWith('/admin')) return false;
-  },
-  afterTrack: (to, eventName) => {
-    console.log('Tracked:', to.path, eventName);
-  }
-});
+async function bootstrap() {
+  // Initialize consent manager first (loads gtag.js)
+  await manager.init();
 
-manager.init();
-app.mount('#app');
+  // Then setup router tracking
+  setupRouterTracking(router, manager, {
+    beforeTrack: (to) => {
+      // Skip tracking for admin routes
+      if (to.path.startsWith('/admin')) return false;
+    },
+    afterTrack: (to, eventName) => {
+      console.log('Tracked:', to.path, eventName);
+    }
+  });
+
+  app.mount('#app');
+}
+
+bootstrap();
 ```
 
 ### TypeScript Support

@@ -104,6 +104,8 @@ manager.trackEvent('share', {
 
 ### GA4Item (Product)
 
+Simplified view of common fields. See [API Types](/api/types#ga4item) for full interface.
+
 ```typescript
 interface GA4Item {
   item_id: string;      // Required: SKU or product ID
@@ -119,6 +121,8 @@ interface GA4Item {
   index?: number;           // Position in list
   item_list_id?: string;
   item_list_name?: string;
+  affiliation?: string;     // Affiliate/partner name
+  location_id?: string;     // Google Business location ID
 }
 ```
 

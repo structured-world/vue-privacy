@@ -6,7 +6,7 @@ vue-privacy provides comprehensive Google Analytics 4 (GA4) integration with aut
 
 - **Automatic gtag.js loading** with Consent Mode v2 defaults
 - **SPA page view tracking** (VitePress, Quasar, Vue Router)
-- **Consent-aware tracking** — no data sent without analytics consent
+- **Consent-aware tracking** — uses Consent Mode v2; analytics cookies and full measurement start only after consent
 - **Typed ecommerce helpers** — `trackPurchase()`, `trackAddToCart()`, etc.
 - **Custom event tracking** — `trackEvent()` for any GA4 event
 - **Vue Router integration** — auto-track events from route meta
@@ -105,15 +105,16 @@ See [Vue Integration](/guide/vue#vue-router-integration) for setup details.
 
 ## Consent & Analytics
 
-All tracking methods automatically check consent state:
+Tracking methods check consent state and work with Consent Mode v2:
 
 | Consent State | Behavior |
 |--------------|----------|
-| `analytics: true` | Events sent to GA4 |
-| `analytics: false` | Events silently dropped |
-| No consent yet | Events dropped (EU users) |
+| `analytics: true` | Full GA4 tracking with cookies |
+| `analytics: false` | Events silently dropped by vue-privacy |
+| No consent yet (EU) | Events sent under Consent Mode defaults (cookieless pings, no storage) |
+| No consent yet (non-EU) | Auto-granted, full tracking |
 
-This ensures GDPR compliance — no tracking happens without user consent.
+Consent Mode v2 allows GA to receive cookieless pings before user choice, enabling modeled conversions while remaining GDPR-compliant.
 
 ## Google Consent Mode v2
 

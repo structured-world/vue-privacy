@@ -18,7 +18,7 @@ export interface RouterMiddlewareOptions {
 
   /**
    * Called after tracking completes.
-   * Receives the route and event name (if a privacyEvent was fired).
+   * Receives the route and event name (if a ga4Event was fired).
    */
   afterTrack?: (to: RouteLocationNormalized, eventName?: string) => void;
 
@@ -34,8 +34,8 @@ export interface RouterMiddlewareOptions {
  *
  * Automatically tracks:
  * - Page views on every navigation
- * - Custom events defined in route meta (`privacyEvent`)
- * - Custom page titles from route meta (`privacyTitle`)
+ * - Custom events defined in route meta (`ga4Event`)
+ * - Custom page titles from route meta (`ga4Title`)
  *
  * @example
  * ```typescript
@@ -88,7 +88,8 @@ export function setupRouterTracking(
       const meta = route.meta as GA4RouteMeta;
 
       nextTick(() => {
-        manager.trackPageView(route.fullPath, meta.ga4Title ?? document.title);
+        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+        manager.trackPageView(route.fullPath, meta.ga4Title);
 
         if (meta.ga4Event) {
           manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
@@ -112,8 +113,8 @@ export function setupRouterTracking(
 
     // Use nextTick to ensure document.title is updated by the page component
     nextTick(() => {
-      // Track page view with custom title if provided
-      manager.trackPageView(to.fullPath, meta.ga4Title ?? document.title);
+      // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+      manager.trackPageView(to.fullPath, meta.ga4Title);
 
       // Fire custom event from route meta
       if (meta.ga4Event) {
