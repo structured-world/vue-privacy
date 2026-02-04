@@ -37,8 +37,8 @@ export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
 .consent-banner__btn--customize{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
 .consent-banner--hidden{display:none}
 @media(max-width:640px){.consent-banner__actions{flex-direction:column}.consent-banner__btn{width:100%;text-align:center}}
-@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}}
-[data-consent-theme="dark"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}`;
+@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}}
+[data-consent-theme="dark"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}`;
 
 const STYLE_ID = "vue-privacy-vanilla-banner";
 

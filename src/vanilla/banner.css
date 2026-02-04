@@ -44,6 +44,8 @@
     --consent-text: #ffffff;
     --consent-text-secondary: #a0a0a0;
     --consent-link: #66b3ff;
+    --consent-btn-accept-bg: #0066cc;
+    --consent-btn-accept-text: #ffffff;
     --consent-btn-reject-bg: #333333;
     --consent-btn-reject-text: #ffffff;
   }
@@ -214,7 +216,6 @@
 
   .consent-banner__btn {
     width: 100%;
-    justify-content: center;
     text-align: center;
   }
 }
