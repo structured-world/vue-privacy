@@ -82,64 +82,73 @@ export function setupRouterTracking(
   // Track initial page view and register afterEach ONLY after router is ready.
   // This prevents race condition where Vue Router 4's initial afterEach fires
   // before isReady() resolves, which would cause double-tracking.
-  router.isReady().then(async () => {
-    const route = router.currentRoute.value;
+  router
+    .isReady()
+    .then(async () => {
+      const route = router.currentRoute.value;
 
-    // Apply beforeTrack to initial navigation
-    let skipInitial = false;
-    if (beforeTrack) {
-      const shouldTrack = await beforeTrack(route, route);
-      if (shouldTrack === false) {
-        skipInitial = true;
-      }
-    }
-
-    if (!skipInitial) {
-      const meta = route.meta as GA4RouteMeta;
-
-      nextTick(() => {
-        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-        manager.trackPageView(route.fullPath, meta.ga4Title);
-
-        if (meta.ga4Event) {
-          manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-          afterTrack?.(route, meta.ga4Event.name);
-        } else {
-          afterTrack?.(route);
-        }
-      });
-    }
-
-    // Register afterEach AFTER initial tracking is complete.
-    // This ensures no race condition with Vue Router 4's initial navigation event.
-    // Note: We intentionally register afterEach after beforeTrack completes. While this
-    // means navigations during async beforeTrack won't be tracked, registering earlier
-    // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
-    // in double-tracking. The timing window is negligible in practice (app mount phase).
-    router.afterEach(async (to, from) => {
-      // Allow user to skip tracking
+      // Apply beforeTrack to initial navigation
+      let skipInitial = false;
       if (beforeTrack) {
-        const shouldTrack = await beforeTrack(to, from);
-        if (shouldTrack === false) return;
+        const shouldTrack = await beforeTrack(route, route);
+        if (shouldTrack === false) {
+          skipInitial = true;
+        }
       }
 
-      const meta = to.meta as GA4RouteMeta;
+      if (!skipInitial) {
+        const meta = route.meta as GA4RouteMeta;
 
-      // Use nextTick to ensure document.title is updated by the page component
-      nextTick(() => {
-        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-        manager.trackPageView(to.fullPath, meta.ga4Title);
+        nextTick(() => {
+          // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+          manager.trackPageView(route.fullPath, meta.ga4Title);
 
-        // Fire custom event from route meta
-        if (meta.ga4Event) {
-          manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-          afterTrack?.(to, meta.ga4Event.name);
-        } else {
-          afterTrack?.(to);
+          if (meta.ga4Event) {
+            manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+            afterTrack?.(route, meta.ga4Event.name);
+          } else {
+            afterTrack?.(route);
+          }
+        });
+      }
+
+      // Register afterEach AFTER initial tracking is complete.
+      // This ensures no race condition with Vue Router 4's initial navigation event.
+      // Note: We intentionally register afterEach after beforeTrack completes. While this
+      // means navigations during async beforeTrack won't be tracked, registering earlier
+      // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
+      // in double-tracking. The timing window is negligible in practice (app mount phase).
+      router.afterEach(async (to, from) => {
+        try {
+          // Allow user to skip tracking
+          if (beforeTrack) {
+            const shouldTrack = await beforeTrack(to, from);
+            if (shouldTrack === false) return;
+          }
+
+          const meta = to.meta as GA4RouteMeta;
+
+          // Use nextTick to ensure document.title is updated by the page component
+          nextTick(() => {
+            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+            manager.trackPageView(to.fullPath, meta.ga4Title);
+
+            // Fire custom event from route meta
+            if (meta.ga4Event) {
+              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+              afterTrack?.(to, meta.ga4Event.name);
+            } else {
+              afterTrack?.(to);
+            }
+          });
+        } catch (err) {
+          console.error("[@structured-world/vue-privacy] Router tracking error:", err);
         }
       });
+    })
+    .catch((err) => {
+      console.error("[@structured-world/vue-privacy] Router tracking setup error:", err);
     });
-  });
 }
 
 /**

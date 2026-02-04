@@ -108,26 +108,30 @@ export function consentBoot(options: QuasarBootOptions) {
           // means navigations during async beforeTrack won't be tracked, registering earlier
           // would cause double-tracking. The timing window is negligible in practice.
           router.afterEach(async (to, from) => {
-            // Allow user to skip tracking via middleware
-            if (routerMiddleware?.beforeTrack) {
-              const shouldTrack = await routerMiddleware.beforeTrack(to, from);
-              if (shouldTrack === false) return;
-            }
-
-            const meta = to.meta as GA4RouteMeta;
-
-            nextTick(() => {
-              // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-              manager.trackPageView(to.fullPath, meta.ga4Title);
-
-              // Fire ga4Event from route meta
-              if (meta.ga4Event) {
-                manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-                routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
-              } else {
-                routerMiddleware?.afterTrack?.(to);
+            try {
+              // Allow user to skip tracking via middleware
+              if (routerMiddleware?.beforeTrack) {
+                const shouldTrack = await routerMiddleware.beforeTrack(to, from);
+                if (shouldTrack === false) return;
               }
-            });
+
+              const meta = to.meta as GA4RouteMeta;
+
+              nextTick(() => {
+                // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+                manager.trackPageView(to.fullPath, meta.ga4Title);
+
+                // Fire ga4Event from route meta
+                if (meta.ga4Event) {
+                  manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+                  routerMiddleware?.afterTrack?.(to, meta.ga4Event.name);
+                } else {
+                  routerMiddleware?.afterTrack?.(to);
+                }
+              });
+            } catch (err) {
+              console.error("[@structured-world/vue-privacy] Router tracking error:", err);
+            }
           });
         })
         .catch((err) => {

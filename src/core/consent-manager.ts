@@ -470,7 +470,7 @@ export class ConsentManager {
    * Track generate_lead event (form submission, contact request).
    */
   trackGenerateLead(params?: GA4GenerateLeadParams): void {
-    this.trackEvent("generate_lead", params as unknown as Record<string, unknown>);
+    this.trackEvent("generate_lead", params as Record<string, unknown> | undefined);
   }
 
   /**

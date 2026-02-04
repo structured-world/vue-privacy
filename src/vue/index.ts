@@ -160,24 +160,28 @@ async function setupRouterTrackingInternal(
   // would cause Vue Router 4's initial afterEach to fire before we're ready, resulting
   // in double-tracking. The timing window is negligible in practice (app mount phase).
   router.afterEach(async (to, from) => {
-    // Allow user to skip tracking
-    if (beforeTrack) {
-      const shouldTrack = await beforeTrack(to, from);
-      if (shouldTrack === false) return;
-    }
-
-    const toMeta = to.meta as GA4RouteMeta;
-
-    nextTick(() => {
-      manager.trackPageView(to.fullPath, toMeta.ga4Title);
-
-      if (toMeta.ga4Event) {
-        manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
-        afterTrack?.(to, toMeta.ga4Event.name);
-      } else {
-        afterTrack?.(to);
+    try {
+      // Allow user to skip tracking
+      if (beforeTrack) {
+        const shouldTrack = await beforeTrack(to, from);
+        if (shouldTrack === false) return;
       }
-    });
+
+      const toMeta = to.meta as GA4RouteMeta;
+
+      nextTick(() => {
+        manager.trackPageView(to.fullPath, toMeta.ga4Title);
+
+        if (toMeta.ga4Event) {
+          manager.trackEvent(toMeta.ga4Event.name, toMeta.ga4Event.params);
+          afterTrack?.(to, toMeta.ga4Event.name);
+        } else {
+          afterTrack?.(to);
+        }
+      });
+    } catch (err) {
+      console.error("[@structured-world/vue-privacy] Router tracking error:", err);
+    }
   });
 }
 
