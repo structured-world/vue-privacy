@@ -69,9 +69,9 @@ import { watch } from 'vue';
 const route = useRoute();
 const { trackPageView } = useConsent();
 
-// Track navigations (skip initial if needed)
+// Track navigations (skip first watch callback where oldPath is undefined)
 watch(() => route.path, (path, oldPath) => {
-  // Skip initial navigation
+  // oldPath is undefined on first watch trigger — skip to avoid double-tracking
   if (!oldPath) return;
   trackPageView(path);
 });
