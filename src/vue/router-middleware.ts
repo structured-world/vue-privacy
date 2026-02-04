@@ -117,6 +117,9 @@ export function setupRouterTracking(
         const meta = route.meta as GA4RouteMeta;
 
         nextTick(() => {
+          // Check disposed in nextTick — cleanup might be called after scheduling
+          if (disposed) return;
+
           try {
             // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
             manager.trackPageView(route.fullPath, meta.ga4Title);

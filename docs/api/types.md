@@ -160,10 +160,10 @@ Product/item object for ecommerce events. Full interface matching [GA4 spec](htt
 
 ```typescript
 interface GA4Item {
-  /** Required: SKU or product ID */
-  item_id: string;
-  /** Required: Product name */
-  item_name: string;
+  /** SKU or product ID (required if item_name not provided) */
+  item_id?: string;
+  /** Product name (required if item_id not provided) */
+  item_name?: string;
   /** Unit price */
   price?: number;
   /** Quantity */

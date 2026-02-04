@@ -110,8 +110,8 @@ Simplified view of common fields. See [API Types](/api/types#ga4item) for full i
 
 ```typescript
 interface GA4Item {
-  item_id: string;      // Required: SKU or product ID
-  item_name: string;    // Required: Product name
+  item_id?: string;     // Required if item_name not provided
+  item_name?: string;   // Required if item_id not provided
   price?: number;       // Unit price
   quantity?: number;    // Quantity (default: 1)
   item_brand?: string;
@@ -467,11 +467,17 @@ function trackOrderOnce(order: Order) {
 ### Don't send item_id without item_name
 
 ```typescript
-// ❌ BAD - missing item_name
+// ✅ GOOD - has item_id (item_name optional)
 items: [{ item_id: 'SKU_123', price: 29.99 }]
 
-// ✅ GOOD - both required
+// ✅ GOOD - has item_name (item_id optional)
+items: [{ item_name: 'T-Shirt', price: 29.99 }]
+
+// ✅ BEST - both provided for better reporting
 items: [{ item_id: 'SKU_123', item_name: 'T-Shirt', price: 29.99 }]
+
+// ❌ BAD - neither item_id nor item_name
+items: [{ price: 29.99 }]
 ```
 
 ## CDN/UMD Usage

@@ -71,6 +71,9 @@ app.mount('#app');
 
 ### VitePress
 
+> **TypeScript users:** Add `vue-router` as a dev dependency for type resolution:
+> `npm i -D vue-router` (not needed at runtime)
+
 ```typescript
 // docs/.vitepress/theme/index.ts
 import DefaultTheme from 'vitepress/theme';

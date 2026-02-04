@@ -14,6 +14,12 @@ export default enhanceWithConsent(DefaultTheme, {
 });
 ```
 
+::: tip TypeScript Users
+Add `vue-router` as a dev dependency for type resolution: `npm i -D vue-router`
+
+This is only needed for TypeScript compilation — vue-router is not used at runtime (VitePress has its own router).
+:::
+
 That's it. This automatically:
 
 - **Loads `gtag.js`** with Google Consent Mode v2 defaults
