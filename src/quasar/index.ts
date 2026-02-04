@@ -67,8 +67,6 @@ export function consentBoot(options: QuasarBootOptions) {
     app.component("ConsentBanner", ConsentBanner);
 
     if (router) {
-      const trackInitial = routerMiddleware?.trackInitial !== false;
-
       // Flag to skip duplicate tracking in afterEach for Vue Router 4's initial navigation.
       // Vue Router 4 fires afterEach for the initial page load (from="/" to=currentRoute).
       let initialHandled = false;
@@ -78,12 +76,6 @@ export function consentBoot(options: QuasarBootOptions) {
         .init()
         .then(async () => {
           const route = router.currentRoute.value;
-
-          // Skip initial tracking if disabled
-          if (!trackInitial) {
-            initialHandled = true;
-            return;
-          }
 
           // Apply beforeTrack to initial navigation too
           if (routerMiddleware?.beforeTrack) {

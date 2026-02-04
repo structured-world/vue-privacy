@@ -123,16 +123,6 @@ describe("setupRouterTracking", () => {
 
       expect(manager.trackEvent).toHaveBeenCalledWith("sign_up", { method: "email" });
     });
-
-    it("skips initial tracking when trackInitial=false", async () => {
-      const { router, isReadyResolve } = createMockRouter("/");
-
-      setupRouterTracking(router, manager, { trackInitial: false });
-      isReadyResolve();
-      await Promise.resolve();
-
-      expect(manager.trackPageView).not.toHaveBeenCalled();
-    });
   });
 
   describe("beforeTrack callback", () => {

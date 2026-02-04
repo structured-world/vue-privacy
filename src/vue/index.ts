@@ -113,7 +113,7 @@ async function setupRouterTrackingInternal(
   manager: ConsentManager,
   options: RouterMiddlewareOptions = {}
 ): Promise<void> {
-  const { beforeTrack, afterTrack, trackInitial = true } = options;
+  const { beforeTrack, afterTrack } = options;
 
   // Track initial page view (uses current route since this runs after app.mount)
   const route = router.currentRoute.value;
@@ -121,33 +121,30 @@ async function setupRouterTrackingInternal(
   // Flag to skip duplicate tracking in afterEach for Vue Router 4's initial navigation.
   // Vue Router 4 fires afterEach for the initial page load (from="/" to=currentRoute).
   // We track initial manually here, so afterEach must skip that first call.
-  let initialHandled = trackInitial;
+  let initialHandled = true;
 
-  // Track initial page view if enabled
-  if (trackInitial) {
-    // Apply beforeTrack to initial navigation too
-    if (beforeTrack) {
-      const shouldTrack = await beforeTrack(route, route);
-      if (shouldTrack === false) {
-        // Skip initial tracking but still setup afterEach
-        setupAfterEach();
-        return;
-      }
+  // Apply beforeTrack to initial navigation too
+  if (beforeTrack) {
+    const shouldTrack = await beforeTrack(route, route);
+    if (shouldTrack === false) {
+      // Skip initial tracking but still setup afterEach
+      setupAfterEach();
+      return;
     }
-
-    const meta = route.meta as GA4RouteMeta;
-
-    nextTick(() => {
-      manager.trackPageView(route.fullPath, meta.ga4Title);
-
-      if (meta.ga4Event) {
-        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-        afterTrack?.(route, meta.ga4Event.name);
-      } else {
-        afterTrack?.(route);
-      }
-    });
   }
+
+  const meta = route.meta as GA4RouteMeta;
+
+  nextTick(() => {
+    manager.trackPageView(route.fullPath, meta.ga4Title);
+
+    if (meta.ga4Event) {
+      manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+      afterTrack?.(route, meta.ga4Event.name);
+    } else {
+      afterTrack?.(route);
+    }
+  });
 
   setupAfterEach();
 

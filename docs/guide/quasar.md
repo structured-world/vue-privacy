@@ -49,6 +49,20 @@ export default boot(consentBoot({
 }));
 ```
 
+#### Skip Initial Page View
+
+To skip the initial page load tracking:
+
+```typescript
+routerMiddleware: {
+  beforeTrack: (to, from) => {
+    // Initial navigation: to === from
+    if (to === from) return false;
+    return true;
+  }
+}
+```
+
 ## Using the Banner
 
 Add the banner to your main layout:

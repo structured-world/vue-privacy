@@ -38,9 +38,27 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </template>
 ```
 
-### 3. SPA Page Tracking
+### 3. SPA Page Tracking (Recommended)
 
-Nuxt handles page transitions as SPA navigations. Track them with the `useConsent` composable:
+Pass the router to the plugin for automatic tracking:
+
+```typescript
+// plugins/consent.client.ts
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createConsentPlugin({
+    gaId: 'G-XXXXXXXXXX',
+    router: nuxtApp.$router,  // Automatic SPA tracking
+  }));
+});
+```
+
+This automatically tracks all page views and fires `ga4Event` from route meta.
+
+### Manual Tracking (Alternative)
+
+If you need custom tracking logic, use the composable with watch:
 
 ```vue
 <!-- app.vue or layouts/default.vue -->
@@ -51,9 +69,10 @@ import { watch } from 'vue';
 const route = useRoute();
 const { trackPageView } = useConsent();
 
-// Initial page view is sent automatically by gtag.
-// Watch fires only on subsequent navigations.
-watch(() => route.path, (path) => {
+// Track navigations (skip initial if needed)
+watch(() => route.path, (path, oldPath) => {
+  // Skip initial navigation
+  if (!oldPath) return;
   trackPageView(path);
 });
 </script>
@@ -126,7 +145,7 @@ async function onCheckout(order) {
 
 ### Route Meta Events
 
-Define events in page meta to fire automatically:
+Define events in page meta to fire automatically when using the router option:
 
 ```vue
 <!-- pages/signup/complete.vue -->
@@ -138,27 +157,7 @@ definePageMeta({
 </script>
 ```
 
-Then watch for route changes with ga4Event:
-
-```vue
-<!-- app.vue -->
-<script setup>
-import { watch } from 'vue';
-import { useConsent } from '@structured-world/vue-privacy/vue';
-
-const route = useRoute();
-const { trackPageView, trackEvent } = useConsent();
-
-watch(() => route.fullPath, () => {
-  const meta = route.meta;
-  trackPageView(route.fullPath, meta.ga4Title);
-
-  if (meta.ga4Event) {
-    trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-  }
-});
-</script>
-```
+Events fire automatically when the user navigates to these pages (no extra code needed if using `router: nuxtApp.$router`).
 
 See [Ecommerce Tracking](/guide/ecommerce) for the full guide.
 

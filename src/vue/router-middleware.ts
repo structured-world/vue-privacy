@@ -21,12 +21,6 @@ export interface RouterMiddlewareOptions {
    * Receives the route and event name (if a ga4Event was fired).
    */
   afterTrack?: (to: RouteLocationNormalized, eventName?: string) => void;
-
-  /**
-   * Whether to track the initial page view on setup.
-   * @default true
-   */
-  trackInitial?: boolean;
 }
 
 /**
@@ -78,41 +72,39 @@ export function setupRouterTracking(
   manager: ConsentManager,
   options: RouterMiddlewareOptions = {}
 ): void {
-  const { beforeTrack, afterTrack, trackInitial = true } = options;
+  const { beforeTrack, afterTrack } = options;
 
   // Track whether initial navigation has been handled
   let initialHandled = false;
 
   // Track initial page view via isReady (preferred - ensures route is fully resolved)
-  if (trackInitial) {
-    router.isReady().then(async () => {
-      const route = router.currentRoute.value;
+  router.isReady().then(async () => {
+    const route = router.currentRoute.value;
 
-      // Apply beforeTrack to initial navigation too
-      if (beforeTrack) {
-        const shouldTrack = await beforeTrack(route, route);
-        if (shouldTrack === false) {
-          initialHandled = true;
-          return;
-        }
+    // Apply beforeTrack to initial navigation too
+    if (beforeTrack) {
+      const shouldTrack = await beforeTrack(route, route);
+      if (shouldTrack === false) {
+        initialHandled = true;
+        return;
       }
+    }
 
-      const meta = route.meta as GA4RouteMeta;
-      initialHandled = true;
+    const meta = route.meta as GA4RouteMeta;
+    initialHandled = true;
 
-      nextTick(() => {
-        // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-        manager.trackPageView(route.fullPath, meta.ga4Title);
+    nextTick(() => {
+      // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+      manager.trackPageView(route.fullPath, meta.ga4Title);
 
-        if (meta.ga4Event) {
-          manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-          afterTrack?.(route, meta.ga4Event.name);
-        } else {
-          afterTrack?.(route);
-        }
-      });
+      if (meta.ga4Event) {
+        manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+        afterTrack?.(route, meta.ga4Event.name);
+      } else {
+        afterTrack?.(route);
+      }
     });
-  }
+  });
 
   // Track subsequent navigations
   router.afterEach(async (to, from) => {

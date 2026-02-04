@@ -137,6 +137,10 @@ export default {
 When using manual setup, you'll need to implement your own router watching for SPA page tracking. The `enhanceWithConsent` function does this automatically.
 :::
 
+::: tip Skip Initial Tracking
+`enhanceWithConsent` always tracks the initial page view. If you need to skip it (e.g., for custom analytics logic), use the manual setup and implement your own tracking with `useConsent().trackPageView()`.
+:::
+
 ## Configuration
 
 All standard options are supported:

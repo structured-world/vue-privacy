@@ -233,6 +233,28 @@ app.use(createConsentPlugin({
 }));
 ```
 
+#### Skip Initial Page View
+
+To skip tracking the initial page load (e.g., for custom analytics logic), use `beforeTrack`:
+
+```typescript
+routerMiddleware: {
+  beforeTrack: (to, from) => {
+    // Initial navigation: to === from (same route object)
+    if (to === from) return false;
+    return true;
+  }
+}
+```
+
+This lets you handle the initial page view manually:
+
+```typescript
+// After some async logic (auth, A/B test, etc.)
+const { trackPageView } = useConsent();
+trackPageView(route.path, 'Custom Title');
+```
+
 ### Manual Setup (Advanced)
 
 For more control, use `setupRouterTracking` directly:
