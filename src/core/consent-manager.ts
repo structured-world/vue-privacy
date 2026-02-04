@@ -356,6 +356,9 @@ export class ConsentManager {
    */
   trackPageView(path: string, title?: string): void {
     const stored = getStoredConsent(this.config);
+    // Intentional: Only suppress when user EXPLICITLY denied analytics.
+    // Before user makes a choice (no cookie), page views are sent under Google Consent Mode v2
+    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
     if (stored && !stored.categories.analytics) {
       return;
     }
@@ -378,6 +381,9 @@ export class ConsentManager {
    */
   trackEvent(eventName: string, params?: Record<string, unknown>): void {
     const stored = getStoredConsent(this.config);
+    // Intentional: Only suppress when user EXPLICITLY denied analytics.
+    // Before user makes a choice (no cookie), events are sent under Google Consent Mode v2
+    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
     if (stored && !stored.categories.analytics) {
       return;
     }
