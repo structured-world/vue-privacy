@@ -96,6 +96,8 @@ async function submit() {
       }, 3000);
     } else {
       const data = await response.json().catch(() => ({}));
+      // Guard: ignore if widget was closed while parsing response
+      if (state.value !== "submitting") return;
       errorMessage.value = (data as { error?: string }).error || "Something went wrong";
       state.value = "error";
     }
