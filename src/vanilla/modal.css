@@ -286,7 +286,9 @@
   border: 1px solid currentColor;
 }
 
-/* Animations */
+/* Animations - CSS hooks for custom animation implementations.
+   These classes are provided for users who want to add enter/exit animations
+   via JavaScript by toggling these classes. Not used by default modal.ts. */
 .consent-modal-overlay--animating {
   transition: opacity 0.3s ease;
 }
