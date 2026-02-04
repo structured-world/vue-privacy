@@ -139,6 +139,108 @@ describe("AutoGeoDetector", () => {
   });
 });
 
+describe("AutoGeoDetector detection log", () => {
+  it("returns detection log with successful cloudflare attempt", async () => {
+    // Cloudflare succeeds
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({
+        "X-Is-EU-Country": "true",
+        "CF-IPCountry": "DE",
+      }),
+    });
+
+    const detector = new AutoGeoDetector("/api/geo");
+    const result = await detector.detect();
+
+    expect(result.log).toBeDefined();
+    expect(result.log!.length).toBe(1);
+    expect(result.log![0].method).toBe("cloudflare");
+    expect(result.log![0].status).toBe("success");
+    expect(result.log![0].result).toEqual({ isEU: true, countryCode: "DE" });
+    expect(result.log![0].duration).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns detection log with failed cloudflare and successful worker", async () => {
+    // Cloudflare fails
+    mockFetch.mockRejectedValueOnce(new Error("Cloudflare unavailable"));
+    // Worker succeeds
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ isEU: true, countryCode: "FR" }),
+    });
+
+    const detector = new AutoGeoDetector("/api/geo");
+    const result = await detector.detect();
+
+    expect(result.log).toBeDefined();
+    expect(result.log!.length).toBe(2);
+
+    // First entry: cloudflare failed
+    expect(result.log![0].method).toBe("cloudflare");
+    expect(result.log![0].status).toBe("failed");
+    expect(result.log![0].error).toContain("Cloudflare");
+
+    // Second entry: worker succeeded
+    expect(result.log![1].method).toBe("worker");
+    expect(result.log![1].status).toBe("success");
+    expect(result.log![1].result).toEqual({ isEU: true, countryCode: "FR" });
+  });
+
+  it("includes skipped entry when geoUrl not provided", async () => {
+    // Cloudflare fails
+    mockFetch.mockRejectedValueOnce(new Error("Cloudflare unavailable"));
+    // ipapi succeeds
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ in_eu: false, country_code: "US" }),
+    });
+
+    // No geoUrl = worker skipped
+    const detector = new AutoGeoDetector();
+    const result = await detector.detect();
+
+    expect(result.log).toBeDefined();
+    expect(result.log!.length).toBe(3);
+
+    expect(result.log![0].method).toBe("cloudflare");
+    expect(result.log![0].status).toBe("failed");
+
+    expect(result.log![1].method).toBe("worker");
+    expect(result.log![1].status).toBe("skipped");
+    expect(result.log![1].error).toBeUndefined(); // skipped != failed, no error
+
+    expect(result.log![2].method).toBe("api");
+    expect(result.log![2].status).toBe("success");
+  });
+
+  it("includes all attempts when falling through to timezone", async () => {
+    // All methods fail except timezone
+    mockFetch.mockRejectedValueOnce(new Error("Cloudflare unavailable"));
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 }); // Worker fails
+    mockFetch.mockRejectedValueOnce(new Error("ipapi unavailable")); // ipapi fails
+
+    const detector = new AutoGeoDetector("/api/geo");
+    const result = await detector.detect();
+
+    expect(result.method).toBe("fallback");
+    expect(result.log).toBeDefined();
+    expect(result.log!.length).toBe(4);
+
+    expect(result.log![0].method).toBe("cloudflare");
+    expect(result.log![0].status).toBe("failed");
+
+    expect(result.log![1].method).toBe("worker");
+    expect(result.log![1].status).toBe("failed");
+
+    expect(result.log![2].method).toBe("api");
+    expect(result.log![2].status).toBe("failed");
+
+    expect(result.log![3].method).toBe("fallback");
+    expect(result.log![3].status).toBe("success");
+  });
+});
+
 describe("createGeoDetector", () => {
   it("creates WorkerGeoDetector for worker mode", () => {
     const detector = createGeoDetector("worker", "/api/geo");

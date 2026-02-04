@@ -1,4 +1,9 @@
-import type { GeoDetector, GeoDetectionResult } from "../core/types";
+import type {
+  GeoDetector,
+  GeoDetectionResult,
+  GeoDetectionLogEntry,
+  GeoDetectionResultWithLog,
+} from "../core/types";
 
 /**
  * Cloudflare geo-detection using headers
@@ -178,6 +183,8 @@ export class TimezoneGeoDetector implements GeoDetector {
 /**
  * Auto-detection chain:
  * Cloudflare headers → Worker /api/geo (if geoUrl set) → IP API → Timezone
+ *
+ * Returns extended result with log of all detection attempts for debugging.
  */
 export class AutoGeoDetector implements GeoDetector {
   private cloudflare: CloudflareGeoDetector;
@@ -192,32 +199,88 @@ export class AutoGeoDetector implements GeoDetector {
     this.timezone = new TimezoneGeoDetector();
   }
 
-  async detect(): Promise<GeoDetectionResult> {
+  async detect(): Promise<GeoDetectionResultWithLog> {
+    const log: GeoDetectionLogEntry[] = [];
+
     // Try Cloudflare headers first (fastest, most reliable if available)
+    const cfStart = Date.now();
     try {
-      return await this.cloudflare.detect();
-    } catch {
-      // Cloudflare not available, continue
+      const result = await this.cloudflare.detect();
+      log.push({
+        method: "cloudflare",
+        status: "success",
+        result: { isEU: result.isEU, countryCode: result.countryCode },
+        duration: Date.now() - cfStart,
+      });
+      return { ...result, log };
+    } catch (e) {
+      log.push({
+        method: "cloudflare",
+        status: "failed",
+        error: e instanceof Error ? e.message : "Unknown error",
+        duration: Date.now() - cfStart,
+      });
     }
 
     // Try Worker /api/geo (free, no rate limits, accurate)
     if (this.worker) {
+      const workerStart = Date.now();
       try {
-        return await this.worker.detect();
-      } catch {
-        // Worker not available, continue
+        const result = await this.worker.detect();
+        log.push({
+          method: "worker",
+          status: "success",
+          result: { isEU: result.isEU, countryCode: result.countryCode },
+          duration: Date.now() - workerStart,
+        });
+        return { ...result, log };
+      } catch (e) {
+        log.push({
+          method: "worker",
+          status: "failed",
+          error: e instanceof Error ? e.message : "Unknown error",
+          duration: Date.now() - workerStart,
+        });
       }
+    } else {
+      // Worker skipped (not a failure, just not configured)
+      log.push({
+        method: "worker",
+        status: "skipped",
+        duration: 0,
+      });
     }
 
     // Try IP API (external service, rate-limited)
+    const apiStart = Date.now();
     try {
-      return await this.ipapi.detect();
-    } catch {
-      // IP API failed, continue
+      const result = await this.ipapi.detect();
+      log.push({
+        method: "api",
+        status: "success",
+        result: { isEU: result.isEU, countryCode: result.countryCode },
+        duration: Date.now() - apiStart,
+      });
+      return { ...result, log };
+    } catch (e) {
+      log.push({
+        method: "api",
+        status: "failed",
+        error: e instanceof Error ? e.message : "Unknown error",
+        duration: Date.now() - apiStart,
+      });
     }
 
     // Fallback to timezone heuristics
-    return await this.timezone.detect();
+    const tzStart = Date.now();
+    const result = await this.timezone.detect();
+    log.push({
+      method: "fallback",
+      status: "success",
+      result: { isEU: result.isEU },
+      duration: Date.now() - tzStart,
+    });
+    return { ...result, log };
   }
 }
 

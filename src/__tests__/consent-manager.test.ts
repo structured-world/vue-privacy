@@ -280,15 +280,176 @@ describe("ConsentManager.getGeoResult()", () => {
     });
   });
 
-  it("returns null when consent restored from cookie (geo detection skipped)", async () => {
-    // Pre-set consent cookie so init() takes fast-path
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: true, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+  it("restores EU status from stored consent cookie with geo data", async () => {
+    // Pre-set consent cookie WITH geo data (new format)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: true,
+        geoMethod: "cloudflare",
+        countryCode: "DE",
+      })
+    )}`;
 
     const manager = new ConsentManager({ version: "1.0" });
     await manager.init();
 
-    // Geo detection was skipped — geoResult should be null
+    // isEU should be restored from cookie
+    expect(manager.isEUUser()).toBe(true);
+
+    // geoResult should be reconstructed from stored data
+    const geoResult = manager.getGeoResult();
+    expect(geoResult).not.toBeNull();
+    expect(geoResult!.isEU).toBe(true);
+    expect(geoResult!.method).toBe("cloudflare");
+    expect(geoResult!.countryCode).toBe("DE");
+  });
+
+  it("returns null when consent restored from old cookie without geo data", async () => {
+    // Pre-set consent cookie WITHOUT geo data (old format - backwards compatible)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      })
+    )}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    // isEU should be null (no geo data in cookie)
+    expect(manager.isEUUser()).toBeNull();
+    // geoResult should be null too
     expect(manager.getGeoResult()).toBeNull();
+  });
+});
+
+describe("ConsentManager.getGeoDetectionLog()", () => {
+  it("returns empty array before init", () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    expect(manager.getGeoDetectionLog()).toEqual([]);
+  });
+
+  it("returns log entry when geo detection runs", async () => {
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: true,
+        countryCode: "DE",
+        method: "cloudflare" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+
+    const log = manager.getGeoDetectionLog();
+    expect(log.length).toBe(1);
+    expect(log[0].method).toBe("cloudflare");
+    expect(log[0].status).toBe("success");
+    expect(log[0].result).toEqual({ isEU: true, countryCode: "DE" });
+  });
+
+  it("restores log entry from cookie with geo data", async () => {
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: true,
+        geoMethod: "worker",
+        countryCode: "FR",
+      })
+    )}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const log = manager.getGeoDetectionLog();
+    expect(log.length).toBe(1);
+    expect(log[0].method).toBe("worker");
+    expect(log[0].status).toBe("success");
+    expect(log[0].result).toEqual({ isEU: true, countryCode: "FR" });
+  });
+});
+
+describe("ConsentManager geo data persistence", () => {
+  it("stores geo data in cookie when accepting consent", async () => {
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: true,
+        countryCode: "IT",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+    await manager.acceptAll();
+
+    // Parse the stored consent cookie
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    expect(stored.isEU).toBe(true);
+    expect(stored.geoMethod).toBe("api");
+    expect(stored.countryCode).toBe("IT");
+  });
+
+  it("stores geo data when saving preferences", async () => {
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: true,
+        countryCode: "ES",
+        method: "worker" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+    await manager.savePreferences({ analytics: true, marketing: false });
+
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    expect(stored.isEU).toBe(true);
+    expect(stored.geoMethod).toBe("worker");
+    expect(stored.countryCode).toBe("ES");
+  });
+
+  it("stores geo data for non-EU user who explicitly saves preferences", async () => {
+    // Non-EU users normally get automatic "accept all" without storing consent.
+    // But if they visit preference center and save custom preferences,
+    // the geo data (isEU=false) should be persisted.
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "US",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ geoDetector, version: "1.0" });
+    await manager.init();
+
+    // Non-EU user explicitly changes preferences through preference center
+    await manager.savePreferences({ analytics: true, marketing: false });
+
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    // Geo data should be stored even for non-EU users
+    expect(stored.isEU).toBe(false);
+    expect(stored.geoMethod).toBe("api");
+    expect(stored.countryCode).toBe("US");
   });
 });
 

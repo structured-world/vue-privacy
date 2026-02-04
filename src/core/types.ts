@@ -39,6 +39,12 @@ export interface StoredConsent {
   timestamp: number;
   /** Version of the consent configuration */
   version: string;
+  /** Whether user was in EU when consent was given */
+  isEU?: boolean;
+  /** Geo-detection method used when consent was given */
+  geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  /** Country code detected when consent was given */
+  countryCode?: string;
 }
 
 /**
@@ -66,11 +72,37 @@ export interface GeoDetectionResult {
 }
 
 /**
+ * Single geo-detection attempt log entry.
+ * Used for debugging to show which methods were tried and their results.
+ */
+export interface GeoDetectionLogEntry {
+  /** Detection method that was attempted */
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  /** Status of this detection attempt */
+  status: "success" | "failed" | "skipped";
+  /** Result if successful */
+  result?: { isEU: boolean; countryCode?: string };
+  /** Error message if failed */
+  error?: string;
+  /** Duration of the attempt in milliseconds */
+  duration: number;
+}
+
+/**
+ * Extended geo-detection result with detection log.
+ * Used by AutoGeoDetector to provide debugging information.
+ */
+export interface GeoDetectionResultWithLog extends GeoDetectionResult {
+  /** Log of all detection attempts (only present when using AutoGeoDetector) */
+  log?: GeoDetectionLogEntry[];
+}
+
+/**
  * Geo-detection provider interface
  */
 export interface GeoDetector {
   /** Detect if user is in the EU */
-  detect(): Promise<GeoDetectionResult>;
+  detect(): Promise<GeoDetectionResult | GeoDetectionResultWithLog>;
 }
 
 /**

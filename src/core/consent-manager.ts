@@ -4,6 +4,7 @@ import type {
   ConsentCategories,
   ConsentStorage,
   GeoDetectionResult,
+  GeoDetectionLogEntry,
   GA4EcommerceParams,
   GA4PurchaseParams,
   GA4GenerateLeadParams,
@@ -38,6 +39,7 @@ export class ConsentManager {
   private initialized = false;
   private isEU: boolean | null = null;
   private geoResult: GeoDetectionResult | null = null;
+  private geoDetectionLog: GeoDetectionLogEntry[] = [];
   private userId: string | null = null;
   private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
@@ -152,6 +154,28 @@ export class ConsentManager {
     const stored = getStoredConsent(this.config);
 
     if (stored) {
+      // Restore EU status and geo result from stored consent.
+      // This handles both EU users (isEU=true) and non-EU users who explicitly
+      // changed their preferences (isEU=false). Non-EU users normally don't store
+      // consent (they get automatic "accept all"), but if they visit preference
+      // center and save, their choice is persisted with geo data.
+      if (stored.isEU !== undefined) {
+        this.isEU = stored.isEU;
+        this.geoResult = {
+          isEU: stored.isEU,
+          method: stored.geoMethod ?? "manual",
+          countryCode: stored.countryCode,
+        };
+        // Mark as restored from cookie in the log
+        this.geoDetectionLog = [
+          {
+            method: stored.geoMethod ?? "manual",
+            status: "success",
+            result: { isEU: stored.isEU, countryCode: stored.countryCode },
+            duration: 0,
+          },
+        ];
+      }
       await this.applyConsent(stored.categories);
       return;
     }
@@ -183,6 +207,20 @@ export class ConsentManager {
     const geoResult = await detector.detect();
     this.isEU = geoResult.isEU;
     this.geoResult = geoResult;
+    // Store detection log if available (from AutoGeoDetector)
+    if ("log" in geoResult && geoResult.log) {
+      this.geoDetectionLog = geoResult.log;
+    } else {
+      // Single-method detector: create simple log entry
+      this.geoDetectionLog = [
+        {
+          method: geoResult.method,
+          status: "success",
+          result: { isEU: geoResult.isEU, countryCode: geoResult.countryCode },
+          duration: 0,
+        },
+      ];
+    }
 
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
@@ -221,7 +259,18 @@ export class ConsentManager {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     if (hasNonNecessary) {
-      storeConsent({ categories }, this.config);
+      // Include geo data so EU status can be restored on page reload.
+      // Use ?? undefined to omit null values — if geo detection didn't run
+      // (isEU=null), we don't store it rather than storing null explicitly.
+      storeConsent(
+        {
+          categories,
+          isEU: this.isEU ?? undefined,
+          geoMethod: this.geoResult?.method,
+          countryCode: this.geoResult?.countryCode,
+        },
+        this.config
+      );
     }
 
     if (this.remoteStorage) {
@@ -501,10 +550,20 @@ export class ConsentManager {
 
   /**
    * Get geo-detection result (country, method, isEU).
-   * Returns null if geo detection has not run yet (e.g., consent was restored from cookie).
+   * Returns null if geo detection has not run yet.
+   * Note: When consent is restored from cookie, this returns the stored geo result.
    */
   getGeoResult(): GeoDetectionResult | null {
     return this.geoResult;
+  }
+
+  /**
+   * Get geo-detection log showing all methods attempted with their results.
+   * Useful for debugging geo-detection issues in the debug panel.
+   * Returns empty array if geo detection has not run yet.
+   */
+  getGeoDetectionLog(): GeoDetectionLogEntry[] {
+    return this.geoDetectionLog;
   }
 
   /**
