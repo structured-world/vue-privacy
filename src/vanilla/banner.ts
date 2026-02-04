@@ -57,6 +57,11 @@ export function injectVanillaBannerStyles(): void {
  * Shows when manager.init() determines banner is needed.
  * Hides when user makes a choice.
  *
+ * **Note:** Only one banner instance should be active per ConsentManager at a time.
+ * If you call destroy() and then create a new banner with the same manager,
+ * the new banner will work correctly. However, due to ConsentManager API limitations,
+ * avoid creating multiple concurrent banner instances with the same manager.
+ *
  * @example
  * ```javascript
  * const manager = VuePrivacy.createConsentManager({ gaId: 'G-XXX' });
@@ -128,7 +133,7 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
       <h2 id="consent-banner-title" class="consent-banner__title">${escapeHtml(title)}</h2>
       <p id="consent-banner-message" class="consent-banner__message">
         ${escapeHtml(message)}
-        ${privacyLink ? ` <a href="${escapeHtml(privacyLink)}" class="consent-banner__privacy-link" target="_blank" rel="noopener">${escapeHtml(privacyLinkText)}</a>` : ""}
+        ${privacyLink ? ` <a href="${sanitizeUrl(privacyLink)}" class="consent-banner__privacy-link" target="_blank" rel="noopener">${escapeHtml(privacyLinkText)}</a>` : ""}
       </p>
     </div>
     <div class="consent-banner__actions">
@@ -227,6 +232,25 @@ const HTML_ESCAPE_MAP: Record<string, string> = {
  */
 function escapeHtml(str: string): string {
   return str.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
+}
+
+/**
+ * Sanitize URL for use in href attribute.
+ * Blocks dangerous protocols (javascript:, data:, vbscript:) while allowing
+ * relative paths, http/https URLs, and tel/mailto links.
+ * Does NOT escape HTML entities to preserve query parameters with &.
+ */
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim().toLowerCase();
+  // Block dangerous protocols
+  if (
+    trimmed.startsWith("javascript:") ||
+    trimmed.startsWith("data:") ||
+    trimmed.startsWith("vbscript:")
+  ) {
+    return "#";
+  }
+  return url;
 }
 
 // Re-export types

@@ -285,8 +285,8 @@ describe("createModal", () => {
     const modal = createModal({ manager, onClose });
     modal.show();
 
-    const overlayEl = document.querySelector(".consent-modal-overlay") as HTMLElement;
-    overlayEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    // Keydown listener is on document for robust focus trap
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
 
     expect(onClose).toHaveBeenCalled();
     expect(modal.isVisible()).toBe(false);

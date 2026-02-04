@@ -275,6 +275,9 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    // Only handle keys when modal is visible
+    if (!visible) return;
+
     if (e.key === "Escape") {
       hide();
       manager.getConfig().onPreferenceCenterHide?.();
@@ -304,7 +307,8 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   overlayEl.addEventListener("click", handleClick);
   overlayEl.addEventListener("click", handleOverlayClick);
-  overlayEl.addEventListener("keydown", handleKeydown);
+  // Attach keydown to document for robust focus trap even if focus escapes overlay
+  document.addEventListener("keydown", handleKeydown);
 
   // Show/hide functions
   function show() {
@@ -312,7 +316,13 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     visible = true;
     loadCurrentConsent();
     overlayEl.classList.remove("consent-modal-overlay--hidden");
-    modalEl.focus();
+    // Focus first interactive element for better keyboard UX
+    const focusableElements = modalEl.querySelectorAll<HTMLElement>("button, input:not(:disabled)");
+    if (focusableElements.length > 0) {
+      focusableElements[0].focus();
+    } else {
+      modalEl.focus();
+    }
   }
 
   function hide() {
@@ -329,7 +339,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   function destroy() {
     overlayEl.removeEventListener("click", handleClick);
     overlayEl.removeEventListener("click", handleOverlayClick);
-    overlayEl.removeEventListener("keydown", handleKeydown);
+    document.removeEventListener("keydown", handleKeydown);
     manager.onShowPreferenceCenter(null);
     manager.onHidePreferenceCenter(null);
     overlayEl.remove();
