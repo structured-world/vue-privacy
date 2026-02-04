@@ -32,7 +32,9 @@ export default defineConfig({
     },
   ],
   build: {
-    // Empty build just to trigger the plugin
+    // No library output needed - formats:[] is intentional.
+    // This config only runs the plugin to copy CSS files.
+    // The vanilla JS is already bundled in the main ES build (dist/vanilla/index.js).
     lib: {
       entry: resolve(__dirname, "src/vanilla/index.ts"),
       formats: [],
