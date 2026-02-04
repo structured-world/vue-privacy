@@ -89,6 +89,10 @@ export type {
   GA4GenerateLeadParams,
   GA4RouteEvent,
   GA4RouteMeta,
+  // Consent analytics types
+  ConsentAnalyticsEventType,
+  ConsentAnalyticsSource,
+  ConsentAnalyticsEvent,
 } from "./core/types";
 
 export type {

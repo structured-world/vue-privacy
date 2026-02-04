@@ -142,6 +142,99 @@ Recommended conversions:
 - `sign_up` — new registration
 - `generate_lead` — contact form submission
 
+## Consent Analytics
+
+Track how users interact with your consent banner. Events are sent to your analytics endpoint (fire-and-forget, no blocking).
+
+### Setup
+
+```typescript
+import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
+
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  storage: createKVStorage('/api/consent'),
+  analyticsUrl: '/api/analytics',  // Consent analytics endpoint
+});
+
+await manager.init();
+```
+
+### Events Tracked
+
+| Event | When | Data |
+|-------|------|------|
+| `banner_shown` | Banner displayed to user | `isEU`, `timestamp` |
+| `consent_given` | User accepts/rejects for first time | `categories`, `timeToDecision`, `source` |
+| `consent_updated` | User changes existing preferences | `categories`, `timeToDecision`, `source` |
+
+### Event Payload
+
+```typescript
+interface ConsentAnalyticsEvent {
+  event: 'banner_shown' | 'consent_given' | 'consent_updated';
+  timestamp: string;              // ISO 8601
+  categories?: {                  // Only for consent events
+    analytics: boolean;
+    marketing: boolean;
+    functional: boolean;
+  };
+  timeToDecision?: number;        // Milliseconds from banner to action
+  source?: 'banner' | 'preference_center';
+  isEU?: boolean;
+}
+```
+
+### Time-to-Decision Tracking
+
+Measures how long users take to make a consent decision:
+
+```typescript
+// timeToDecision = Date.now() - bannerShownAt
+// Typical values: 2000-10000ms for engaged users
+```
+
+This metric helps optimize your banner UX:
+- **< 2s**: Users clicking quickly (may not read)
+- **2-10s**: Engaged users making informed choice
+- **> 30s**: Banner may be confusing or intrusive
+
+### Source Tracking
+
+Tracks where consent actions originate:
+
+- `banner` — User clicked Accept/Reject on the main banner
+- `preference_center` — User saved preferences via the modal
+
+### Privacy Guarantees
+
+- **No PII sent** — Only consent categories and timing
+- **No cookies for analytics** — Uses fire-and-forget POST
+- **Silent failures** — Network errors don't affect consent flow
+- **EU status only** — No IP addresses or fingerprints
+
+### Backend Implementation
+
+Use [vue-privacy-worker](https://github.com/structured-world/vue-privacy-worker) for a ready-made Cloudflare Worker backend, or implement your own endpoint:
+
+```typescript
+// Your backend POST /api/analytics
+app.post('/api/analytics', (req, res) => {
+  const { event, timestamp, categories, timeToDecision, source, isEU } = req.body;
+
+  // Store in your analytics system
+  analytics.track(event, {
+    timestamp,
+    categories,
+    timeToDecision,
+    source,
+    isEU,
+  });
+
+  res.status(200).send('ok');
+});
+```
+
 ## Planned: Privacy-First Analytics
 
 The [Privacy Platform](/guide/platform) will offer a built-in analytics alternative:

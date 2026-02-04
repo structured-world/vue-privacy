@@ -175,6 +175,9 @@ interface ConsentConfig {
   // Remote consent storage (pluggable backend)
   storage?: ConsentStorage;
 
+  // Consent analytics endpoint (fire-and-forget POST)
+  analyticsUrl?: string;
+
   // EU detection mode
   euDetection?: 'auto' | 'cloudflare' | 'api' | 'always' | 'never';
 
@@ -268,6 +271,25 @@ const manager = createConsentManager({
 });
 ```
 
+## Consent Analytics
+
+Track banner interactions to measure consent rates and optimize UX:
+
+```typescript
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  storage: createKVStorage('/api/consent'),
+  analyticsUrl: '/api/analytics',  // Enable consent analytics
+});
+```
+
+Events tracked automatically:
+- `banner_shown` — When banner is displayed
+- `consent_given` — First consent decision (accept/reject)
+- `consent_updated` — Changes to existing preferences
+
+Includes `timeToDecision` (ms from banner to action) and `source` (banner vs preference_center). No PII is collected — only consent categories and timing. See the [Consent Analytics Guide](https://privacy.sw.foundation/guide/analytics#consent-analytics) for details.
+
 ## Core API (Framework-agnostic)
 
 ```typescript
@@ -343,6 +365,7 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 | Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
 | UMD/CDN build | ✅ |
 | Remote consent storage | ✅ |
+| Consent analytics (banner metrics) | ✅ |
 | Dark mode support | ✅ |
 
 ## Planned
@@ -350,7 +373,7 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 | Feature | Description |
 |---------|-------------|
 | CCPA support | California Consumer Privacy Act compliance |
-| Analytics dashboard | Opt-in rates, banner interactions (via [privacy.structured.world](https://privacy.structured.world)) |
+| Advanced analytics dashboard | Aggregated opt-in rates, A/B testing for banners (via [privacy.structured.world](https://privacy.structured.world)) |
 
 ## Related Projects
 

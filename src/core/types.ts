@@ -1,5 +1,8 @@
 import type { SupportedLocale } from "../i18n/types";
 
+// Re-export for use in consent-manager
+export type { SupportedLocale };
+
 /**
  * Consent categories that can be managed
  */
@@ -158,8 +161,8 @@ export interface BannerConfig {
 
 /**
  * Supported locale codes for built-in translations
+ * (Re-exported from i18n/types at the top of this file)
  */
-export type { SupportedLocale } from "../i18n/types";
 
 /**
  * GA4 Item object for ecommerce events.
@@ -284,6 +287,39 @@ export interface GA4RouteMeta {
 }
 
 /**
+ * Consent analytics event types sent to the analytics endpoint.
+ * These events track user interactions with the consent banner.
+ */
+export type ConsentAnalyticsEventType =
+  | "banner_shown"
+  | "consent_given"
+  | "consent_updated"
+  | "banner_dismissed";
+
+/**
+ * Source of consent action (where the user made their choice).
+ */
+export type ConsentAnalyticsSource = "banner" | "preference_center";
+
+/**
+ * Payload sent to the analytics endpoint for consent events.
+ */
+export interface ConsentAnalyticsEvent {
+  /** Type of consent event */
+  event: ConsentAnalyticsEventType;
+  /** Timestamp when event occurred (ISO 8601) */
+  timestamp: string;
+  /** Categories that were accepted (only for consent_given/consent_updated) */
+  categories?: Omit<ConsentCategories, "necessary">;
+  /** Time in milliseconds from banner shown to user action */
+  timeToDecision?: number;
+  /** Where the consent action originated */
+  source?: ConsentAnalyticsSource;
+  /** Whether user is in EU */
+  isEU?: boolean;
+}
+
+/**
  * Main plugin configuration
  */
 export interface ConsentConfig {
@@ -347,6 +383,15 @@ export interface ConsentConfig {
    * or implement ConsentStorage interface for custom backends.
    */
   storage?: ConsentStorage;
+
+  /**
+   * URL for consent analytics endpoint.
+   * When set, consent events (banner_shown, consent_given, consent_updated)
+   * are sent to this URL via POST requests. Fire-and-forget, no blocking.
+   *
+   * @example '/api/analytics' or 'https://your-worker.workers.dev/api/analytics'
+   */
+  analyticsUrl?: string;
 
   /** Consent version (changing this resets consent for all users) */
   version?: string;

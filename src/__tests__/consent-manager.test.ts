@@ -745,3 +745,278 @@ describe("ConsentManager ecommerce helpers", () => {
     });
   });
 });
+
+describe("ConsentManager consent analytics", () => {
+  let fetchCalls: Array<{ url: string; options: RequestInit; body: unknown }>;
+
+  beforeEach(() => {
+    fetchCalls = [];
+    // Mock global fetch
+    global.fetch = vi.fn((url: string | URL | Request, options?: RequestInit) => {
+      const body = options?.body ? JSON.parse(options.body as string) : null;
+      fetchCalls.push({ url: url as string, options: options!, body });
+      return Promise.resolve(new Response("ok", { status: 200 }));
+    }) as typeof fetch;
+  });
+
+  it("does not send analytics when analyticsUrl is not configured", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      // analyticsUrl not set
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  it("sends banner_shown event when banner is displayed", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    await manager.init();
+
+    // Wait for async analytics
+    await vi.waitFor(() => {
+      const bannerShownCalls = fetchCalls.filter((c) => c.body?.event === "banner_shown");
+      expect(bannerShownCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "banner_shown")!;
+    expect(event.url).toBe("/api/analytics");
+    expect(event.body.isEU).toBe(true);
+    expect(event.body.timestamp).toBeDefined();
+  });
+
+  it("sends consent_given event on first acceptAll", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    // Register callback so bannerShownAt gets set
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_given");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_given")!;
+    expect(event.body.categories).toEqual({
+      analytics: true,
+      marketing: true,
+      functional: true,
+    });
+    expect(event.body.source).toBe("banner");
+    expect(event.body.timeToDecision).toBeDefined();
+    expect(typeof event.body.timeToDecision).toBe("number");
+  });
+
+  it("sends consent_given event on first rejectAll", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.rejectAll();
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_given");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_given")!;
+    expect(event.body.categories).toEqual({
+      analytics: false,
+      marketing: false,
+      functional: true,
+    });
+    expect(event.body.source).toBe("banner");
+  });
+
+  it("sends consent_given event on first savePreferences", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.savePreferences({ analytics: true, marketing: false });
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_given");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_given")!;
+    expect(event.body.categories).toEqual({
+      analytics: true,
+      marketing: false,
+      functional: true,
+    });
+    expect(event.body.source).toBe("preference_center");
+  });
+
+  it("sends consent_updated event when user already had consent", async () => {
+    // Pre-set consent cookie (user already gave consent before)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      })
+    )}`;
+
+    const manager = new ConsentManager({
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    // User updates their preferences
+    await manager.savePreferences({ analytics: false, marketing: false });
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_updated");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_updated")!;
+    expect(event.body.categories).toEqual({
+      analytics: false,
+      marketing: false,
+      functional: true,
+    });
+  });
+
+  it("sends banner_shown event when onShowBanner is registered after bannerPending", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    // init() completes before onShowBanner is registered (sets bannerPending=true)
+    await manager.init();
+
+    // Now register callback
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    await vi.waitFor(() => {
+      const bannerCalls = fetchCalls.filter((c) => c.body?.event === "banner_shown");
+      expect(bannerCalls.length).toBe(1);
+    });
+  });
+
+  it("sends banner_shown event on resetConsent", async () => {
+    // Pre-set consent cookie
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      })
+    )}`;
+
+    const manager = new ConsentManager({
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    // Reset consent should trigger banner_shown
+    manager.resetConsent();
+
+    await vi.waitFor(() => {
+      const bannerCalls = fetchCalls.filter((c) => c.body?.event === "banner_shown");
+      expect(bannerCalls.length).toBe(1);
+    });
+  });
+
+  it("silently fails when analytics endpoint returns error", async () => {
+    // Mock fetch to return error
+    global.fetch = vi.fn(() => Promise.reject(new Error("Network error"))) as typeof fetch;
+
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    // Should not throw
+    await manager.init();
+    await manager.acceptAll();
+
+    // Consent should still work (local storage)
+    expect(manager.hasConsent()).toBe(true);
+  });
+
+  it("tracks timeToDecision correctly", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+
+    await manager.init();
+
+    // Wait a bit before accepting
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await manager.acceptAll();
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_given");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_given")!;
+    // timeToDecision should be at least 50ms
+    expect(event.body.timeToDecision).toBeGreaterThanOrEqual(50);
+  });
+
+  it("uses correct source for acceptAll from preference_center", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      analyticsUrl: "/api/analytics",
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll("preference_center");
+
+    await vi.waitFor(() => {
+      const consentCalls = fetchCalls.filter((c) => c.body?.event === "consent_given");
+      expect(consentCalls.length).toBe(1);
+    });
+
+    const event = fetchCalls.find((c) => c.body?.event === "consent_given")!;
+    expect(event.body.source).toBe("preference_center");
+  });
+});

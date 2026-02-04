@@ -8,6 +8,9 @@ import type {
   GA4EcommerceParams,
   GA4PurchaseParams,
   GA4GenerateLeadParams,
+  ConsentAnalyticsEventType,
+  ConsentAnalyticsSource,
+  ConsentAnalyticsEvent,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
@@ -53,6 +56,10 @@ export class ConsentManager {
   private consentChangeListeners: Array<
     (categories: Omit<ConsentCategories, "necessary">) => void
   > = [];
+  /** Timestamp when banner was shown (for time-to-decision tracking) */
+  private bannerShownAt: number | null = null;
+  /** Tracks whether user has already given consent (for consent_given vs consent_updated) */
+  private hadPriorConsent = false;
 
   constructor(config: ConsentConfig = {}) {
     this.locale = config.locale ?? detectLocale();
@@ -78,7 +85,9 @@ export class ConsentManager {
     this.showBannerCallback = callback;
     if (this.bannerPending) {
       this.bannerPending = false;
+      this.bannerShownAt = Date.now();
       callback();
+      this.sendConsentAnalyticsEvent("banner_shown");
     }
   }
 
@@ -152,6 +161,7 @@ export class ConsentManager {
 
     // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
+    this.hadPriorConsent = stored !== null;
 
     if (stored) {
       // Restore EU status and geo result from stored consent.
@@ -231,7 +241,9 @@ export class ConsentManager {
 
       // Show banner (or defer if component hasn't mounted yet)
       if (this.showBannerCallback) {
+        this.bannerShownAt = Date.now();
         this.showBannerCallback();
+        this.sendConsentAnalyticsEvent("banner_shown");
       } else {
         this.bannerPending = true;
       }
@@ -319,9 +331,44 @@ export class ConsentManager {
   }
 
   /**
+   * Send consent analytics event to the configured endpoint.
+   * Fire-and-forget: does not block, silently fails.
+   */
+  private sendConsentAnalyticsEvent(
+    event: ConsentAnalyticsEventType,
+    options?: {
+      categories?: Omit<ConsentCategories, "necessary">;
+      source?: ConsentAnalyticsSource;
+    }
+  ): void {
+    if (!this.config.analyticsUrl) return;
+
+    const timeToDecision =
+      this.bannerShownAt !== null ? Date.now() - this.bannerShownAt : undefined;
+
+    const payload: ConsentAnalyticsEvent = {
+      event,
+      timestamp: new Date().toISOString(),
+      ...(options?.categories && { categories: options.categories }),
+      ...(timeToDecision !== undefined && { timeToDecision }),
+      ...(options?.source && { source: options.source }),
+      ...(this.isEU !== null && { isEU: this.isEU }),
+    };
+
+    // Fire-and-forget POST request
+    fetch(this.config.analyticsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Silent fail — analytics is best-effort
+    });
+  }
+
+  /**
    * Accept all cookies
    */
-  async acceptAll(): Promise<void> {
+  async acceptAll(source: ConsentAnalyticsSource = "banner"): Promise<void> {
     const categories = {
       analytics: true,
       marketing: true,
@@ -330,6 +377,11 @@ export class ConsentManager {
 
     await this.applyConsent(categories);
     this.saveConsentWithRemote(categories);
+
+    // Send analytics event
+    const eventType = this.hadPriorConsent ? "consent_updated" : "consent_given";
+    this.sendConsentAnalyticsEvent(eventType, { categories, source });
+    this.hadPriorConsent = true;
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();
@@ -340,7 +392,7 @@ export class ConsentManager {
   /**
    * Reject all non-essential cookies
    */
-  async rejectAll(): Promise<void> {
+  async rejectAll(source: ConsentAnalyticsSource = "banner"): Promise<void> {
     const categories = {
       analytics: false,
       marketing: false,
@@ -349,6 +401,11 @@ export class ConsentManager {
 
     await this.applyConsent(categories);
     this.saveConsentWithRemote(categories);
+
+    // Send analytics event
+    const eventType = this.hadPriorConsent ? "consent_updated" : "consent_given";
+    this.sendConsentAnalyticsEvent(eventType, { categories, source });
+    this.hadPriorConsent = true;
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();
@@ -359,7 +416,10 @@ export class ConsentManager {
   /**
    * Save custom preferences
    */
-  async savePreferences(categories: Partial<Omit<ConsentCategories, "necessary">>): Promise<void> {
+  async savePreferences(
+    categories: Partial<Omit<ConsentCategories, "necessary">>,
+    source: ConsentAnalyticsSource = "preference_center"
+  ): Promise<void> {
     const finalCategories = {
       analytics: categories.analytics ?? false,
       marketing: categories.marketing ?? false,
@@ -368,6 +428,11 @@ export class ConsentManager {
 
     await this.applyConsent(finalCategories);
     this.saveConsentWithRemote(finalCategories);
+
+    // Send analytics event
+    const eventType = this.hadPriorConsent ? "consent_updated" : "consent_given";
+    this.sendConsentAnalyticsEvent(eventType, { categories: finalCategories, source });
+    this.hadPriorConsent = true;
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();
@@ -396,7 +461,12 @@ export class ConsentManager {
     clearConsent(this.config);
     clearConsentUid(this.config);
     this.userId = null;
-    this.showBannerCallback?.();
+    this.hadPriorConsent = false;
+    if (this.showBannerCallback) {
+      this.bannerShownAt = Date.now();
+      this.showBannerCallback();
+      this.sendConsentAnalyticsEvent("banner_shown");
+    }
     this.config.onBannerShow?.();
   }
 
