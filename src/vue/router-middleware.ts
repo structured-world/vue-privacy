@@ -83,6 +83,8 @@ export function setupRouterTracking(
 
   // Store unregister function when afterEach is registered (async)
   let unregisterAfterEach: (() => void) | null = null;
+  // Flag to prevent registration if cleanup is called before isReady resolves
+  let disposed = false;
 
   // Track initial page view and register afterEach ONLY after router is ready.
   // This prevents race condition where Vue Router 4's initial afterEach fires
@@ -90,6 +92,8 @@ export function setupRouterTracking(
   router
     .isReady()
     .then(async () => {
+      // If cleanup was called before isReady resolved, don't register anything
+      if (disposed) return;
       const route = router.currentRoute.value;
 
       // Apply beforeTrack to initial navigation
@@ -168,6 +172,7 @@ export function setupRouterTracking(
 
   // Return cleanup function to unregister afterEach hook
   return () => {
+    disposed = true;
     unregisterAfterEach?.();
   };
 }
