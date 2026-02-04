@@ -22,6 +22,7 @@ const expected = ref("");
 const category = ref("");
 const honeypot = ref("");
 const errorMessage = ref("");
+const abortController = ref<AbortController | null>(null);
 
 const categories = CATEGORIES;
 
@@ -33,12 +34,8 @@ function toggle() {
   if (state.value === "collapsed") {
     state.value = "expanded";
     focusPanel();
-  } else if (state.value !== "collapsed") {
-    state.value = "collapsed";
-    resetForm();
-    nextTick(() => {
-      triggerRef.value?.focus();
-    });
+  } else {
+    closeWidget();
   }
 }
 
@@ -50,8 +47,23 @@ function resetForm() {
   errorMessage.value = "";
 }
 
+function closeWidget() {
+  // Abort any in-flight request to prevent state updates after close
+  abortController.value?.abort();
+  abortController.value = null;
+  state.value = "collapsed";
+  resetForm();
+  nextTick(() => {
+    triggerRef.value?.focus();
+  });
+}
+
 async function submit() {
   if (!isValid.value) return;
+
+  // Abort any previous in-flight request
+  abortController.value?.abort();
+  abortController.value = new AbortController();
 
   state.value = "submitting";
   errorMessage.value = "";
@@ -67,22 +79,38 @@ async function submit() {
         category: category.value || undefined,
         honeypot: honeypot.value,
       }),
+      signal: abortController.value.signal,
     });
+
+    // Guard: ignore response if widget was closed during request
+    if (state.value !== "submitting") return;
 
     if (response.ok) {
       state.value = "success";
       resetForm();
       setTimeout(() => {
-        state.value = "collapsed";
+        // Only auto-collapse if still showing success
+        if (state.value === "success") {
+          state.value = "collapsed";
+        }
       }, 3000);
     } else {
       const data = await response.json().catch(() => ({}));
       errorMessage.value = (data as { error?: string }).error || "Something went wrong";
       state.value = "error";
     }
-  } catch {
+  } catch (e) {
+    // Silently ignore aborted requests (user closed widget)
+    if (e instanceof DOMException && e.name === "AbortError") {
+      return;
+    }
+    // Guard: ignore error if widget was closed during request
+    if (state.value !== "submitting") return;
+
     errorMessage.value = "Network error. Please try again.";
     state.value = "error";
+  } finally {
+    abortController.value = null;
   }
 }
 
@@ -92,11 +120,7 @@ const triggerRef = ref<HTMLElement | null>(null);
 // Focus trap: constrain Tab navigation within the dialog
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === "Escape" && state.value !== "collapsed") {
-    state.value = "collapsed";
-    resetForm();
-    nextTick(() => {
-      triggerRef.value?.focus();
-    });
+    closeWidget();
     return;
   }
 
