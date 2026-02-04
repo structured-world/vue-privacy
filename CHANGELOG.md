@@ -1,3 +1,9 @@
+## [1.6.0](https://github.com/structured-world/vue-privacy/compare/v1.5.0...v1.6.0) (2026-02-04)
+
+### Features
+
+* GA4 events tracking, ecommerce helpers, Vue Router integration ([#69](https://github.com/structured-world/vue-privacy/issues/69)) ([b07a440](https://github.com/structured-world/vue-privacy/commit/b07a440983eaa00b61d3422e13c7a102c33a115d)), closes [#68](https://github.com/structured-world/vue-privacy/issues/68)
+
 ## [1.5.0](https://github.com/structured-world/vue-privacy/compare/v1.4.0...v1.5.0) (2026-02-02)
 
 ### Features
