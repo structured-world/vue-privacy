@@ -32,6 +32,12 @@ export interface RouterMiddlewareOptions {
 /**
  * Setup automatic page and event tracking with Vue Router.
  *
+ * TODO: Add unit tests for router tracking behavior including:
+ * - Initial navigation tracking with trackInitial option
+ * - beforeTrack callback for initial and subsequent navigations
+ * - afterTrack callback with/without ga4Event
+ * - Vue Router 4 initial afterEach skip logic
+ *
  * Automatically tracks:
  * - Page views on every navigation
  * - Custom events defined in route meta (`ga4Event`)

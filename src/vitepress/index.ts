@@ -8,6 +8,8 @@ import { createConsentManager } from "../core/consent-manager";
  * VitePress frontmatter fields for GA4 tracking.
  * Add these to your markdown files' frontmatter.
  *
+ * TODO: Add unit tests for VitePress ga4Event frontmatter handling.
+ *
  * @example
  * ```md
  * ---
