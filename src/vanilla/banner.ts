@@ -71,8 +71,20 @@ export function injectVanillaBannerStyles(): void {
  * manager.init();
  * ```
  */
+// Valid values for runtime validation
+const VALID_POSITIONS = ["bottom", "top", "center"] as const;
+const VALID_THEMES = ["light", "dark", "auto"] as const;
+
 export function createBanner(options: VanillaBannerOptions): VanillaBannerInstance {
   const { manager, theme = "auto", position = "bottom", onAccept, onReject, onCustomize } = options;
+
+  // Runtime validation for JS users (TypeScript users get compile-time checks)
+  const validatedPosition = VALID_POSITIONS.includes(position as (typeof VALID_POSITIONS)[number])
+    ? position
+    : "bottom";
+  const validatedTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number])
+    ? theme
+    : "auto";
 
   // SSR guard
   if (typeof document === "undefined") {
@@ -123,12 +135,12 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
 
   // Build DOM
   const bannerEl = document.createElement("div");
-  bannerEl.className = `consent-banner consent-banner--${position} consent-banner--hidden`;
+  bannerEl.className = `consent-banner consent-banner--${validatedPosition} consent-banner--hidden`;
   bannerEl.setAttribute("role", "dialog");
   bannerEl.setAttribute("aria-modal", "true");
   bannerEl.setAttribute("aria-labelledby", "consent-banner-title");
   bannerEl.setAttribute("aria-describedby", "consent-banner-message");
-  setThemeAttribute(bannerEl, theme);
+  setThemeAttribute(bannerEl, validatedTheme);
 
   bannerEl.innerHTML = `
     <div class="consent-banner__content">

@@ -76,8 +76,16 @@ export function injectVanillaModalStyles(): void {
  * manager.showPreferenceCenter();
  * ```
  */
+// Valid values for runtime validation
+const VALID_THEMES = ["light", "dark", "auto"] as const;
+
 export function createModal(options: VanillaModalOptions): VanillaModalInstance {
   const { manager, theme = "auto", onSave, onClose } = options;
+
+  // Runtime validation for JS users (TypeScript users get compile-time checks)
+  const validatedTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number])
+    ? theme
+    : "auto";
 
   // SSR guard
   if (typeof document === "undefined") {
@@ -145,7 +153,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Build DOM
   const overlayEl = document.createElement("div");
   overlayEl.className = "consent-modal-overlay consent-modal-overlay--hidden";
-  setThemeAttribute(overlayEl, theme);
+  setThemeAttribute(overlayEl, validatedTheme);
 
   overlayEl.innerHTML = `
     <div class="consent-modal" role="dialog" aria-modal="true" aria-labelledby="consent-modal-title" tabindex="-1">
@@ -287,7 +295,11 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
       return;
     }
 
-    // Focus trap: Tab cycles within this modal
+    // Focus trap: Tab cycles within this modal when focus is at boundaries.
+    // Note: This traps Tab key navigation but doesn't force focus back if user
+    // clicks outside. Full focus containment would require a MutationObserver
+    // or focusin listener, adding complexity. The overlay click handler provides
+    // an escape hatch by closing the modal if user clicks outside.
     if (e.key === "Tab") {
       const focusableElements = modalEl.querySelectorAll<HTMLElement>(
         "button, input:not(:disabled)"
