@@ -8,9 +8,10 @@ export default defineConfig({
     vue(),
     dts({
       include: ["src/**/*"],
+      exclude: ["src/__tests__/**"],
       outDir: "dist",
       rollupTypes: false,
-      tsconfigPath: "./tsconfig.json",
+      tsconfigPath: "./tsconfig.build.json",
     }),
   ],
   build: {
@@ -30,7 +31,7 @@ export default defineConfig({
         entryFileNames: "[name].js",
       },
     },
-    sourcemap: true,
-    minify: false,
+    sourcemap: false,
+    minify: "esbuild",
   },
 });
