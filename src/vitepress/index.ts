@@ -1,6 +1,8 @@
 import type { Theme } from "vitepress";
 import { watch, nextTick } from "vue";
 import type { ConsentConfig, GA4RouteEvent } from "../core/types";
+// Note: vue/index imports vue-router types, but they're optional (peerDependenciesMeta).
+// VitePress has its own router; vue-router is not required for VitePress users.
 import { createConsentPlugin, ConsentBanner, CONSENT_MANAGER_KEY } from "../vue/index";
 import { createConsentManager } from "../core/consent-manager";
 
