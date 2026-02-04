@@ -381,4 +381,72 @@ describe("createModal", () => {
 
     modal.destroy();
   });
+
+  it("warns and falls back when invalid theme is provided", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Pass invalid theme value (runtime check for JS users)
+    const modal = createModal({ manager, theme: "invalid" as "auto" });
+
+    // Should warn about invalid theme
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid modal theme "invalid"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Falling back to"));
+
+    // Should fall back to default "auto" theme
+    const overlayEl = document.querySelector('[data-consent-theme="auto"]');
+    expect(overlayEl).not.toBeNull();
+
+    warnSpy.mockRestore();
+    modal.destroy();
+  });
+});
+
+describe("createModal SSR guard", () => {
+  // SSR guard tests require mocking document to be undefined
+  // This simulates a server-side environment like Node.js without DOM
+
+  it("returns no-op stub and warns in SSR context", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Save original document descriptor
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+
+    // Temporarily remove document to simulate SSR
+    // @ts-expect-error - intentionally setting document to undefined for SSR test
+    delete globalThis.document;
+
+    try {
+      // Re-import module to get fresh createModal that sees document as undefined
+      // We need dynamic import to ensure the SSR check runs fresh
+      const freshModule = await import("../vanilla/modal");
+      const manager = createConsentManager({ euDetection: "never" });
+      const modal = freshModule.createModal({ manager });
+
+      // Should warn about SSR context
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("createModal called in SSR context")
+      );
+
+      // Should return no-op stub
+      expect(modal.isVisible()).toBe(false);
+
+      // Calling methods should not throw
+      modal.show();
+      expect(modal.isVisible()).toBe(false); // Still false because it's a no-op
+
+      modal.hide();
+      expect(modal.isVisible()).toBe(false);
+
+      modal.destroy(); // Should not throw
+    } finally {
+      // Restore document
+      if (originalDocument) {
+        Object.defineProperty(globalThis, "document", originalDocument);
+      }
+      warnSpy.mockRestore();
+
+      // Reset module registry for other tests
+      vi.resetModules();
+    }
+  });
 });

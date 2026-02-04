@@ -406,4 +406,92 @@ describe("createBanner", () => {
 
     banner.destroy();
   });
+
+  it("warns and falls back when invalid position is provided", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Pass invalid position value (runtime check for JS users)
+    const banner = createBanner({ manager, position: "invalid" as "bottom" });
+
+    // Should warn about invalid position
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Invalid banner position "invalid"')
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Falling back to"));
+
+    // Should fall back to default "bottom" position
+    const bannerEl = document.querySelector(".consent-banner");
+    expect(bannerEl!.classList.contains("consent-banner--bottom")).toBe(true);
+
+    warnSpy.mockRestore();
+    banner.destroy();
+  });
+
+  it("warns and falls back when invalid theme is provided", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Pass invalid theme value (runtime check for JS users)
+    const banner = createBanner({ manager, theme: "invalid" as "auto" });
+
+    // Should warn about invalid theme
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Invalid banner theme "invalid"'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Falling back to"));
+
+    // Should fall back to default "auto" theme
+    const bannerEl = document.querySelector('[data-consent-theme="auto"]');
+    expect(bannerEl).not.toBeNull();
+
+    warnSpy.mockRestore();
+    banner.destroy();
+  });
+});
+
+describe("createBanner SSR guard", () => {
+  // SSR guard tests require mocking document to be undefined
+  // This simulates a server-side environment like Node.js without DOM
+
+  it("returns no-op stub and warns in SSR context", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Save original document descriptor
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+
+    // Temporarily remove document to simulate SSR
+    // @ts-expect-error - intentionally setting document to undefined for SSR test
+    delete globalThis.document;
+
+    try {
+      // Re-import module to get fresh createBanner that sees document as undefined
+      // We need dynamic import to ensure the SSR check runs fresh
+      const freshModule = await import("../vanilla/banner");
+      const manager = createConsentManager({ euDetection: "never" });
+      const banner = freshModule.createBanner({ manager });
+
+      // Should warn about SSR context
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("createBanner called in SSR context")
+      );
+
+      // Should return no-op stub
+      expect(banner.isVisible()).toBe(false);
+
+      // Calling methods should not throw
+      banner.show();
+      expect(banner.isVisible()).toBe(false); // Still false because it's a no-op
+
+      banner.hide();
+      expect(banner.isVisible()).toBe(false);
+
+      banner.destroy(); // Should not throw
+    } finally {
+      // Restore document
+      if (originalDocument) {
+        Object.defineProperty(globalThis, "document", originalDocument);
+      }
+      warnSpy.mockRestore();
+
+      // Reset module registry for other tests
+      vi.resetModules();
+    }
+  });
 });
