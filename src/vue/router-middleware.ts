@@ -24,8 +24,9 @@ export interface RouterMiddlewareOptions {
   /**
    * Called after tracking completes.
    * Receives the route and event name (if a ga4Event was fired).
+   * Can be async — rejections are caught and logged.
    */
-  afterTrack?: (to: RouteLocationNormalized, eventName?: string) => void;
+  afterTrack?: (to: RouteLocationNormalized, eventName?: string) => void | Promise<void>;
 }
 
 /**
