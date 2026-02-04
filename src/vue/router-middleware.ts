@@ -150,7 +150,9 @@ export function setupRouterTracking(
 
       unregisterAfterEach = router.afterEach(async (to, from) => {
         try {
-          // Allow user to skip tracking
+          // Allow user to skip tracking.
+          // Error handling matches initial navigation: catch, log, and continue tracking.
+          // This ensures consistent behavior — user callback errors never break tracking.
           if (beforeTrack) {
             const shouldTrack = await beforeTrack(to, from);
             if (shouldTrack === false) return;
@@ -160,6 +162,9 @@ export function setupRouterTracking(
 
           // Use nextTick to ensure document.title is updated by the page component
           nextTick(() => {
+            // Check disposed — cleanup might be called between scheduling and execution
+            if (disposed) return;
+
             try {
               // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
               manager.trackPageView(to.fullPath, meta.ga4Title);

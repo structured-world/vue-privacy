@@ -1,4 +1,5 @@
 import type { App, Plugin } from "vue";
+import { inject } from "vue";
 // vue-router types for optional router integration.
 // NOTE: TypeScript still requires vue-router to be installed to resolve these types
 // during compilation. If you use the router integration features (router option in
@@ -193,9 +194,6 @@ export function useConsent() {
     manager,
   };
 }
-
-// Need to import inject for useConsent
-import { inject } from "vue";
 
 // Re-export components
 export { ConsentBanner, ConsentPreferenceModal };
