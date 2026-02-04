@@ -100,14 +100,18 @@ export function setupRouterTracking(
         const meta = route.meta as GA4RouteMeta;
 
         nextTick(() => {
-          // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-          manager.trackPageView(route.fullPath, meta.ga4Title);
+          try {
+            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+            manager.trackPageView(route.fullPath, meta.ga4Title);
 
-          if (meta.ga4Event) {
-            manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-            afterTrack?.(route, meta.ga4Event.name);
-          } else {
-            afterTrack?.(route);
+            if (meta.ga4Event) {
+              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+              afterTrack?.(route, meta.ga4Event.name);
+            } else {
+              afterTrack?.(route);
+            }
+          } catch (err) {
+            console.error("[@structured-world/vue-privacy] Initial tracking error:", err);
           }
         });
       }
@@ -130,18 +134,23 @@ export function setupRouterTracking(
 
           // Use nextTick to ensure document.title is updated by the page component
           nextTick(() => {
-            // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
-            manager.trackPageView(to.fullPath, meta.ga4Title);
+            try {
+              // Pass ga4Title only; trackPageView falls back to document.title internally (SSR-safe)
+              manager.trackPageView(to.fullPath, meta.ga4Title);
 
-            // Fire custom event from route meta
-            if (meta.ga4Event) {
-              manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
-              afterTrack?.(to, meta.ga4Event.name);
-            } else {
-              afterTrack?.(to);
+              // Fire custom event from route meta
+              if (meta.ga4Event) {
+                manager.trackEvent(meta.ga4Event.name, meta.ga4Event.params);
+                afterTrack?.(to, meta.ga4Event.name);
+              } else {
+                afterTrack?.(to);
+              }
+            } catch (err) {
+              console.error("[@structured-world/vue-privacy] Navigation tracking error:", err);
             }
           });
         } catch (err) {
+          // Catches errors in beforeTrack callback (async code before nextTick)
           console.error("[@structured-world/vue-privacy] Router tracking error:", err);
         }
       });
