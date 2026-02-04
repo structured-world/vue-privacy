@@ -131,13 +131,14 @@ export type { SupportedLocale } from "../i18n/types";
 
 /**
  * GA4 Item object for ecommerce events.
+ * Per GA4 spec, at least one of item_id or item_name is required.
  * @see https://developers.google.com/analytics/devguides/collection/ga4/reference/events
  */
 export interface GA4Item {
-  /** Required: SKU or product ID */
-  item_id: string;
-  /** Required: Product name */
-  item_name: string;
+  /** SKU or product ID (required if item_name not provided) */
+  item_id?: string;
+  /** Product name (required if item_id not provided) */
+  item_name?: string;
   /** Affiliate or partner name */
   affiliation?: string;
   /** Coupon code applied to item */

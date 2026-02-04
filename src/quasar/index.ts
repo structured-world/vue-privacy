@@ -55,7 +55,9 @@ export function consentBoot(options: QuasarBootOptions) {
   return ({ app, router }: { app: App; router?: Router }) => {
     const manager = createConsentManager({
       ...config,
-      sendPageView: !router,
+      // With router: disable auto page_view (SPA tracking handles it)
+      // Without router: respect user's config.sendPageView (default true in core)
+      sendPageView: router ? false : config.sendPageView,
     });
 
     // Provide manager for injection
@@ -73,7 +75,9 @@ export function consentBoot(options: QuasarBootOptions) {
           // Delegate all router tracking logic to shared setupRouterTracking
           // which handles isReady(), initial tracking, and afterEach registration.
           // Note: routerMiddleware may be undefined - setupRouterTracking has default `= {}`
-          setupRouterTracking(router, manager, routerMiddleware);
+          const cleanup = setupRouterTracking(router, manager, routerMiddleware);
+          // Store cleanup for manager.destroy() to call
+          manager.setRouterCleanup(cleanup);
         })
         .catch((err) => {
           console.error("[@structured-world/vue-privacy] Failed to initialize:", err);

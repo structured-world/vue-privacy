@@ -141,6 +141,10 @@ export function setupRouterTracking(
       // in double-tracking. The timing window is negligible in practice (app mount phase).
       // Note: Initial tracking uses nextTick for document.title sync, so gtag call happens
       // after this afterEach registration, but that's fine - they track different navigations.
+
+      // Check disposed again — cleanup might have been called during async beforeTrack
+      if (disposed) return;
+
       unregisterAfterEach = router.afterEach(async (to, from) => {
         try {
           // Allow user to skip tracking
