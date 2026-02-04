@@ -4,7 +4,9 @@ Complete guide to setting up GA4 ecommerce tracking with vue-privacy.
 
 ## Overview
 
-vue-privacy provides typed helpers for all GA4 ecommerce events. Events automatically respect user consent — nothing is sent if analytics consent is denied.
+vue-privacy provides typed helpers for common GA4 ecommerce events. Events automatically respect user consent — nothing is sent if analytics consent is denied.
+
+**Supported events:** `view_item`, `view_item_list`, `select_item`, `add_to_cart`, `begin_checkout`, `add_shipping_info`, `add_payment_info`, `purchase`.
 
 **References:**
 - [GA4 Recommended Events](https://developers.google.com/analytics/devguides/collection/ga4/reference/events)

@@ -119,6 +119,18 @@ export function useConsent() {
     /** Track view_item event */
     trackViewItem: (params: Parameters<typeof manager.trackViewItem>[0]) =>
       manager.trackViewItem(params),
+    /** Track view_item_list event */
+    trackViewItemList: (params: Parameters<typeof manager.trackViewItemList>[0]) =>
+      manager.trackViewItemList(params),
+    /** Track select_item event */
+    trackSelectItem: (params: Parameters<typeof manager.trackSelectItem>[0]) =>
+      manager.trackSelectItem(params),
+    /** Track add_shipping_info event */
+    trackAddShippingInfo: (params: Parameters<typeof manager.trackAddShippingInfo>[0]) =>
+      manager.trackAddShippingInfo(params),
+    /** Track add_payment_info event */
+    trackAddPaymentInfo: (params: Parameters<typeof manager.trackAddPaymentInfo>[0]) =>
+      manager.trackAddPaymentInfo(params),
     /** Track sign_up event */
     trackSignUp: (method?: string) => manager.trackSignUp(method),
     /** Track login event */

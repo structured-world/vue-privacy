@@ -468,4 +468,97 @@ describe("ConsentManager ecommerce helpers", () => {
     const viewItemCall = gtagCalls.find((c) => c[1] === "view_item");
     expect(viewItemCall).toBeDefined();
   });
+
+  it("trackViewItemList sends view_item_list event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackViewItemList({
+      currency: "USD",
+      item_list_id: "category_shirts",
+      item_list_name: "T-Shirts",
+      items: [
+        { item_id: "SKU_5", item_name: "Red Shirt", price: 29.99 },
+        { item_id: "SKU_6", item_name: "Blue Shirt", price: 29.99 },
+      ],
+    });
+
+    const call = gtagCalls.find((c) => c[1] === "view_item_list");
+    expect(call).toBeDefined();
+    expect(call![2]).toMatchObject({
+      currency: "USD",
+      item_list_id: "category_shirts",
+      item_list_name: "T-Shirts",
+    });
+  });
+
+  it("trackSelectItem sends select_item event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackSelectItem({
+      currency: "USD",
+      item_list_id: "search_results",
+      items: [{ item_id: "SKU_7", item_name: "Selected Product", price: 49.99, index: 3 }],
+    });
+
+    const call = gtagCalls.find((c) => c[1] === "select_item");
+    expect(call).toBeDefined();
+    expect(call![2]).toMatchObject({
+      currency: "USD",
+      item_list_id: "search_results",
+    });
+  });
+
+  it("trackAddShippingInfo sends add_shipping_info event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackAddShippingInfo({
+      currency: "USD",
+      value: 75.0,
+      shipping_tier: "Express",
+      items: [{ item_id: "SKU_8", item_name: "Laptop Stand", price: 75.0 }],
+    });
+
+    const call = gtagCalls.find((c) => c[1] === "add_shipping_info");
+    expect(call).toBeDefined();
+    expect(call![2]).toMatchObject({
+      currency: "USD",
+      value: 75.0,
+      shipping_tier: "Express",
+    });
+  });
+
+  it("trackAddPaymentInfo sends add_payment_info event", async () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    const gtagCalls: unknown[][] = [];
+    window.gtag = (...args: unknown[]) => gtagCalls.push(args);
+
+    manager.trackAddPaymentInfo({
+      currency: "EUR",
+      value: 120.0,
+      payment_type: "Credit Card",
+      items: [{ item_id: "SKU_9", item_name: "Headphones", price: 120.0 }],
+    });
+
+    const call = gtagCalls.find((c) => c[1] === "add_payment_info");
+    expect(call).toBeDefined();
+    expect(call![2]).toMatchObject({
+      currency: "EUR",
+      value: 120.0,
+      payment_type: "Credit Card",
+    });
+  });
 });
