@@ -19,8 +19,12 @@
   --consent-modal-text: #1a1a1a;
   --consent-modal-text-secondary: #666666;
   --consent-modal-border: #e0e0e0;
+  --consent-link: #0066cc;
+  --consent-btn-accept-bg: #0066cc;
+  --consent-btn-accept-text: #ffffff;
   --consent-toggle-bg-on: #0066cc;
   --consent-toggle-bg-off: #cccccc;
+  --consent-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 /* Dark theme */
