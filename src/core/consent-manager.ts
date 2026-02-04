@@ -383,6 +383,11 @@ export class ConsentManager {
     gtagTrackEvent(eventName, params);
   }
 
+  // --- Typed GA4 Ecommerce Helpers ---
+  // Cast to Record<string, unknown> is intentional: these methods provide strict
+  // compile-time types for GA4 params while trackEvent() stays flexible for custom events.
+  // The cast is safe because GA4 params are plain objects compatible with gtag().
+
   /**
    * Track a purchase event with typed parameters.
    * @see https://developers.google.com/analytics/devguides/collection/ga4/ecommerce
