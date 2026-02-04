@@ -32,12 +32,6 @@ export interface RouterMiddlewareOptions {
 /**
  * Setup automatic page and event tracking with Vue Router.
  *
- * TODO: Add unit tests for router tracking behavior including:
- * - Initial navigation tracking with trackInitial option
- * - beforeTrack callback for initial and subsequent navigations
- * - afterTrack callback with/without ga4Event
- * - Vue Router 4 initial afterEach skip logic
- *
  * Automatically tracks:
  * - Page views on every navigation
  * - Custom events defined in route meta (`ga4Event`)
@@ -122,10 +116,11 @@ export function setupRouterTracking(
 
   // Track subsequent navigations
   router.afterEach(async (to, from) => {
-    // Skip initial navigation - handled by isReady() above or disabled via trackInitial=false
-    // Vue Router 4 fires afterEach for initial navigation (from.fullPath is "/" on first load)
-    if (!initialHandled && from.fullPath === "/") {
-      initialHandled = true;
+    // Skip Vue Router 4's initial navigation event if we already tracked it via isReady().
+    // Vue Router 4 fires afterEach for initial load with from.fullPath="/" regardless
+    // of the actual landing page. We check initialHandled to avoid double-tracking.
+    if (initialHandled && from.fullPath === "/") {
+      initialHandled = false;
       return;
     }
 

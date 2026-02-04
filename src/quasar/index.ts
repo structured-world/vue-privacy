@@ -116,11 +116,11 @@ export function consentBoot(options: QuasarBootOptions) {
 
       // Track subsequent navigations via router hook
       router.afterEach(async (to, from) => {
-        // Skip Vue Router 4's initial navigation event if we already tracked it above.
+        // Skip Vue Router 4's initial navigation event if we already tracked it via init().
         // Vue Router 4 fires afterEach for initial load with from.fullPath="/" regardless
         // of the actual landing page. We check initialHandled to avoid double-tracking.
-        if (!initialHandled && from.fullPath === "/") {
-          initialHandled = true;
+        if (initialHandled && from.fullPath === "/") {
+          initialHandled = false;
           return;
         }
 
