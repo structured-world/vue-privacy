@@ -27,8 +27,8 @@
   },
   "main": "./dist/vue-privacy.umd.cjs",
   "module": "./dist/index.js",
-  "unpkg": "./dist/vue-privacy.iife.js",
-  "jsdelivr": "./dist/vue-privacy.iife.js",
+  "unpkg": "./dist/vue-privacy.umd.cjs",
+  "jsdelivr": "./dist/vue-privacy.umd.cjs",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
@@ -72,7 +72,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "vite build && vite build --config vite.config.umd.ts && vue-tsc --emitDeclarationOnly",
+    "build": "vite build && vite build --config vite.config.umd.ts && vue-tsc --project tsconfig.build.json --emitDeclarationOnly",
     "dev": "vite build --watch",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src/",
