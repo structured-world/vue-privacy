@@ -387,14 +387,14 @@ export interface ConsentConfig {
    *
    * When clicked, call `manager.showPreferenceCenter()` to let user opt-out of marketing.
    *
+   * If not provided, use `getTranslations(locale).ccpa.doNotSell` from i18n.
+   *
    * @example
    * ```vue
    * <a v-if="consent.isCCPAUser()" @click="consent.showPreferenceCenter()">
-   *   {{ manager.getConfig().doNotSellText }}
+   *   {{ config.doNotSellText ?? translations.ccpa.doNotSell }}
    * </a>
    * ```
-   *
-   * @default "Do Not Sell My Personal Information"
    */
   doNotSellText?: string;
 

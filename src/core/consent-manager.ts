@@ -612,7 +612,7 @@ export class ConsentManager {
   }
 
   /**
-   * Get geo-detection result (country, method, isEU).
+   * Get geo-detection result (countryCode, region, method, isEU).
    * Returns null if geo detection has not run yet.
    * Note: When consent is restored from cookie, this returns the stored geo result.
    */
