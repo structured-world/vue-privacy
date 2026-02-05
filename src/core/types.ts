@@ -78,8 +78,8 @@ export interface KVStorageOptions {
   /**
    * Callback invoked when a 429 rate limit response is received.
    *
-   * Called before each retry delay. If callback throws, retry loop aborts
-   * and the error propagates to the caller (useful for implementing abort logic).
+   * Called before each retry delay. Useful for logging or user notification.
+   * Note: Exceptions from callback are caught and do not abort the retry loop.
    *
    * @param retryAfter - Retry delay from server's Retry-After header (in seconds), or null if not provided/invalid
    * @param attempt - Current attempt number (1-based)

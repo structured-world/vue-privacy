@@ -302,7 +302,7 @@ describe("createKVStorage rate limiting", () => {
     vi.useRealTimers();
   });
 
-  it("retries on 429 with exponential backoff (default 3 retries)", async () => {
+  it("retries on 429 with exponential backoff (default 3 attempts)", async () => {
     // First 2 calls return 429, third succeeds
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -628,5 +628,28 @@ describe("createKVStorage rate limiting", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // Callback receives null for invalid Retry-After
     expect(onRateLimited).toHaveBeenCalledWith(null, 1);
+  });
+
+  it("gracefully handles callback errors without aborting", async () => {
+    // Callback throws on first 429 but should NOT abort (caught by outer try/catch)
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 429 }));
+
+    const onRateLimited = vi.fn().mockImplementation(() => {
+      throw new Error("Callback error");
+    });
+
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    // Should return null (graceful fallback), not throw
+    const id = await storage.set(null, consent);
+    expect(id).toBeNull();
+
+    // Callback was called before error was caught
+    expect(onRateLimited).toHaveBeenCalledTimes(1);
   });
 });
