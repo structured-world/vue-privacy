@@ -237,7 +237,7 @@ const storage = createKVStorage('/api/consent', {
 
 When the server returns a 429 (Too Many Requests) response:
 
-1. **Retry with exponential backoff**: 1s, 2s, 4s delays between attempts
+1. **Retry with exponential backoff**: Delays between attempts are 1s, 2s, 4s, 8s... (2^n seconds)
 2. **Respect Retry-After header**: If the server sends a `Retry-After` header, that delay is used instead
 3. **Graceful fallback**: After max retries, returns `null` (consent stored locally via cookie only)
 

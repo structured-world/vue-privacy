@@ -373,9 +373,9 @@ describe("createKVStorage rate limiting", () => {
 
     const setPromise = storage.set(null, consent);
 
-    // Wait for all retry delays: 1s + 2s = 3s (no wait after 3rd attempt)
-    await vi.advanceTimersByTimeAsync(1000); // After 1st retry
-    await vi.advanceTimersByTimeAsync(2000); // After 2nd retry
+    // Wait for retry delays: 1s after attempt 1, 2s after attempt 2 (no wait after attempt 3)
+    await vi.advanceTimersByTimeAsync(1000); // After attempt 1 (429)
+    await vi.advanceTimersByTimeAsync(2000); // After attempt 2 (429)
 
     const id = await setPromise;
 
@@ -593,6 +593,38 @@ describe("createKVStorage rate limiting", () => {
 
     const id = await setPromise;
     expect(id).toBe("negative-header");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Callback receives null for invalid Retry-After
+    expect(onRateLimited).toHaveBeenCalledWith(null, 1);
+  });
+
+  it("treats non-numeric Retry-After as invalid and uses exponential backoff", async () => {
+    // Non-numeric values like "abc", "2.5", empty string are invalid
+    const headers = new Headers();
+    headers.set("Retry-After", "abc");
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, id: "non-numeric-header" }))
+      );
+
+    const onRateLimited = vi.fn();
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Should use exponential backoff (1s) since "abc" is not a valid number
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const id = await setPromise;
+    expect(id).toBe("non-numeric-header");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     // Callback receives null for invalid Retry-After
     expect(onRateLimited).toHaveBeenCalledWith(null, 1);
