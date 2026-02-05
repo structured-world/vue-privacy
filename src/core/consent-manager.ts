@@ -200,33 +200,11 @@ export class ConsentManager {
         return;
       }
 
-      // Explicit non-EU consent (isEU=false): valid in non-EU jurisdictions.
-      // No roaming check — user explicitly consented in non-EU context.
-      if (stored.isEU === false) {
-        this.isEU = false;
-        this.geoResult = {
-          isEU: false,
-          method: stored.geoMethod ?? "manual",
-          countryCode: stored.countryCode,
-          region: stored.region,
-        };
-        this.geoDetectionLog = [
-          {
-            method: stored.geoMethod ?? "manual",
-            status: "success",
-            result: { isEU: false, countryCode: stored.countryCode, region: stored.region },
-            duration: 0,
-          },
-        ];
-        await this.applyConsent(stored.categories);
-        return;
-      }
-
-      // Legacy cookie (isEU=undefined): must check current location.
-      // If user is now in EU, need re-consent with GDPR disclosure.
+      // Non-EU consent (isEU=false or undefined): must verify current location.
+      // GDPR protects everyone IN the EU, so if user has roamed to EU, need re-consent.
       const needsReconsent = await this.checkRoamingToEU(stored);
       if (!needsReconsent) {
-        // User is not in EU now — consent remains valid
+        // User is not in EU now — non-EU consent remains valid
         await this.applyConsent(stored.categories);
         return;
       }
