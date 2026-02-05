@@ -137,7 +137,7 @@ import '@structured-world/vue-privacy/modal.css';
 const manager = createConsentManager({ gaId: 'G-XXXXXXXXXX' });
 await manager.init();
 
-createBanner(manager, { position: 'bottom' });
+createBanner({ manager, position: 'bottom' });
 createModal({ manager });
 ```
 
