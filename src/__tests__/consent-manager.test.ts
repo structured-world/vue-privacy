@@ -752,36 +752,37 @@ describe("ConsentManager ecommerce helpers", () => {
 });
 
 describe("CCPA_REGIONS constant", () => {
-  it("includes California", () => {
-    expect(CCPA_REGIONS.has("California")).toBe(true);
-    expect(CCPA_REGIONS.has("CA")).toBe(true);
+  // CCPA_REGIONS stores lowercase values for case-insensitive matching
+  it("includes California (lowercase)", () => {
+    expect(CCPA_REGIONS.has("california")).toBe(true);
+    expect(CCPA_REGIONS.has("ca")).toBe(true);
   });
 
-  it("includes Virginia", () => {
-    expect(CCPA_REGIONS.has("Virginia")).toBe(true);
-    expect(CCPA_REGIONS.has("VA")).toBe(true);
+  it("includes Virginia (lowercase)", () => {
+    expect(CCPA_REGIONS.has("virginia")).toBe(true);
+    expect(CCPA_REGIONS.has("va")).toBe(true);
   });
 
-  it("includes Colorado", () => {
-    expect(CCPA_REGIONS.has("Colorado")).toBe(true);
-    expect(CCPA_REGIONS.has("CO")).toBe(true);
+  it("includes Colorado (lowercase)", () => {
+    expect(CCPA_REGIONS.has("colorado")).toBe(true);
+    expect(CCPA_REGIONS.has("co")).toBe(true);
   });
 
-  it("includes Connecticut", () => {
-    expect(CCPA_REGIONS.has("Connecticut")).toBe(true);
-    expect(CCPA_REGIONS.has("CT")).toBe(true);
+  it("includes Connecticut (lowercase)", () => {
+    expect(CCPA_REGIONS.has("connecticut")).toBe(true);
+    expect(CCPA_REGIONS.has("ct")).toBe(true);
   });
 
-  it("includes Utah", () => {
-    expect(CCPA_REGIONS.has("Utah")).toBe(true);
-    expect(CCPA_REGIONS.has("UT")).toBe(true);
+  it("includes Utah (lowercase)", () => {
+    expect(CCPA_REGIONS.has("utah")).toBe(true);
+    expect(CCPA_REGIONS.has("ut")).toBe(true);
   });
 
   it("does not include non-CCPA states", () => {
-    expect(CCPA_REGIONS.has("Texas")).toBe(false);
-    expect(CCPA_REGIONS.has("TX")).toBe(false);
-    expect(CCPA_REGIONS.has("New York")).toBe(false);
-    expect(CCPA_REGIONS.has("NY")).toBe(false);
+    expect(CCPA_REGIONS.has("texas")).toBe(false);
+    expect(CCPA_REGIONS.has("tx")).toBe(false);
+    expect(CCPA_REGIONS.has("new york")).toBe(false);
+    expect(CCPA_REGIONS.has("ny")).toBe(false);
   });
 });
 
@@ -838,6 +839,35 @@ describe("ConsentManager.isCCPAUser()", () => {
     await manager.init();
 
     expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("handles case-insensitive region matching", async () => {
+    // Test uppercase from geo API
+    const managerUpper = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CALIFORNIA"),
+      version: "1.0",
+    });
+    await managerUpper.init();
+    expect(managerUpper.isCCPAUser()).toBe(true);
+
+    // Test lowercase
+    const managerLower = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "california"),
+      version: "1.0",
+    });
+    await managerLower.init();
+    expect(managerLower.isCCPAUser()).toBe(true);
+
+    // Test mixed case
+    const managerMixed = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CaLiFoRnIa"),
+      version: "1.0",
+    });
+    await managerMixed.init();
+    expect(managerMixed.isCCPAUser()).toBe(true);
   });
 
   it("returns false for non-CCPA US state", async () => {
@@ -975,6 +1005,57 @@ describe("ConsentManager CCPA flow", () => {
     await manager.init();
 
     expect(onCCPAUser).not.toHaveBeenCalled();
+  });
+
+  it("persists CCPA consent to cookie", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // CCPA consent should be stored in cookie
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    expect(stored.categories).toEqual({
+      analytics: true,
+      marketing: true,
+      functional: true,
+    });
+    expect(stored.region).toBe("California");
+    expect(stored.countryCode).toBe("US");
+    expect(stored.isEU).toBe(false);
+  });
+
+  it("skips geo detection on reload when CCPA consent exists", async () => {
+    // Pre-fill cookie with CCPA consent
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: false,
+        geoMethod: "worker",
+        countryCode: "US",
+        region: "California",
+      })
+    )}`;
+
+    const geoDetector = createMockGeoDetector(false, "US", "California");
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector,
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Geo detector should NOT be called — consent restored from cookie
+    expect(geoDetector.detect).not.toHaveBeenCalled();
+    expect(manager.getRegion()).toBe("California");
   });
 });
 

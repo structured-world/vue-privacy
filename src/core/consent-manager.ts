@@ -32,24 +32,24 @@ import { createGeoDetector } from "../geo/index";
 
 /**
  * US states with comprehensive consumer privacy laws (CCPA-like).
- * Includes both full names and abbreviations for flexible matching.
+ * Stored in lowercase for case-insensitive matching.
  */
 export const CCPA_REGIONS = new Set([
   // California - CCPA/CPRA
-  "California",
-  "CA",
+  "california",
+  "ca",
   // Virginia - VCDPA
-  "Virginia",
-  "VA",
+  "virginia",
+  "va",
   // Colorado - CPA
-  "Colorado",
-  "CO",
+  "colorado",
+  "co",
   // Connecticut - CTDPA
-  "Connecticut",
-  "CT",
+  "connecticut",
+  "ct",
   // Utah - UCPA
-  "Utah",
-  "UT",
+  "utah",
+  "ut",
 ]);
 
 /**
@@ -60,7 +60,6 @@ export class ConsentManager {
   private locale: SupportedLocale;
   private initialized = false;
   private isEU: boolean | null = null;
-  private isCCPA: boolean | null = null;
   private geoResult: GeoDetectionResult | null = null;
   private geoDetectionLog: GeoDetectionLogEntry[] = [];
   private userId: string | null = null;
@@ -250,9 +249,6 @@ export class ConsentManager {
       ];
     }
 
-    // Determine if user is in a CCPA-covered region
-    this.isCCPA = this.isCCPAUser();
-
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
       if (this.config.gaId) {
@@ -267,7 +263,7 @@ export class ConsentManager {
         this.bannerPending = true;
       }
       this.config.onBannerShow?.();
-    } else if (this.isCCPA) {
+    } else if (this.isCCPAUser()) {
       // CCPA user (US state with privacy law): grant all consent silently.
       // No banner required — CCPA uses opt-out model (via "Do Not Sell" link).
       // User can opt-out later via showPreferenceCenter() triggered by "Do Not Sell" link.
@@ -278,6 +274,8 @@ export class ConsentManager {
       };
 
       await this.applyConsent(grantedCategories);
+      // Persist CCPA consent so geo-detection is not repeated on next visit
+      this.saveConsentWithRemote(grantedCategories);
       this.config.onCCPAUser?.();
     } else {
       // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
@@ -595,12 +593,14 @@ export class ConsentManager {
   /**
    * Check if user is in a CCPA-covered US state (California, Virginia, Colorado, etc.).
    * Returns true only if ccpaEnabled is true in config and user is in a covered region.
+   * Matching is case-insensitive to handle variations in geo API responses.
    */
   isCCPAUser(): boolean {
     if (!this.config.ccpaEnabled) return false;
     if (!this.geoResult) return false;
     if (this.geoResult.countryCode !== "US") return false;
-    return CCPA_REGIONS.has(this.geoResult.region ?? "");
+    const region = this.geoResult.region?.toLowerCase() ?? "";
+    return CCPA_REGIONS.has(region);
   }
 
   /**

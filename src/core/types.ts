@@ -382,7 +382,18 @@ export interface ConsentConfig {
 
   /**
    * Text for "Do Not Sell My Personal Information" link (CCPA requirement).
-   * Only shown when ccpaEnabled is true and user is in a CCPA-covered state.
+   * This is a configuration option for YOUR UI — vue-privacy does not render this link.
+   * Use this value in your footer/navigation component when `isCCPAUser()` returns true.
+   *
+   * When clicked, call `manager.showPreferenceCenter()` to let user opt-out of marketing.
+   *
+   * @example
+   * ```vue
+   * <a v-if="consent.isCCPAUser()" @click="consent.showPreferenceCenter()">
+   *   {{ manager.getConfig().doNotSellText }}
+   * </a>
+   * ```
+   *
    * @default "Do Not Sell My Personal Information"
    */
   doNotSellText?: string;
