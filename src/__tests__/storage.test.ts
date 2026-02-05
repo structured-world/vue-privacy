@@ -463,4 +463,49 @@ describe("createKVStorage rate limiting", () => {
     expect(result!.categories.analytics).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("makes at least one attempt even if maxRetries is 0", async () => {
+    // Even with maxRetries=0, should make at least 1 attempt
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true, id: "zero-retries" }))
+    );
+
+    const storage = createKVStorage("/api/consent", { maxRetries: 0 });
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const id = await storage.set(null, consent);
+    expect(id).toBe("zero-retries");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("caps excessive Retry-After values to prevent long waits", async () => {
+    // Server returns Retry-After: 999999 (would be ~277 hours without cap)
+    const headers = new Headers();
+    headers.set("Retry-After", "999999");
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "capped-delay" })));
+
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Should be capped to 30 seconds (MAX_RETRY_DELAY_MS) instead of 999999 seconds
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const id = await setPromise;
+    expect(id).toBe("capped-delay");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

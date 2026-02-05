@@ -10,6 +10,9 @@ import { DEFAULT_CONFIG } from "./types";
 /** Default maximum retry attempts for rate-limited requests */
 const DEFAULT_MAX_RETRIES = 3;
 
+/** Maximum delay in milliseconds to prevent excessive waits from malicious Retry-After headers */
+const MAX_RETRY_DELAY_MS = 30_000; // 30 seconds
+
 /**
  * Sleep for a given number of milliseconds.
  * @internal
@@ -33,7 +36,7 @@ interface RetryOptions {
  * @param url - URL to fetch
  * @param options - Fetch options
  * @param retryOptions - Retry configuration
- * @returns Response if successful, or throws after max retries
+ * @returns Response from fetch (may be 429 if all retries exhausted)
  * @internal
  */
 async function fetchWithRetry(
@@ -43,7 +46,10 @@ async function fetchWithRetry(
 ): Promise<Response> {
   const { maxRetries, onRateLimited } = retryOptions;
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  // Ensure at least one attempt is made even if maxRetries is 0 or negative
+  const effectiveMaxRetries = Math.max(1, maxRetries);
+
+  for (let attempt = 1; attempt <= effectiveMaxRetries; attempt++) {
     const response = await fetch(url, options);
 
     if (response.status !== 429) {
@@ -55,16 +61,18 @@ async function fetchWithRetry(
     const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
 
     // Use Retry-After header if valid, otherwise exponential backoff: 1s, 2s, 4s
-    const delayMs =
+    // Cap at MAX_RETRY_DELAY_MS to prevent excessive waits from malicious headers
+    const rawDelayMs =
       retryAfterSeconds && !isNaN(retryAfterSeconds)
         ? retryAfterSeconds * 1000
         : Math.pow(2, attempt - 1) * 1000;
+    const delayMs = Math.min(rawDelayMs, MAX_RETRY_DELAY_MS);
 
     // Notify callback before waiting
     onRateLimited?.(retryAfterSeconds, attempt);
 
     // Don't wait after the last attempt
-    if (attempt < maxRetries) {
+    if (attempt < effectiveMaxRetries) {
       await sleep(delayMs);
     }
   }
