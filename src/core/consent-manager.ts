@@ -270,7 +270,7 @@ export class ConsentManager {
     } else if (this.isCCPA) {
       // CCPA user (US state with privacy law): grant all consent silently.
       // No banner required — CCPA uses opt-out model (via "Do Not Sell" link).
-      // User can opt-out later via showPreferenceCenter() triggered by DNS link.
+      // User can opt-out later via showPreferenceCenter() triggered by "Do Not Sell" link.
       const grantedCategories = {
         analytics: true,
         marketing: true,
