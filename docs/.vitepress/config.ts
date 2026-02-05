@@ -1,6 +1,5 @@
 import { defineConfig, type HeadConfig } from "vitepress";
-// `with { type: "json" }` requires Node 20.10+. docs:dev and docs:build run
-// in local dev or CI with Node 20.x+. This is a build-time config file.
+// `with { type: "json" }` requires Node 20.10+ (aligned with package.json engines).
 import pkg from "../../package.json" with { type: "json" };
 
 const hostname = "https://privacy.sw.foundation";
