@@ -62,6 +62,34 @@ export interface ConsentStorage {
 }
 
 /**
+ * Options for createKVStorage with rate limiting support.
+ */
+export interface KVStorageOptions {
+  /**
+   * Total number of fetch attempts on 429 rate limit responses. Default: 3
+   *
+   * Examples:
+   * - maxRetries=1: Single attempt, no retries
+   * - maxRetries=3: Up to 3 attempts (1 initial + 2 retries, delays: 1s, 2s)
+   * - maxRetries=5: Up to 5 attempts (1 initial + 4 retries, delays: 1s, 2s, 4s, 8s)
+   *
+   * Note: Named "maxRetries" for API consistency with common retry libraries,
+   * though it represents total attempts, not additional retries.
+   */
+  maxRetries?: number;
+  /**
+   * Callback invoked when a 429 rate limit response is received.
+   *
+   * Called before each retry delay. Useful for logging or user notification.
+   * Note: Exceptions from callback are caught and do not abort the retry loop.
+   *
+   * @param retryAfter - Retry delay from server's Retry-After header (in seconds), or null if not provided/invalid
+   * @param attempt - Current attempt number (1-based)
+   */
+  onRateLimited?: (retryAfter: number | null, attempt: number) => void;
+}
+
+/**
  * Geo-detection result
  */
 export interface GeoDetectionResult {
