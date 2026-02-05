@@ -176,31 +176,56 @@ export class ConsentManager {
     const stored = getStoredConsent(this.config);
 
     if (stored) {
-      // Restore EU status and geo result from stored consent.
-      // This handles both EU users (isEU=true) and non-EU users who explicitly
-      // changed their preferences (isEU=false). Non-EU users normally don't store
-      // consent (they get automatic "accept all"), but if they visit preference
-      // center and save, their choice is persisted with geo data.
-      if (stored.isEU !== undefined) {
-        this.isEU = stored.isEU;
+      // GDPR roaming protection: consent given in EU context is valid everywhere,
+      // but consent given outside EU may not be valid if user is now in EU.
+      // GDPR protects everyone IN the EU, not just EU citizens.
+      if (stored.isEU === true) {
+        // Consent was given in EU context with full GDPR disclosure — valid everywhere.
+        this.isEU = true;
         this.geoResult = {
-          isEU: stored.isEU,
+          isEU: true,
           method: stored.geoMethod ?? "manual",
           countryCode: stored.countryCode,
           region: stored.region,
         };
-        // Mark as restored from cookie in the log
         this.geoDetectionLog = [
           {
             method: stored.geoMethod ?? "manual",
             status: "success",
-            result: { isEU: stored.isEU, countryCode: stored.countryCode, region: stored.region },
+            result: { isEU: true, countryCode: stored.countryCode, region: stored.region },
             duration: 0,
           },
         ];
+        await this.applyConsent(stored.categories);
+        return;
       }
-      await this.applyConsent(stored.categories);
-      return;
+
+      // Non-EU consent (isEU=false or undefined): must verify current location.
+      // GDPR protects everyone IN the EU, so if user has roamed to EU, need re-consent.
+      // NOTE: This runs geo detection on every page load for non-EU users — intentional
+      // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
+      const needsReconsent = await this.checkRoamingToEU(stored);
+      if (!needsReconsent) {
+        // User is not in EU now — non-EU consent remains valid.
+        // Update cookie with fresh geo data from roaming check (for debugging/analytics).
+        // This doesn't skip future roaming checks — only isEU=true fast-path does that.
+        if (this.geoResult) {
+          storeConsent(
+            {
+              categories: stored.categories,
+              isEU: this.geoResult.isEU,
+              geoMethod: this.geoResult.method,
+              countryCode: this.geoResult.countryCode,
+              region: this.geoResult.region,
+            },
+            this.config
+          );
+        }
+        await this.applyConsent(stored.categories);
+        return;
+      }
+      // User is now in EU but consent was given outside EU — fall through to show banner
+      clearConsent(this.config);
     }
 
     // Remote fallback: if storage is configured, try to restore consent
@@ -212,10 +237,34 @@ export class ConsentManager {
         try {
           const remote = await this.remoteStorage.get(uid, version);
           if (remote) {
-            // consent_uid cookie exists only for users who accepted — safe to restore cookie
-            storeConsent({ categories: remote.categories }, this.config);
-            await this.applyConsent(remote.categories);
-            return;
+            // GDPR roaming protection: remote storage doesn't include geo data,
+            // so we must check current location before restoring.
+            // If user is now in EU, they need fresh GDPR-compliant consent.
+            const geoResult = await this.performGeoDetection();
+
+            if (geoResult.isEU) {
+              // User is in EU — cannot use remote consent without GDPR disclosure.
+              // Clear consent_uid and fall through to show banner.
+              clearConsentUid(this.config);
+              // Fall through to geo detection / banner
+            } else {
+              // Not in EU — safe to restore remote consent.
+              // Store geo data for debugging/analytics. Note: on next page load,
+              // this cookie (with isEU=false) will trigger roaming check again —
+              // only isEU=true fast-path skips geo detection.
+              storeConsent(
+                {
+                  categories: remote.categories,
+                  isEU: this.isEU ?? undefined,
+                  geoMethod: this.geoResult?.method,
+                  countryCode: this.geoResult?.countryCode,
+                  region: this.geoResult?.region,
+                },
+                this.config
+              );
+              await this.applyConsent(remote.categories);
+              return;
+            }
           }
         } catch {
           // Remote storage failed — fall through to geo detection
@@ -223,30 +272,26 @@ export class ConsentManager {
       }
     }
 
-    // Detect if user is in EU
-    const detector =
-      this.config.geoDetector ??
-      createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
-    const geoResult = await detector.detect();
-    this.isEU = geoResult.isEU;
-    this.geoResult = geoResult;
-    // Store detection log if available (from AutoGeoDetector)
-    if ("log" in geoResult && geoResult.log) {
-      this.geoDetectionLog = geoResult.log;
-    } else {
-      // Single-method detector: create simple log entry
-      this.geoDetectionLog = [
-        {
-          method: geoResult.method,
-          status: "success",
-          result: {
-            isEU: geoResult.isEU,
-            countryCode: geoResult.countryCode,
-            region: geoResult.region,
+    // Detect if user is in EU (skip if already detected in roaming check or remote storage)
+    if (this.isEU === null) {
+      try {
+        await this.performGeoDetection();
+      } catch {
+        // Geo detection failed: assume non-EU to avoid blocking site usage.
+        // This is a fail-open strategy - if we can't determine location, we grant
+        // consent by default (same behavior as non-EU, non-CCPA users).
+        // This prioritizes user experience over strict compliance in edge cases.
+        this.isEU = false;
+        this.geoDetectionLog = [
+          {
+            method: "fallback",
+            status: "failed",
+            result: { isEU: false },
+            duration: 0,
+            error: "Geo detection failed; defaulting to non-EU",
           },
-          duration: 0,
-        },
-      ];
+        ];
+      }
     }
 
     if (this.isEU) {
@@ -330,6 +375,108 @@ export class ConsentManager {
         .catch(() => {
           // Silent fail — remote storage is best-effort, local cookies are primary
         });
+    }
+  }
+
+  /**
+   * Perform geo detection and update instance state.
+   * Centralizes geo detection logic to avoid duplication across init flows.
+   * Sets this.isEU, this.geoResult, and this.geoDetectionLog.
+   * @returns The geo detection result
+   * @throws If geo detection fails (caller should handle)
+   */
+  private async performGeoDetection(): Promise<GeoDetectionResult> {
+    const detector =
+      this.config.geoDetector ??
+      createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
+
+    const geoResult = await detector.detect();
+    this.isEU = geoResult.isEU;
+    this.geoResult = geoResult;
+
+    // Store detection log if available (from AutoGeoDetector)
+    if ("log" in geoResult && geoResult.log) {
+      this.geoDetectionLog = geoResult.log;
+    } else {
+      // Single-method detector: create simple log entry
+      this.geoDetectionLog = [
+        {
+          method: geoResult.method,
+          status: "success",
+          result: {
+            isEU: geoResult.isEU,
+            countryCode: geoResult.countryCode,
+            region: geoResult.region,
+          },
+          duration: 0,
+        },
+      ];
+    }
+
+    return geoResult;
+  }
+
+  /**
+   * Check if user has roamed to EU and needs re-consent.
+   * Called when stored consent was given outside EU (isEU=false or undefined).
+   * Returns true if user is now in EU and needs to re-consent.
+   */
+  private async checkRoamingToEU(stored: StoredConsent): Promise<boolean> {
+    try {
+      const geoResult = await this.performGeoDetection();
+
+      // If user is now in EU but consent was given outside EU, need re-consent
+      if (geoResult.isEU && stored.isEU !== true) {
+        return true;
+      }
+
+      return false;
+    } catch {
+      // Geo detection failed — keep existing consent (fail-safe).
+      // Design choice: preserve user experience over strict GDPR enforcement in edge cases.
+      // If a user with non-EU consent roams to EU but geo detection fails (network error,
+      // blocked API, etc.), we keep their existing consent rather than forcing re-consent.
+      // This is acceptable because: (1) geo detection failures are rare edge cases,
+      // (2) the user already made a consent choice, and (3) forcing banner on transient
+      // network errors would be poor UX. On next successful page load with working geo
+      // detection, the roaming check will properly trigger re-consent if needed.
+      // Restore stored geo data if available
+      if (stored.isEU !== undefined) {
+        this.isEU = stored.isEU;
+        this.geoResult = {
+          isEU: stored.isEU,
+          method: stored.geoMethod ?? "manual",
+          countryCode: stored.countryCode,
+          region: stored.region,
+        };
+        // Log that geo data was restored from storage due to detection failure
+        this.geoDetectionLog = [
+          {
+            method: stored.geoMethod ?? "manual",
+            status: "failed",
+            result: {
+              isEU: stored.isEU,
+              countryCode: stored.countryCode,
+              region: stored.region,
+            },
+            duration: 0,
+            error: "Geo detection failed in roaming check; restored from stored consent",
+          },
+        ];
+      } else {
+        // Legacy consent without isEU flag: we cannot restore geo state.
+        // Log that geo detection failed with unknown status. The main init flow
+        // will fall through to perform geo detection again if this.isEU is null.
+        this.geoDetectionLog = [
+          {
+            method: "fallback",
+            status: "failed",
+            duration: 0,
+            error: "Geo detection failed in roaming check; legacy consent without isEU flag",
+          },
+        ];
+      }
+      return false;
     }
   }
 

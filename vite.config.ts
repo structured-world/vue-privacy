@@ -2,8 +2,13 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import dts from "vite-plugin-dts";
 import { resolve } from "path";
+// `with { type: "json" }` requires Node 20.10+ (aligned with package.json engines).
+import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({
+  define: {
+    __VUE_PRIVACY_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     vue(),
     dts({

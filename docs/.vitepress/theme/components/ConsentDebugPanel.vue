@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useConsent } from "../../../../src/vue/index";
-import { categoriesToGoogleSignals } from "../../../../src/index";
+import { categoriesToGoogleSignals, VERSION } from "../../../../src/index";
 import type {
   GeoDetectionResult,
   GeoDetectionLogEntry,
@@ -120,7 +120,9 @@ onMounted(() => {
     <!-- Expanded panel -->
     <div v-else class="debug-panel" role="dialog" aria-label="Consent Debug Panel">
       <div class="debug-header">
-        <span class="debug-title">Consent Debug</span>
+        <span class="debug-title"
+          >Consent Debug <span class="debug-version">v{{ VERSION }}</span></span
+        >
         <button class="debug-close" @click="toggle" aria-label="Close">&times;</button>
       </div>
 
@@ -364,6 +366,13 @@ onMounted(() => {
   font-weight: 600;
   font-size: 14px;
   color: var(--vp-c-text-1);
+}
+
+.debug-version {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--vp-c-text-3);
+  margin-left: 4px;
 }
 
 .debug-close {

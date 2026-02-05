@@ -16,6 +16,9 @@
  * ```
  */
 
+// Version
+export { VERSION } from "./version";
+
 // Core exports
 export { ConsentManager, createConsentManager, CCPA_REGIONS } from "./core/consent-manager";
 export {

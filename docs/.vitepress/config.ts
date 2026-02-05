@@ -1,8 +1,16 @@
 import { defineConfig, type HeadConfig } from "vitepress";
+// `with { type: "json" }` requires Node 20.10+ (aligned with package.json engines).
+import pkg from "../../package.json" with { type: "json" };
 
 const hostname = "https://privacy.sw.foundation";
 
 export default defineConfig({
+  vite: {
+    define: {
+      __VUE_PRIVACY_VERSION__: JSON.stringify(pkg.version),
+    },
+  },
+
   title: "Vue Privacy",
   titleTemplate: ":title | Vue Privacy",
   cleanUrls: true,
