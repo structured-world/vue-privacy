@@ -63,7 +63,11 @@ export interface ConsentStorage {
  * Options for createKVStorage with rate limiting support.
  */
 export interface KVStorageOptions {
-  /** Maximum number of retry attempts on 429 rate limit responses. Default: 3 */
+  /**
+   * Maximum number of retry attempts on 429 rate limit responses. Default: 3
+   * Note: This is the total number of attempts, not additional retries after the first.
+   * With maxRetries=3, up to 3 fetch calls will be made (initial + 2 retries).
+   */
   maxRetries?: number;
   /**
    * Callback invoked when a 429 rate limit response is received.

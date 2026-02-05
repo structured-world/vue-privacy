@@ -57,18 +57,22 @@ async function fetchWithRetry(
     }
 
     // Rate limited - calculate delay
+    // Note: Only numeric delay-seconds format supported (HTTP-date format is rare and not used by vue-privacy-worker)
     const retryAfterHeader = response.headers.get("Retry-After");
-    const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
+    const parsedRetryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
+    // Validate: must be a positive number (0 means immediate retry, negative is invalid)
+    const retryAfterSeconds =
+      parsedRetryAfter !== null && !isNaN(parsedRetryAfter) && parsedRetryAfter > 0
+        ? parsedRetryAfter
+        : null;
 
     // Use Retry-After header if valid, otherwise exponential backoff: 1s, 2s, 4s
     // Cap at MAX_RETRY_DELAY_MS to prevent excessive waits from malicious headers
     const rawDelayMs =
-      retryAfterSeconds && !isNaN(retryAfterSeconds)
-        ? retryAfterSeconds * 1000
-        : Math.pow(2, attempt - 1) * 1000;
+      retryAfterSeconds !== null ? retryAfterSeconds * 1000 : Math.pow(2, attempt - 1) * 1000;
     const delayMs = Math.min(rawDelayMs, MAX_RETRY_DELAY_MS);
 
-    // Notify callback before waiting
+    // Notify callback before waiting (callback errors propagate intentionally to allow abort)
     onRateLimited?.(retryAfterSeconds, attempt);
 
     // Don't wait after the last attempt

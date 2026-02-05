@@ -508,4 +508,66 @@ describe("createKVStorage rate limiting", () => {
     expect(id).toBe("capped-delay");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("treats Retry-After: 0 as invalid and uses exponential backoff", async () => {
+    // Retry-After: 0 means immediate retry, but we treat it as invalid (use exponential)
+    const headers = new Headers();
+    headers.set("Retry-After", "0");
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, id: "zero-header" })));
+
+    const onRateLimited = vi.fn();
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Should use exponential backoff (1s) since Retry-After: 0 is treated as invalid
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const id = await setPromise;
+    expect(id).toBe("zero-header");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Callback receives null for invalid Retry-After
+    expect(onRateLimited).toHaveBeenCalledWith(null, 1);
+  });
+
+  it("treats negative Retry-After as invalid and uses exponential backoff", async () => {
+    // Negative Retry-After is invalid per HTTP spec
+    const headers = new Headers();
+    headers.set("Retry-After", "-5");
+
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, id: "negative-header" }))
+      );
+
+    const onRateLimited = vi.fn();
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Should use exponential backoff (1s) since negative Retry-After is invalid
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const id = await setPromise;
+    expect(id).toBe("negative-header");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Callback receives null for invalid Retry-After
+    expect(onRateLimited).toHaveBeenCalledWith(null, 1);
+  });
 });
