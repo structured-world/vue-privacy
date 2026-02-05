@@ -1,4 +1,8 @@
-# Vue 3 Integration
+---
+description: Add GDPR-compliant Google Analytics to Vue 3 apps. Plugin setup, ConsentBanner component, useConsent composable, and Vue Router integration.
+---
+
+# Vue 3 Integration Guide
 
 ## Plugin Setup
 

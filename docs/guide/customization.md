@@ -1,4 +1,8 @@
-# Customization
+---
+description: Customize Vue Privacy banner appearance with CSS variables. Configure dark mode, cookie settings, callbacks, and default consent categories.
+---
+
+# Customization & Theming
 
 ## Banner Text
 

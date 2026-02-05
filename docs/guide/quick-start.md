@@ -1,4 +1,8 @@
-# Quick Start
+---
+description: Get started with Vue Privacy in 2 minutes. Copy-paste examples for VitePress, Vue 3, Nuxt 3, and Quasar with GDPR-compliant Google Analytics.
+---
+
+# Quick Start in 5 Minutes
 
 ## VitePress
 

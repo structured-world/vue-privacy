@@ -1,4 +1,8 @@
-# Analytics
+---
+description: Track GA4 events, page views, and conversions with Vue Privacy. Consent-aware analytics with automatic Consent Mode v2 signal management.
+---
+
+# Analytics & Event Tracking
 
 vue-privacy provides comprehensive Google Analytics 4 (GA4) integration with automatic consent management.
 

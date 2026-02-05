@@ -1,4 +1,8 @@
-# Consent Banner
+---
+description: Configure the GDPR consent banner appearance, position, and behavior. Customize text, colors, and cookie preferences for your Vue application.
+---
+
+# Consent Banner Configuration
 
 The consent banner is the primary UI component that asks users for cookie consent. It appears automatically for EU users and can be dismissed by accepting, rejecting, or customizing preferences.
 

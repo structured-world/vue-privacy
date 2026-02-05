@@ -1,4 +1,8 @@
-# Vue Plugin API
+---
+description: Vue 3 plugin API reference. createConsentPlugin, useConsent composable, ConsentBanner component, and VitePress/Quasar integrations.
+---
+
+# Vue Plugin API Reference
 
 ## createConsentPlugin
 

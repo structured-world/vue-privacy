@@ -1,4 +1,8 @@
-# CDN / Script Tag
+---
+description: Use Vue Privacy without a build system via CDN script tag. Framework-agnostic consent management with unpkg or jsdelivr for any HTML page.
+---
+
+# CDN & Script Tag Usage
 
 Use Vue Privacy without a build system — directly from a CDN via `<script>` tag.
 

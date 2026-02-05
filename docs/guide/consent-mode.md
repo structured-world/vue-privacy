@@ -1,3 +1,7 @@
+---
+description: Implement Google Consent Mode v2 for GDPR compliance. Automatic consent signal propagation to Google Analytics, Ads, and Tag Manager.
+---
+
 # Google Consent Mode v2
 
 ## Overview

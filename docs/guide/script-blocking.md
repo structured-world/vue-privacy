@@ -1,4 +1,8 @@
-# Script Blocking
+---
+description: Block third-party scripts until user consent. Prevent Facebook Pixel, Hotjar, and other tracking scripts from loading before GDPR approval.
+---
+
+# Third-Party Script Blocking
 
 Block third-party scripts from executing until the user grants consent for the matching category.
 

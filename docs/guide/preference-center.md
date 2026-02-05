@@ -1,4 +1,8 @@
-# Preference Center
+---
+description: Build a cookie preference center for granular consent control. Let users choose analytics, marketing, and functional cookie categories.
+---
+
+# Cookie Preference Center
 
 The preference center is a modal dialog that lets users choose which cookie categories to allow. It opens when the user clicks "Customize" on the consent banner.
 

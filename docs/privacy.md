@@ -1,3 +1,7 @@
+---
+description: Privacy policy for the Vue Privacy documentation site. Information about cookies, Google Analytics usage, and your data rights under GDPR.
+---
+
 # Privacy Policy
 
 **Last updated:** February 2026

@@ -1,4 +1,8 @@
-# TypeScript Types
+---
+description: TypeScript type definitions for Vue Privacy. ConsentConfig, StoredConsent, GA4Item, GA4PurchaseParams, and all ecommerce event types.
+---
+
+# TypeScript Type Definitions
 
 ## ConsentConfig
 

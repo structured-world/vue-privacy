@@ -1,4 +1,8 @@
-# Core API
+---
+description: Framework-agnostic Vue Privacy API reference. ConsentManager methods, Google Tag functions, storage utilities, and KV storage with rate limiting.
+---
+
+# Core API Reference Guide
 
 The core API is framework-agnostic and can be used without Vue.
 
