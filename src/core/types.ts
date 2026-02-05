@@ -64,9 +64,9 @@ export interface ConsentStorage {
  */
 export interface KVStorageOptions {
   /**
-   * Maximum number of retry attempts on 429 rate limit responses. Default: 3
-   * Note: This is the total number of attempts, not additional retries after the first.
-   * With maxRetries=3, up to 3 fetch calls will be made (initial + 2 retries).
+   * Total number of fetch attempts on 429 rate limit responses. Default: 3
+   * With maxRetries=3, up to 3 fetch calls will be made (1 initial + 2 retries).
+   * Set to 1 to disable retries (single attempt only).
    */
   maxRetries?: number;
   /**

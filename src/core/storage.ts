@@ -7,8 +7,8 @@ import type {
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 
-/** Default maximum retry attempts for rate-limited requests */
-const DEFAULT_MAX_RETRIES = 3;
+/** Default total number of fetch attempts for rate-limited requests (initial + retries) */
+const DEFAULT_MAX_ATTEMPTS = 3;
 
 /** Maximum delay in milliseconds to prevent excessive waits from malicious Retry-After headers */
 const MAX_RETRY_DELAY_MS = 30_000; // 30 seconds
@@ -60,7 +60,7 @@ async function fetchWithRetry(
     // Note: Only numeric delay-seconds format supported (HTTP-date format is rare and not used by vue-privacy-worker)
     const retryAfterHeader = response.headers.get("Retry-After");
     const parsedRetryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : null;
-    // Validate: must be a positive number (0 means immediate retry, negative is invalid)
+    // Validate: must be a positive number (0 and negative values are treated as invalid, use exponential backoff instead)
     const retryAfterSeconds =
       parsedRetryAfter !== null && !isNaN(parsedRetryAfter) && parsedRetryAfter > 0
         ? parsedRetryAfter
@@ -344,7 +344,7 @@ export async function pushRemoteConsent(
  */
 export function createKVStorage(url: string, options?: KVStorageOptions): ConsentStorage {
   const retryOptions: RetryOptions = {
-    maxRetries: options?.maxRetries ?? DEFAULT_MAX_RETRIES,
+    maxRetries: options?.maxRetries ?? DEFAULT_MAX_ATTEMPTS,
     onRateLimited: options?.onRateLimited,
   };
 

@@ -230,7 +230,7 @@ const storage = createKVStorage('/api/consent', {
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `maxRetries` | `number` | `3` | Maximum retry attempts on 429 responses |
+| `maxRetries` | `number` | `3` | Total fetch attempts on 429 (1 initial + N-1 retries) |
 | `onRateLimited` | `function` | - | Callback invoked on each 429 response |
 
 #### Rate Limiting Behavior

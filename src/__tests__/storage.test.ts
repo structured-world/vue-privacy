@@ -384,6 +384,33 @@ describe("createKVStorage rate limiting", () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it("calls onRateLimited callback on final attempt when all retries exhausted", async () => {
+    // All 3 attempts return 429
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 429 }));
+
+    const onRateLimited = vi.fn();
+    const storage = createKVStorage("/api/consent", { onRateLimited });
+    const consent = {
+      categories: { analytics: false, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent);
+
+    // Wait for retry delays
+    await vi.advanceTimersByTimeAsync(1000); // After 1st retry
+    await vi.advanceTimersByTimeAsync(2000); // After 2nd retry
+
+    await setPromise;
+
+    // Callback should be called 3 times (once per 429), including final attempt
+    expect(onRateLimited).toHaveBeenCalledTimes(3);
+    expect(onRateLimited).toHaveBeenNthCalledWith(1, null, 1);
+    expect(onRateLimited).toHaveBeenNthCalledWith(2, null, 2);
+    expect(onRateLimited).toHaveBeenNthCalledWith(3, null, 3); // Final attempt before giving up
+  });
+
   it("calls onRateLimited callback on each 429 response", async () => {
     const headers = new Headers();
     headers.set("Retry-After", "10");
