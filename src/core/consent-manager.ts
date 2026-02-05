@@ -463,6 +463,18 @@ export class ConsentManager {
             error: "Geo detection failed in roaming check; restored from stored consent",
           },
         ];
+      } else {
+        // Legacy consent without isEU flag: we cannot restore geo state.
+        // Log that geo detection failed with unknown status. The main init flow
+        // will fall through to perform geo detection again if this.isEU is null.
+        this.geoDetectionLog = [
+          {
+            method: "fallback",
+            status: "failed",
+            duration: 0,
+            error: "Geo detection failed in roaming check; legacy consent without isEU flag",
+          },
+        ];
       }
       return false;
     }

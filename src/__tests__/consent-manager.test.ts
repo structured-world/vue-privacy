@@ -458,6 +458,51 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
 
+  it("applies consent with fail-safe when geo detection fails for legacy cookie", async () => {
+    // Legacy cookie WITHOUT isEU field (pre-roaming-protection format)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        // No isEU field — legacy cookie, triggers roaming check
+      })
+    )}`;
+
+    // Geo detection fails (network error, API unavailable, etc.)
+    const geoDetector = {
+      detect: vi.fn().mockRejectedValue(new Error("Network error")),
+    };
+
+    const showBanner = vi.fn();
+    const manager = new ConsentManager({ version: "1.0", geoDetector });
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // Geo detector WAS called (roaming check attempted)
+    expect(geoDetector.detect).toHaveBeenCalled();
+
+    // Consent should be preserved (fail-safe: keep existing consent on error)
+    expect(manager.hasConsent()).toBe(true);
+    const consent = manager.getConsent();
+    expect(consent).not.toBeNull();
+    expect(consent!.categories.analytics).toBe(true);
+    expect(consent!.categories.marketing).toBe(false);
+
+    // Banner should NOT be shown (fail-safe behavior)
+    expect(showBanner).not.toHaveBeenCalled();
+
+    // isEU is null because: legacy cookie has no isEU field to restore from,
+    // and geo detection failed. The roaming check returned false (fail-safe),
+    // consent was applied, and init() returned early without running main geo flow.
+    expect(manager.isEUUser()).toBeNull();
+
+    // geoDetectionLog should show the failure
+    const log = manager.getGeoDetectionLog();
+    expect(log.length).toBeGreaterThan(0);
+    expect(log.some((entry) => entry.status === "failed")).toBe(true);
+  });
+
   it("clears consent and shows banner when user with isEU=false roams to EU", async () => {
     // User gave consent with explicit isEU=false (e.g., CCPA in California)
     cookieStore = `consent_preferences=${encodeURIComponent(
