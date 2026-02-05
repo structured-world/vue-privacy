@@ -114,7 +114,7 @@ describe("ConsentManager with remote storage", () => {
 
     const manager = new ConsentManager({
       storage: mockStorage,
-      geoDetector: createMockGeoDetector(),
+      geoDetector: createMockGeoDetector(false), // Not in EU
       version: "1.0",
     });
 
@@ -127,6 +127,46 @@ describe("ConsentManager with remote storage", () => {
     const consent = manager.getConsent();
     expect(consent).not.toBeNull();
     expect(consent!.categories.analytics).toBe(true);
+  });
+
+  it("blocks remote storage restore and shows banner when user roamed to EU", async () => {
+    // User has consent_uid from previous session (consent given outside EU)
+    cookieStore = "consent_uid=existing-user-id";
+
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      }),
+      set: vi.fn().mockResolvedValue(null),
+    };
+
+    const showBanner = vi.fn();
+
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true, "DE"), // Now in EU!
+      version: "1.0",
+    });
+
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // Remote storage was queried
+    expect(mockStorage.get).toHaveBeenCalledWith("existing-user-id", "1.0");
+
+    // But consent should NOT be restored (user is now in EU)
+    expect(manager.hasConsent()).toBe(false);
+
+    // consent_uid should be cleared
+    expect(cookieStore).not.toContain("consent_uid");
+
+    // Banner should be shown for GDPR disclosure
+    expect(showBanner).toHaveBeenCalledTimes(1);
+
+    // isEU should reflect current location
+    expect(manager.isEUUser()).toBe(true);
   });
 
   it("handles remote storage errors gracefully", async () => {

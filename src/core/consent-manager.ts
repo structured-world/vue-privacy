@@ -243,10 +243,43 @@ export class ConsentManager {
         try {
           const remote = await this.remoteStorage.get(uid, version);
           if (remote) {
-            // consent_uid cookie exists only for users who accepted — safe to restore cookie
-            storeConsent({ categories: remote.categories }, this.config);
-            await this.applyConsent(remote.categories);
-            return;
+            // GDPR roaming protection: remote storage doesn't include geo data,
+            // so we must check current location before restoring.
+            // If user is now in EU, they need fresh GDPR-compliant consent.
+            const detector =
+              this.config.geoDetector ??
+              createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
+            const geoResult = await detector.detect();
+            this.isEU = geoResult.isEU;
+            this.geoResult = geoResult;
+            if ("log" in geoResult && geoResult.log) {
+              this.geoDetectionLog = geoResult.log;
+            } else {
+              this.geoDetectionLog = [
+                {
+                  method: geoResult.method,
+                  status: "success",
+                  result: {
+                    isEU: geoResult.isEU,
+                    countryCode: geoResult.countryCode,
+                    region: geoResult.region,
+                  },
+                  duration: 0,
+                },
+              ];
+            }
+
+            if (geoResult.isEU) {
+              // User is in EU — cannot use remote consent without GDPR disclosure.
+              // Clear consent_uid and fall through to show banner.
+              clearConsentUid(this.config);
+              // Fall through to geo detection / banner
+            } else {
+              // Not in EU — safe to restore remote consent
+              storeConsent({ categories: remote.categories }, this.config);
+              await this.applyConsent(remote.categories);
+              return;
+            }
           }
         } catch {
           // Remote storage failed — fall through to geo detection
