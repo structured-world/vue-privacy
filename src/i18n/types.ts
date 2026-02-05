@@ -35,11 +35,20 @@ export interface PreferenceCenterTranslations {
 }
 
 /**
+ * Translatable string keys for CCPA compliance
+ */
+export interface CCPATranslations {
+  /** "Do Not Sell My Personal Information" link text */
+  doNotSell: string;
+}
+
+/**
  * Complete translation bundle for a single locale
  */
 export interface Translations {
   banner: BannerTranslations;
   preferenceCenter: PreferenceCenterTranslations;
+  ccpa: CCPATranslations;
 }
 
 /**

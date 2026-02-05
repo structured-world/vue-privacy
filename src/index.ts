@@ -17,7 +17,7 @@
  */
 
 // Core exports
-export { ConsentManager, createConsentManager } from "./core/consent-manager";
+export { ConsentManager, createConsentManager, CCPA_REGIONS } from "./core/consent-manager";
 export {
   getStoredConsent,
   storeConsent,
@@ -96,6 +96,7 @@ export type {
   BannerTranslations,
   PreferenceCenterTranslations,
   CategoryTranslations,
+  CCPATranslations,
 } from "./i18n/types";
 
 // Vanilla component types

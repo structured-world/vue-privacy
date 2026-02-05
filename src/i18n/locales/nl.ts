@@ -39,4 +39,7 @@ export const nl: Translations = {
       },
     },
   },
+  ccpa: {
+    doNotSell: "Do Not Sell My Personal Information",
+  },
 };

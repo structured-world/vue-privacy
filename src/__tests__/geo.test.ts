@@ -23,6 +23,7 @@ describe("WorkerGeoDetector", () => {
     expect(result).toEqual({
       isEU: true,
       countryCode: "DE",
+      region: undefined,
       method: "worker",
     });
     expect(mockFetch).toHaveBeenCalledWith("/api/geo");
@@ -40,6 +41,24 @@ describe("WorkerGeoDetector", () => {
     expect(result).toEqual({
       isEU: false,
       countryCode: "US",
+      region: undefined,
+      method: "worker",
+    });
+  });
+
+  it("parses region field from worker response", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ isEU: false, countryCode: "US", region: "California" }),
+    });
+
+    const detector = new WorkerGeoDetector("/api/geo");
+    const result = await detector.detect();
+
+    expect(result).toEqual({
+      isEU: false,
+      countryCode: "US",
+      region: "California",
       method: "worker",
     });
   });
@@ -82,6 +101,7 @@ describe("WorkerGeoDetector", () => {
     expect(result).toEqual({
       isEU: true,
       countryCode: undefined,
+      region: undefined,
       method: "worker",
     });
   });

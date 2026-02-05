@@ -67,11 +67,13 @@ export class IPAPIGeoDetector implements GeoDetector {
       const data = (await response.json()) as {
         in_eu?: boolean;
         country_code?: string;
+        region?: string;
       };
 
       return {
         isEU: data.in_eu === true,
         countryCode: data.country_code,
+        region: data.region ?? undefined,
         method: "api",
       };
     } catch {
@@ -100,11 +102,13 @@ export class WorkerGeoDetector implements GeoDetector {
       const data = (await response.json()) as {
         isEU?: boolean;
         countryCode?: string;
+        region?: string;
       };
 
       return {
         isEU: data.isEU === true,
         countryCode: data.countryCode ?? undefined,
+        region: data.region ?? undefined,
         method: "worker",
       };
     } catch {
@@ -209,7 +213,7 @@ export class AutoGeoDetector implements GeoDetector {
       log.push({
         method: "cloudflare",
         status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode },
+        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
         duration: Date.now() - cfStart,
       });
       return { ...result, log };
@@ -230,7 +234,7 @@ export class AutoGeoDetector implements GeoDetector {
         log.push({
           method: "worker",
           status: "success",
-          result: { isEU: result.isEU, countryCode: result.countryCode },
+          result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
           duration: Date.now() - workerStart,
         });
         return { ...result, log };
@@ -258,7 +262,7 @@ export class AutoGeoDetector implements GeoDetector {
       log.push({
         method: "api",
         status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode },
+        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
         duration: Date.now() - apiStart,
       });
       return { ...result, log };
