@@ -274,7 +274,24 @@ export class ConsentManager {
 
     // Detect if user is in EU (skip if already detected in roaming check or remote storage)
     if (this.isEU === null) {
-      await this.performGeoDetection();
+      try {
+        await this.performGeoDetection();
+      } catch {
+        // Geo detection failed: assume non-EU to avoid blocking site usage.
+        // This is a fail-open strategy - if we can't determine location, we grant
+        // consent by default (same behavior as non-EU, non-CCPA users).
+        // This prioritizes user experience over strict compliance in edge cases.
+        this.isEU = false;
+        this.geoDetectionLog = [
+          {
+            method: "fallback",
+            status: "failed",
+            result: { isEU: false },
+            duration: 0,
+            error: "Geo detection failed; defaulting to non-EU",
+          },
+        ];
+      }
     }
 
     if (this.isEU) {
@@ -432,6 +449,20 @@ export class ConsentManager {
           countryCode: stored.countryCode,
           region: stored.region,
         };
+        // Log that geo data was restored from storage due to detection failure
+        this.geoDetectionLog = [
+          {
+            method: stored.geoMethod ?? "manual",
+            status: "failed",
+            result: {
+              isEU: stored.isEU,
+              countryCode: stored.countryCode,
+              region: stored.region,
+            },
+            duration: 0,
+            error: "Geo detection failed in roaming check; restored from stored consent",
+          },
+        ];
       }
       return false;
     }

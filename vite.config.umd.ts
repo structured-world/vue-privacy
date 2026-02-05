@@ -1,7 +1,8 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-// `with { type: "json" }` requires Node 20.10+. This file is only used in CI
-// which runs Node 20.x+. The published package supports Node >=18.
+// `with { type: "json" }` requires Node 20.10+. This Vite config is only executed
+// at build time (CI/local dev), where we run Node 20.x+. The published package
+// supports Node >=18 and does not execute this config at runtime.
 import pkg from "./package.json" with { type: "json" };
 
 /**
