@@ -1,4 +1,8 @@
-# Quasar Integration
+---
+description: Add GDPR-compliant Google Analytics to Quasar Framework. Boot file setup, ConsentBanner component, useConsent composable, and Dialog integration.
+---
+
+# Quasar Framework Integration
 
 ## Boot File (Recommended)
 

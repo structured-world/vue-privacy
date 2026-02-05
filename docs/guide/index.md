@@ -1,4 +1,8 @@
-# Introduction
+---
+description: Learn how to add GDPR-compliant Google Analytics to Vue 3, Nuxt, VitePress, and Quasar with automatic consent management and Google Consent Mode v2.
+---
+
+# Introduction to Vue Privacy
 
 **@structured-world/vue-privacy** adds Google Analytics (GA4) to your Vue 3, VitePress, Nuxt 3, or Quasar app with GDPR-compliant consent built in.
 

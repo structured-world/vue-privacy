@@ -1,5 +1,6 @@
 ---
 layout: home
+description: Add Google Analytics to Vue 3, VitePress, Nuxt, and Quasar with GDPR consent built in. Google Consent Mode v2, EU auto-detection, and cookie banner.
 
 hero:
   name: "Vue Privacy"

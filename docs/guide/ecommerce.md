@@ -1,4 +1,8 @@
-# Ecommerce Tracking
+---
+description: Track GA4 ecommerce events with Vue Privacy. Purchase, add to cart, checkout, and product views with typed helpers and consent awareness.
+---
+
+# GA4 Ecommerce Tracking Guide
 
 Complete guide to setting up GA4 ecommerce tracking with vue-privacy.
 

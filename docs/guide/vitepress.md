@@ -1,3 +1,7 @@
+---
+description: Add GDPR-compliant Google Analytics to VitePress with one line of code. Automatic SPA page tracking, consent banner, and frontmatter events.
+---
+
 # Google Analytics for VitePress
 
 Add GDPR-compliant Google Analytics to your VitePress site with one line of code.

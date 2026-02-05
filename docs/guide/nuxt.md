@@ -1,4 +1,8 @@
-# Nuxt 3
+---
+description: Add GDPR-compliant Google Analytics to Nuxt 3 apps. Client plugin setup, ConsentBanner component, SPA page tracking, and route meta events.
+---
+
+# Nuxt 3 Integration Guide
 
 vue-privacy works with Nuxt 3 via the standard Vue plugin system.
 

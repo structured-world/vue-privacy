@@ -1,4 +1,8 @@
-# Privacy Platform
+---
+description: Connect Vue Privacy to the managed privacy platform for multi-site consent management, cookie scanning, and compliance analytics.
+---
+
+# Privacy Platform Integration
 
 ::: warning Coming Soon
 The managed privacy platform at [privacy.structured.world](https://privacy.structured.world) is under development. This page will be updated when the platform launches.

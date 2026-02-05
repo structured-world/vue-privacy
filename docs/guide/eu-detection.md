@@ -1,4 +1,8 @@
-# EU Detection
+---
+description: Automatically detect EU users for GDPR consent banners. Cloudflare headers, IP API fallback, timezone heuristics, and custom detector support.
+---
+
+# EU Region Auto-Detection
 
 ## Detection Modes
 
