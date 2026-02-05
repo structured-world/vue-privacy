@@ -4,6 +4,107 @@ import pkg from "../../package.json" with { type: "json" };
 
 const hostname = "https://privacy.sw.foundation";
 
+// Page title mappings for breadcrumbs
+const pageTitles: Record<string, string> = {
+  guide: "Guide",
+  api: "API Reference",
+  installation: "Installation",
+  "quick-start": "Quick Start",
+  vue: "Vue 3",
+  nuxt: "Nuxt 3",
+  vitepress: "VitePress",
+  quasar: "Quasar",
+  cdn: "CDN / Script Tag",
+  "consent-banner": "Consent Banner",
+  "preference-center": "Preference Center",
+  "consent-mode": "Google Consent Mode v2",
+  "script-blocking": "Script Blocking",
+  "eu-detection": "EU Detection",
+  customization: "Customization",
+  analytics: "Analytics Overview",
+  ecommerce: "Ecommerce Tracking",
+  platform: "Privacy Platform",
+  types: "Types",
+};
+
+// JSON-LD Schemas
+const organizationSchema = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "sw.foundation",
+  url: "https://sw.foundation",
+  logo: `${hostname}/logo.svg`,
+  sameAs: ["https://github.com/structured-world/vue-privacy"],
+};
+
+const webSiteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  url: hostname,
+  name: "Vue Privacy Documentation",
+  description:
+    "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: `${hostname}/?search={search_term_string}`,
+    },
+    "query-input": "required name=search_term_string",
+  },
+};
+
+const softwareAppSchema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Vue Privacy",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Any",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  downloadUrl: "https://www.npmjs.com/package/@structured-world/vue-privacy",
+  softwareVersion: "1.10.0",
+  author: {
+    "@type": "Organization",
+    name: "sw.foundation",
+  },
+};
+
+function generateBreadcrumbs(relativePath: string): object | null {
+  const cleanPath = relativePath.replace(/(?:index)?\.md$/, "");
+  if (!cleanPath) return null; // Home page - no breadcrumbs
+
+  const segments = cleanPath.split("/").filter(Boolean);
+  const items = [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: hostname,
+    },
+  ];
+
+  let currentPath = "";
+  segments.forEach((segment, index) => {
+    currentPath += `/${segment}`;
+    items.push({
+      "@type": "ListItem",
+      position: index + 2,
+      name: pageTitles[segment] || segment.charAt(0).toUpperCase() + segment.slice(1),
+      item: `${hostname}${currentPath}`,
+    });
+  });
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: items,
+  };
+}
+
 export default defineConfig({
   vite: {
     define: {
@@ -26,6 +127,7 @@ export default defineConfig({
     const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "");
     const url = `${hostname}/${cleanPath}`;
 
+    // Open Graph and Twitter meta tags
     head.push(["meta", { property: "og:title", content: title }]);
     head.push(["meta", { property: "og:description", content: description }]);
     head.push(["meta", { property: "og:url", content: url }]);
@@ -35,6 +137,17 @@ export default defineConfig({
     head.push(["meta", { name: "twitter:image", content: `${hostname}/og-image.png` }]);
     head.push(["meta", { name: "twitter:image:alt", content: title }]);
     head.push(["link", { rel: "canonical", href: url }]);
+
+    // JSON-LD: BreadcrumbList (for all pages except home)
+    const breadcrumbs = generateBreadcrumbs(pageData.relativePath);
+    if (breadcrumbs) {
+      head.push(["script", { type: "application/ld+json" }, JSON.stringify(breadcrumbs)]);
+    }
+
+    // JSON-LD: SoftwareApplication (home page only)
+    if (!cleanPath) {
+      head.push(["script", { type: "application/ld+json" }, JSON.stringify(softwareAppSchema)]);
+    }
 
     return head;
   },
@@ -55,6 +168,10 @@ export default defineConfig({
     ["meta", { property: "og:image:height", content: "630" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:site_name", content: "Vue Privacy" }],
+    // JSON-LD: Organization schema (global)
+    ["script", { type: "application/ld+json" }, JSON.stringify(organizationSchema)],
+    // JSON-LD: WebSite schema with search action (global)
+    ["script", { type: "application/ld+json" }, JSON.stringify(webSiteSchema)],
   ],
 
   themeConfig: {
