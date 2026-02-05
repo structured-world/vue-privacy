@@ -25,7 +25,7 @@ We will respond within 48 hours and work with you to understand and address the 
 |-------|-------|
 | Status | **Won't fix** - vendor declined remediation |
 | Severity | High (CVSS 7.0) |
-| Package | `npm` (transitive via `@semantic-release/npm`) |
+| Package | `npm@11.9.0` (pinned via resolution, includes tar fix) |
 | Impact | Development only - not in production bundle |
 | Tracking | [#87](https://github.com/structured-world/vue-privacy/issues/87) |
 
