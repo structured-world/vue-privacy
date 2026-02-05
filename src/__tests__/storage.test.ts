@@ -630,8 +630,8 @@ describe("createKVStorage rate limiting", () => {
     expect(onRateLimited).toHaveBeenCalledWith(null, 1);
   });
 
-  it("gracefully handles callback errors without aborting", async () => {
-    // Callback throws on first 429 but should NOT abort (caught by outer try/catch)
+  it("gracefully handles callback errors without aborting retry loop", async () => {
+    // Callback throws on every 429 but should NOT abort retry loop (errors are caught locally)
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 429 }));
 
     const onRateLimited = vi.fn().mockImplementation(() => {
@@ -645,11 +645,17 @@ describe("createKVStorage rate limiting", () => {
       version: "1.0",
     };
 
-    // Should return null (graceful fallback), not throw
-    const id = await storage.set(null, consent);
+    const setPromise = storage.set(null, consent);
+
+    // Wait for retry delays: 1s after attempt 1, 2s after attempt 2 (no wait after attempt 3)
+    await vi.advanceTimersByTimeAsync(1000); // After attempt 1 (429)
+    await vi.advanceTimersByTimeAsync(2000); // After attempt 2 (429)
+
+    // Should return null (graceful fallback after all retries), not throw
+    const id = await setPromise;
     expect(id).toBeNull();
 
-    // Callback was called before error was caught
-    expect(onRateLimited).toHaveBeenCalledTimes(1);
+    // Callback was called for each attempt (3 by default) despite throwing each time
+    expect(onRateLimited).toHaveBeenCalledTimes(3);
   });
 });

@@ -72,8 +72,13 @@ async function fetchWithRetry(
       retryAfterSeconds !== null ? retryAfterSeconds * 1000 : Math.pow(2, attempt - 1) * 1000;
     const delayMs = Math.min(rawDelayMs, MAX_RETRY_DELAY_MS);
 
-    // Notify callback before waiting (errors are caught by outer try/catch for graceful fallback)
-    onRateLimited?.(retryAfterSeconds, attempt);
+    // Notify callback before waiting
+    // Wrap in try-catch so callback errors don't abort the retry loop
+    try {
+      onRateLimited?.(retryAfterSeconds, attempt);
+    } catch {
+      // Callback errors are ignored - retry continues regardless
+    }
 
     // Don't wait after the last attempt
     if (attempt < effectiveMaxRetries) {
