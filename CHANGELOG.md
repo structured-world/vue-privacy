@@ -1,3 +1,9 @@
+## [1.10.0](https://github.com/structured-world/vue-privacy/compare/v1.9.0...v1.10.0) (2026-02-05)
+
+### Features
+
+* **consent:** add GDPR roaming protection and VERSION export ([#86](https://github.com/structured-world/vue-privacy/issues/86)) ([074e090](https://github.com/structured-world/vue-privacy/commit/074e0903fd685031152fae221c3e061a9f729b6a)), closes [#85](https://github.com/structured-world/vue-privacy/issues/85)
+
 ## [1.9.0](https://github.com/structured-world/vue-privacy/compare/v1.8.0...v1.9.0) (2026-02-05)
 
 ### Features
