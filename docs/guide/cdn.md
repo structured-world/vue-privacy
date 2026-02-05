@@ -162,7 +162,7 @@ The UMD build exposes these under `VuePrivacy`:
 | Export | Description |
 |--------|-------------|
 | `createConsentManager(options)` | Create a consent manager instance |
-| `createKVStorage(url)` | Create Cloudflare KV storage adapter |
+| `createKVStorage(url, options?)` | Create KV storage adapter with optional rate limiting |
 | `createGeoDetector(mode, geoUrl?)` | Create geo-detection provider |
 | `ConsentManager` | Consent manager class |
 | `DEFAULT_CONFIG` | Default configuration values |

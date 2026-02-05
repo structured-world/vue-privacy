@@ -45,6 +45,8 @@ export interface StoredConsent {
   geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
   /** Country code detected when consent was given */
   countryCode?: string;
+  /** Region/state detected when consent was given (e.g., "California" for CCPA) */
+  region?: string;
 }
 
 /**
@@ -60,6 +62,34 @@ export interface ConsentStorage {
 }
 
 /**
+ * Options for createKVStorage with rate limiting support.
+ */
+export interface KVStorageOptions {
+  /**
+   * Total number of fetch attempts on 429 rate limit responses. Default: 3
+   *
+   * Examples:
+   * - maxRetries=1: Single attempt, no retries
+   * - maxRetries=3: Up to 3 attempts (1 initial + 2 retries, delays: 1s, 2s)
+   * - maxRetries=5: Up to 5 attempts (1 initial + 4 retries, delays: 1s, 2s, 4s, 8s)
+   *
+   * Note: Named "maxRetries" for API consistency with common retry libraries,
+   * though it represents total attempts, not additional retries.
+   */
+  maxRetries?: number;
+  /**
+   * Callback invoked when a 429 rate limit response is received.
+   *
+   * Called before each retry delay. Useful for logging or user notification.
+   * Note: Exceptions from callback are caught and do not abort the retry loop.
+   *
+   * @param retryAfter - Retry delay from server's Retry-After header (in seconds), or null if not provided/invalid
+   * @param attempt - Current attempt number (1-based)
+   */
+  onRateLimited?: (retryAfter: number | null, attempt: number) => void;
+}
+
+/**
  * Geo-detection result
  */
 export interface GeoDetectionResult {
@@ -67,6 +97,8 @@ export interface GeoDetectionResult {
   isEU: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
+  /** Region/state code (e.g., "California", "CA" for US states) */
+  region?: string;
   /** Detection method used */
   method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
 }
@@ -81,7 +113,7 @@ export interface GeoDetectionLogEntry {
   /** Status of this detection attempt */
   status: "success" | "failed" | "skipped";
   /** Result if successful */
-  result?: { isEU: boolean; countryCode?: string };
+  result?: { isEU: boolean; countryCode?: string; region?: string };
   /** Error message if failed */
   error?: string;
   /** Duration of the attempt in milliseconds */
@@ -368,6 +400,34 @@ export interface ConsentConfig {
 
   /** Callback when preference center is hidden */
   onPreferenceCenterHide?: () => void;
+
+  /**
+   * Enable CCPA compliance mode for US users in California, Virginia, Colorado, etc.
+   * When enabled, CCPA users see no consent banner but can opt-out via "Do Not Sell" link.
+   * @default false
+   */
+  ccpaEnabled?: boolean;
+
+  /**
+   * Text for "Do Not Sell My Personal Information" link (CCPA requirement).
+   * This is a configuration option for YOUR UI — vue-privacy does not render this link.
+   * Use this value in your footer/navigation component when `isCCPAUser()` returns true.
+   *
+   * When clicked, call `manager.showPreferenceCenter()` to let user opt-out of marketing.
+   *
+   * If not provided, use `getTranslations(locale).ccpa.doNotSell` from i18n.
+   *
+   * @example
+   * ```vue
+   * <a v-if="consent.isCCPAUser()" @click="consent.showPreferenceCenter()">
+   *   {{ config.doNotSellText ?? translations.ccpa.doNotSell }}
+   * </a>
+   * ```
+   */
+  doNotSellText?: string;
+
+  /** Callback when user is detected as CCPA user */
+  onCCPAUser?: () => void;
 }
 
 /**

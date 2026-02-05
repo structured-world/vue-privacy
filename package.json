@@ -1,6 +1,6 @@
 {
   "name": "@structured-world/vue-privacy",
-  "version": "1.7.1",
+  "version": "1.9.0",
   "description": "Add Google Analytics (GA4) to Vue 3, VitePress, and Quasar with one line of code. Works with Nuxt 3 via the Vue plugin. GDPR/CCPA compliant cookie consent with Google Consent Mode v2, EU auto-detection, and SPA page tracking.",
   "license": "Apache-2.0",
   "author": "Dmitry Prudnikov <mail@polaz.com>",

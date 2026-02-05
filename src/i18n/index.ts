@@ -84,6 +84,7 @@ export function mergeTranslations(
         },
       },
     },
+    ccpa: { ...base.ccpa, ...custom.ccpa },
   };
 }
 
@@ -93,5 +94,6 @@ export type {
   BannerTranslations,
   PreferenceCenterTranslations,
   CategoryTranslations,
+  CCPATranslations,
   SupportedLocale,
 } from "./types";

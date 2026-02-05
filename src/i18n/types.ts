@@ -35,11 +35,26 @@ export interface PreferenceCenterTranslations {
 }
 
 /**
+ * Translatable string keys for CCPA compliance.
+ *
+ * Note: CCPA text is intentionally NOT translated to local languages.
+ * "Do Not Sell My Personal Information" is the legally required phrase
+ * under California Consumer Privacy Act. CCPA only applies to US states,
+ * where English is the primary language. Translating this legal phrase
+ * could cause compliance issues.
+ */
+export interface CCPATranslations {
+  /** "Do Not Sell My Personal Information" link text (English only, legally required phrase) */
+  doNotSell: string;
+}
+
+/**
  * Complete translation bundle for a single locale
  */
 export interface Translations {
   banner: BannerTranslations;
   preferenceCenter: PreferenceCenterTranslations;
+  ccpa: CCPATranslations;
 }
 
 /**

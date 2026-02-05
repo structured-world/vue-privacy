@@ -20,7 +20,7 @@
 export { VERSION } from "./version";
 
 // Core exports
-export { ConsentManager, createConsentManager } from "./core/consent-manager";
+export { ConsentManager, createConsentManager, CCPA_REGIONS } from "./core/consent-manager";
 export {
   getStoredConsent,
   storeConsent,
@@ -76,6 +76,7 @@ export type {
   ConsentCategories,
   StoredConsent,
   ConsentStorage,
+  KVStorageOptions,
   GoogleConsentSignals,
   GeoDetector,
   GeoDetectionResult,
@@ -99,6 +100,7 @@ export type {
   BannerTranslations,
   PreferenceCenterTranslations,
   CategoryTranslations,
+  CCPATranslations,
 } from "./i18n/types";
 
 // Vanilla component types

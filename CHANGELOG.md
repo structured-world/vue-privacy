@@ -1,3 +1,15 @@
+## [1.9.0](https://github.com/structured-world/vue-privacy/compare/v1.8.0...v1.9.0) (2026-02-05)
+
+### Features
+
+* **storage:** add rate limiting support to createKVStorage ([#81](https://github.com/structured-world/vue-privacy/issues/81)) ([ea6b487](https://github.com/structured-world/vue-privacy/commit/ea6b4872c0067472fc43899db8f543ab18854e3b)), closes [#75](https://github.com/structured-world/vue-privacy/issues/75)
+
+## [1.8.0](https://github.com/structured-world/vue-privacy/compare/v1.7.1...v1.8.0) (2026-02-05)
+
+### Features
+
+* CCPA compliance support (California Consumer Privacy Act) ([#84](https://github.com/structured-world/vue-privacy/issues/84)) ([d152de4](https://github.com/structured-world/vue-privacy/commit/d152de456d441c1a4d320880da29c6618e380199)), closes [#83](https://github.com/structured-world/vue-privacy/issues/83)
+
 ## [1.7.1](https://github.com/structured-world/vue-privacy/compare/v1.7.0...v1.7.1) (2026-02-04)
 
 ### Bug Fixes

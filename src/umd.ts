@@ -80,6 +80,7 @@ export type {
   ConsentCategories,
   StoredConsent,
   ConsentStorage,
+  KVStorageOptions,
   GoogleConsentSignals,
   GeoDetector,
   GeoDetectionResult,

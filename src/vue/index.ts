@@ -186,7 +186,11 @@ export function useConsent() {
       manager.trackGenerateLead(params),
     /** Check if user is detected as EU */
     isEUUser: () => manager.isEUUser(),
-    /** Get geo-detection result (country, method, isEU) */
+    /** Check if user is in a CCPA-covered US state (California, Virginia, etc.) */
+    isCCPAUser: () => manager.isCCPAUser(),
+    /** Get the region/state detected for the user */
+    getRegion: () => manager.getRegion(),
+    /** Get geo-detection result (country, method, isEU, region) */
     getGeoResult: () => manager.getGeoResult(),
     /** Programmatically show the preference center modal */
     showPreferenceCenter: () => manager.showPreferenceCenter(),
