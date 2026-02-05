@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import pkg from "./package.json" with { type: "json" };
 
 /**
  * Separate Vite config for UMD build.
@@ -10,6 +11,9 @@ import { resolve } from "path";
  * Run after the main ES build: `vite build --config vite.config.umd.ts`
  */
 export default defineConfig({
+  define: {
+    __VUE_PRIVACY_VERSION__: JSON.stringify(pkg.version),
+  },
   build: {
     lib: {
       entry: resolve(__dirname, "src/umd.ts"),

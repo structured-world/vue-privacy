@@ -307,8 +307,8 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(geoResult!.countryCode).toBe("DE");
   });
 
-  it("returns null when consent restored from old cookie without geo data", async () => {
-    // Pre-set consent cookie WITHOUT geo data (old format - backwards compatible)
+  it("runs geo detection when consent restored from old cookie without geo data", async () => {
+    // Pre-set consent cookie WITHOUT geo data (old format - triggers roaming check)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
@@ -317,13 +317,23 @@ describe("ConsentManager.getGeoResult()", () => {
       })
     )}`;
 
-    const manager = new ConsentManager({ version: "1.0" });
+    // Mock geo detector to return non-EU (consent should be kept)
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "US",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ version: "1.0", geoDetector });
     await manager.init();
 
-    // isEU should be null (no geo data in cookie)
-    expect(manager.isEUUser()).toBeNull();
-    // geoResult should be null too
-    expect(manager.getGeoResult()).toBeNull();
+    // Geo detection should have run to check for roaming
+    expect(geoDetector.detect).toHaveBeenCalled();
+    // isEU should now reflect current location
+    expect(manager.isEUUser()).toBe(false);
+    expect(manager.getGeoResult()?.countryCode).toBe("US");
   });
 });
 
@@ -471,8 +481,8 @@ describe("ConsentManager.trackEvent()", () => {
   });
 
   it("does not send event when analytics consent is denied", async () => {
-    // Pre-set consent with analytics=false
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: false, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0" }))}`;
+    // Pre-set consent with analytics=false and isEU=true (EU consent is valid everywhere)
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: false, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0", isEU: true }))}`;
 
     const manager = new ConsentManager({ version: "1.0" });
     await manager.init();
