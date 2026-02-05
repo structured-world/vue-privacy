@@ -325,7 +325,7 @@ describe("ConsentManager.getGeoResult()", () => {
     });
   });
 
-  it("restores EU status from stored consent cookie with geo data", async () => {
+  it("restores EU status from stored consent cookie with geo data (skips geo detection)", async () => {
     // Pre-set consent cookie WITH geo data (new format)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
@@ -338,8 +338,20 @@ describe("ConsentManager.getGeoResult()", () => {
       })
     )}`;
 
-    const manager = new ConsentManager({ version: "1.0" });
+    // Mock geo detector to verify it's NOT called (EU consent fast-path)
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "US",
+        method: "api" as const,
+      }),
+    };
+
+    const manager = new ConsentManager({ version: "1.0", geoDetector });
     await manager.init();
+
+    // Geo detection should NOT be called for EU consent (fast-path optimization)
+    expect(geoDetector.detect).not.toHaveBeenCalled();
 
     // isEU should be restored from cookie
     expect(manager.isEUUser()).toBe(true);
