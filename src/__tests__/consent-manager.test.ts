@@ -335,6 +335,87 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(manager.isEUUser()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("US");
   });
+
+  it("clears consent and shows banner when user with isEU=false roams to EU", async () => {
+    // User gave consent outside EU (isEU=false explicitly stored)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: false,
+        geoMethod: "api",
+        countryCode: "US",
+      })
+    )}`;
+
+    // User is now in EU (roaming scenario)
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: true,
+        countryCode: "DE",
+        method: "cloudflare" as const,
+      }),
+    };
+
+    const showBanner = vi.fn();
+    const manager = new ConsentManager({ version: "1.0", geoDetector });
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // Consent should be cleared (user needs GDPR-compliant re-consent)
+    expect(manager.hasConsent()).toBe(false);
+    expect(manager.getConsent()).toBeNull();
+
+    // Banner should be shown for GDPR disclosure
+    expect(showBanner).toHaveBeenCalledTimes(1);
+
+    // isEU should reflect current location
+    expect(manager.isEUUser()).toBe(true);
+    expect(manager.getGeoResult()?.countryCode).toBe("DE");
+  });
+
+  it("keeps consent when user with isEU=false stays outside EU", async () => {
+    // User gave consent outside EU (isEU=false explicitly stored)
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: false,
+        geoMethod: "api",
+        countryCode: "US",
+      })
+    )}`;
+
+    // User is still outside EU (same or different non-EU country)
+    const geoDetector = {
+      detect: vi.fn().mockResolvedValue({
+        isEU: false,
+        countryCode: "CA",
+        method: "api" as const,
+      }),
+    };
+
+    const showBanner = vi.fn();
+    const manager = new ConsentManager({ version: "1.0", geoDetector });
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // Consent should be preserved (no GDPR applies)
+    expect(manager.hasConsent()).toBe(true);
+    const consent = manager.getConsent();
+    expect(consent).not.toBeNull();
+    expect(consent!.categories.analytics).toBe(true);
+    expect(consent!.categories.marketing).toBe(false);
+
+    // Banner should NOT be shown
+    expect(showBanner).not.toHaveBeenCalled();
+
+    // isEU should reflect current location
+    expect(manager.isEUUser()).toBe(false);
+    expect(manager.getGeoResult()?.countryCode).toBe("CA");
+  });
 });
 
 describe("ConsentManager.getGeoDetectionLog()", () => {
