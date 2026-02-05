@@ -45,6 +45,8 @@ export interface StoredConsent {
   geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
   /** Country code detected when consent was given */
   countryCode?: string;
+  /** Region/state detected when consent was given (e.g., "California" for CCPA) */
+  region?: string;
 }
 
 /**
@@ -67,6 +69,8 @@ export interface GeoDetectionResult {
   isEU: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
+  /** Region/state code (e.g., "California", "CA" for US states) */
+  region?: string;
   /** Detection method used */
   method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
 }
@@ -81,7 +85,7 @@ export interface GeoDetectionLogEntry {
   /** Status of this detection attempt */
   status: "success" | "failed" | "skipped";
   /** Result if successful */
-  result?: { isEU: boolean; countryCode?: string };
+  result?: { isEU: boolean; countryCode?: string; region?: string };
   /** Error message if failed */
   error?: string;
   /** Duration of the attempt in milliseconds */
@@ -368,6 +372,34 @@ export interface ConsentConfig {
 
   /** Callback when preference center is hidden */
   onPreferenceCenterHide?: () => void;
+
+  /**
+   * Enable CCPA compliance mode for US users in California, Virginia, Colorado, etc.
+   * When enabled, CCPA users see no consent banner but can opt-out via "Do Not Sell" link.
+   * @default false
+   */
+  ccpaEnabled?: boolean;
+
+  /**
+   * Text for "Do Not Sell My Personal Information" link (CCPA requirement).
+   * This is a configuration option for YOUR UI — vue-privacy does not render this link.
+   * Use this value in your footer/navigation component when `isCCPAUser()` returns true.
+   *
+   * When clicked, call `manager.showPreferenceCenter()` to let user opt-out of marketing.
+   *
+   * If not provided, use `getTranslations(locale).ccpa.doNotSell` from i18n.
+   *
+   * @example
+   * ```vue
+   * <a v-if="consent.isCCPAUser()" @click="consent.showPreferenceCenter()">
+   *   {{ config.doNotSellText ?? translations.ccpa.doNotSell }}
+   * </a>
+   * ```
+   */
+  doNotSellText?: string;
+
+  /** Callback when user is detected as CCPA user */
+  onCCPAUser?: () => void;
 }
 
 /**

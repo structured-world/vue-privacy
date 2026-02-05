@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ConsentManager } from "../core/consent-manager";
+import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 
-function createMockGeoDetector(isEU = false) {
+function createMockGeoDetector(isEU = false, countryCode?: string, region?: string) {
   return {
-    detect: vi.fn().mockResolvedValue({ isEU, method: "manual" as const }),
+    detect: vi.fn().mockResolvedValue({
+      isEU,
+      countryCode,
+      region,
+      method: "manual" as const,
+    }),
   };
 }
 
@@ -743,5 +748,365 @@ describe("ConsentManager ecommerce helpers", () => {
       value: 120.0,
       payment_type: "Credit Card",
     });
+  });
+});
+
+describe("CCPA_REGIONS constant", () => {
+  // CCPA_REGIONS stores lowercase values for case-insensitive matching
+  it("includes California (lowercase)", () => {
+    expect(CCPA_REGIONS.has("california")).toBe(true);
+    expect(CCPA_REGIONS.has("ca")).toBe(true);
+  });
+
+  it("includes Virginia (lowercase)", () => {
+    expect(CCPA_REGIONS.has("virginia")).toBe(true);
+    expect(CCPA_REGIONS.has("va")).toBe(true);
+  });
+
+  it("includes Colorado (lowercase)", () => {
+    expect(CCPA_REGIONS.has("colorado")).toBe(true);
+    expect(CCPA_REGIONS.has("co")).toBe(true);
+  });
+
+  it("includes Connecticut (lowercase)", () => {
+    expect(CCPA_REGIONS.has("connecticut")).toBe(true);
+    expect(CCPA_REGIONS.has("ct")).toBe(true);
+  });
+
+  it("includes Utah (lowercase)", () => {
+    expect(CCPA_REGIONS.has("utah")).toBe(true);
+    expect(CCPA_REGIONS.has("ut")).toBe(true);
+  });
+
+  it("does not include non-CCPA states", () => {
+    expect(CCPA_REGIONS.has("texas")).toBe(false);
+    expect(CCPA_REGIONS.has("tx")).toBe(false);
+    expect(CCPA_REGIONS.has("new york")).toBe(false);
+    expect(CCPA_REGIONS.has("ny")).toBe(false);
+  });
+});
+
+describe("ConsentManager.isCCPAUser()", () => {
+  it("returns false when ccpaEnabled is not set", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+
+  it("returns false when ccpaEnabled is false", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: false,
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+
+  it("returns true for California user when ccpaEnabled", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("returns true for CA abbreviation when ccpaEnabled", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CA"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("returns true for Virginia user when ccpaEnabled", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "Virginia"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("handles case-insensitive region matching", async () => {
+    // Test uppercase from geo API
+    const managerUpper = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CALIFORNIA"),
+      version: "1.0",
+    });
+    await managerUpper.init();
+    expect(managerUpper.isCCPAUser()).toBe(true);
+
+    // Test lowercase
+    const managerLower = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "california"),
+      version: "1.0",
+    });
+    await managerLower.init();
+    expect(managerLower.isCCPAUser()).toBe(true);
+
+    // Test mixed case
+    const managerMixed = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CaLiFoRnIa"),
+      version: "1.0",
+    });
+    await managerMixed.init();
+    expect(managerMixed.isCCPAUser()).toBe(true);
+  });
+
+  it("returns false for non-CCPA US state", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "Texas"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+
+  it("returns false for non-US country", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "CA", "Ontario"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+
+  it("returns false when region is not provided", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+
+  it("returns false before init()", () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      version: "1.0",
+    });
+
+    expect(manager.isCCPAUser()).toBe(false);
+  });
+});
+
+describe("ConsentManager.getRegion()", () => {
+  it("returns undefined before init()", () => {
+    const manager = new ConsentManager({ version: "1.0" });
+    expect(manager.getRegion()).toBeUndefined();
+  });
+
+  it("returns region after init()", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.getRegion()).toBe("California");
+  });
+
+  it("returns undefined when region not in geo result", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false, "US"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    expect(manager.getRegion()).toBeUndefined();
+  });
+});
+
+describe("ConsentManager CCPA flow", () => {
+  it("grants consent silently for CCPA user (no banner)", async () => {
+    const showBanner = vi.fn();
+    const onCCPAUser = vi.fn();
+
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+      onCCPAUser,
+    });
+
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // Banner should NOT be shown for CCPA users
+    expect(showBanner).not.toHaveBeenCalled();
+    // onCCPAUser callback should be called
+    expect(onCCPAUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows banner for EU user even when ccpaEnabled", async () => {
+    const showBanner = vi.fn();
+
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(true, "DE"),
+      version: "1.0",
+    });
+
+    manager.onShowBanner(showBanner);
+    await manager.init();
+
+    // EU takes precedence — banner should be shown
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call onCCPAUser for EU user", async () => {
+    const onCCPAUser = vi.fn();
+
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(true, "DE"),
+      version: "1.0",
+      onCCPAUser,
+    });
+
+    await manager.init();
+
+    expect(onCCPAUser).not.toHaveBeenCalled();
+  });
+
+  it("does not call onCCPAUser for non-CCPA US state", async () => {
+    const onCCPAUser = vi.fn();
+
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "Texas"),
+      version: "1.0",
+      onCCPAUser,
+    });
+
+    await manager.init();
+
+    expect(onCCPAUser).not.toHaveBeenCalled();
+  });
+
+  it("persists CCPA consent to cookie", async () => {
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // CCPA consent should be stored in cookie
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    expect(stored.categories).toEqual({
+      analytics: true,
+      marketing: true,
+      functional: true,
+    });
+    expect(stored.region).toBe("California");
+    expect(stored.countryCode).toBe("US");
+    expect(stored.isEU).toBe(false);
+  });
+
+  it("skips geo detection on reload when CCPA consent exists", async () => {
+    // Pre-fill cookie with CCPA consent
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: false,
+        geoMethod: "worker",
+        countryCode: "US",
+        region: "California",
+      })
+    )}`;
+
+    const geoDetector = createMockGeoDetector(false, "US", "California");
+    const manager = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector,
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Geo detector should NOT be called — consent restored from cookie
+    expect(geoDetector.detect).not.toHaveBeenCalled();
+    expect(manager.getRegion()).toBe("California");
+  });
+});
+
+describe("ConsentManager region persistence", () => {
+  it("stores region in cookie when saving preferences", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false, "US", "California"),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.savePreferences({ analytics: true, marketing: false });
+
+    const cookieValue = decodeURIComponent(
+      cookieStore.split("consent_preferences=")[1]?.split(";")[0] ?? ""
+    );
+    const stored = JSON.parse(cookieValue);
+
+    expect(stored.region).toBe("California");
+    expect(stored.countryCode).toBe("US");
+    expect(stored.isEU).toBe(false);
+  });
+
+  it("restores region from stored consent cookie", async () => {
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+        isEU: false,
+        geoMethod: "worker",
+        countryCode: "US",
+        region: "Virginia",
+      })
+    )}`;
+
+    const manager = new ConsentManager({ version: "1.0" });
+    await manager.init();
+
+    expect(manager.getRegion()).toBe("Virginia");
+    expect(manager.getGeoResult()?.region).toBe("Virginia");
+  });
+
+  it("includes region in geo detection log", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(false, "US", "Colorado"),
+      version: "1.0",
+    });
+    await manager.init();
+
+    const log = manager.getGeoDetectionLog();
+    expect(log.length).toBe(1);
+    expect(log[0].result?.region).toBe("Colorado");
   });
 });

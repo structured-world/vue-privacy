@@ -112,6 +112,7 @@ export function storeConsent(
     ...(consent.isEU !== undefined && { isEU: consent.isEU }),
     ...(consent.geoMethod !== undefined && { geoMethod: consent.geoMethod }),
     ...(consent.countryCode !== undefined && { countryCode: consent.countryCode }),
+    ...(consent.region !== undefined && { region: consent.region }),
   };
 
   setCookie(cookieConfig.name, JSON.stringify(stored), {

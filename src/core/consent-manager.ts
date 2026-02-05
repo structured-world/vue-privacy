@@ -31,6 +31,28 @@ import {
 import { createGeoDetector } from "../geo/index";
 
 /**
+ * US states with comprehensive consumer privacy laws (CCPA-like).
+ * Stored in lowercase for case-insensitive matching.
+ */
+export const CCPA_REGIONS = new Set([
+  // California - CCPA/CPRA
+  "california",
+  "ca",
+  // Virginia - VCDPA
+  "virginia",
+  "va",
+  // Colorado - CPA
+  "colorado",
+  "co",
+  // Connecticut - CTDPA
+  "connecticut",
+  "ct",
+  // Utah - UCPA
+  "utah",
+  "ut",
+]);
+
+/**
  * Consent Manager - orchestrates consent flow
  */
 export class ConsentManager {
@@ -165,13 +187,14 @@ export class ConsentManager {
           isEU: stored.isEU,
           method: stored.geoMethod ?? "manual",
           countryCode: stored.countryCode,
+          region: stored.region,
         };
         // Mark as restored from cookie in the log
         this.geoDetectionLog = [
           {
             method: stored.geoMethod ?? "manual",
             status: "success",
-            result: { isEU: stored.isEU, countryCode: stored.countryCode },
+            result: { isEU: stored.isEU, countryCode: stored.countryCode, region: stored.region },
             duration: 0,
           },
         ];
@@ -216,7 +239,11 @@ export class ConsentManager {
         {
           method: geoResult.method,
           status: "success",
-          result: { isEU: geoResult.isEU, countryCode: geoResult.countryCode },
+          result: {
+            isEU: geoResult.isEU,
+            countryCode: geoResult.countryCode,
+            region: geoResult.region,
+          },
           duration: 0,
         },
       ];
@@ -236,8 +263,22 @@ export class ConsentManager {
         this.bannerPending = true;
       }
       this.config.onBannerShow?.();
+    } else if (this.isCCPAUser()) {
+      // CCPA user (US state with privacy law): grant all consent silently.
+      // No banner required — CCPA uses opt-out model (via "Do Not Sell" link).
+      // User can opt-out later via showPreferenceCenter() triggered by "Do Not Sell" link.
+      const grantedCategories = {
+        analytics: true,
+        marketing: true,
+        functional: true,
+      };
+
+      await this.applyConsent(grantedCategories);
+      // Persist CCPA consent so geo-detection is not repeated on next visit
+      this.saveConsentWithRemote(grantedCategories);
+      this.config.onCCPAUser?.();
     } else {
-      // Non-EU user: grant all consent silently (same as "Accept All").
+      // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
       // Don't store — this is the default state for unrestricted jurisdictions.
       // Consent will only be stored if user explicitly changes preferences.
       const grantedCategories = {
@@ -259,7 +300,7 @@ export class ConsentManager {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     if (hasNonNecessary) {
-      // Include geo data so EU status can be restored on page reload.
+      // Include geo data so EU/CCPA status can be restored on page reload.
       // Use ?? undefined to omit null values — if geo detection didn't run
       // (isEU=null), we don't store it rather than storing null explicitly.
       storeConsent(
@@ -268,6 +309,7 @@ export class ConsentManager {
           isEU: this.isEU ?? undefined,
           geoMethod: this.geoResult?.method,
           countryCode: this.geoResult?.countryCode,
+          region: this.geoResult?.region,
         },
         this.config
       );
@@ -549,7 +591,28 @@ export class ConsentManager {
   }
 
   /**
-   * Get geo-detection result (country, method, isEU).
+   * Check if user is in a CCPA-covered US state (California, Virginia, Colorado, etc.).
+   * Returns true only if ccpaEnabled is true in config and user is in a covered region.
+   * Matching is case-insensitive to handle variations in geo API responses.
+   */
+  isCCPAUser(): boolean {
+    if (!this.config.ccpaEnabled) return false;
+    if (!this.geoResult) return false;
+    if (this.geoResult.countryCode !== "US") return false;
+    const region = this.geoResult.region?.toLowerCase() ?? "";
+    return CCPA_REGIONS.has(region);
+  }
+
+  /**
+   * Get the region/state detected for the user.
+   * Returns undefined if region detection has not run or region is not available.
+   */
+  getRegion(): string | undefined {
+    return this.geoResult?.region;
+  }
+
+  /**
+   * Get geo-detection result (countryCode, region, method, isEU).
    * Returns null if geo detection has not run yet.
    * Note: When consent is restored from cookie, this returns the stored geo result.
    */
