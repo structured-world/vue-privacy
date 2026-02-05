@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import dts from "vite-plugin-dts";
 import { resolve } from "path";
+// `with { type: "json" }` requires Node 20.10+. This file is only used in CI
+// which runs Node 20.x+. The published package supports Node >=18.
 import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({

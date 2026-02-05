@@ -204,7 +204,20 @@ export class ConsentManager {
       // GDPR protects everyone IN the EU, so if user has roamed to EU, need re-consent.
       const needsReconsent = await this.checkRoamingToEU(stored);
       if (!needsReconsent) {
-        // User is not in EU now — non-EU consent remains valid
+        // User is not in EU now — non-EU consent remains valid.
+        // Update cookie with current geo data to avoid repeating geo detection.
+        if (this.geoResult) {
+          storeConsent(
+            {
+              categories: stored.categories,
+              isEU: this.geoResult.isEU,
+              geoMethod: this.geoResult.method,
+              countryCode: this.geoResult.countryCode,
+              region: this.geoResult.region,
+            },
+            this.config
+          );
+        }
         await this.applyConsent(stored.categories);
         return;
       }
@@ -253,8 +266,18 @@ export class ConsentManager {
               clearConsentUid(this.config);
               // Fall through to geo detection / banner
             } else {
-              // Not in EU — safe to restore remote consent
-              storeConsent({ categories: remote.categories }, this.config);
+              // Not in EU — safe to restore remote consent.
+              // Include geo data so future page loads skip geo detection.
+              storeConsent(
+                {
+                  categories: remote.categories,
+                  isEU: this.isEU ?? undefined,
+                  geoMethod: this.geoResult?.method,
+                  countryCode: this.geoResult?.countryCode,
+                  region: this.geoResult?.region,
+                },
+                this.config
+              );
               await this.applyConsent(remote.categories);
               return;
             }
