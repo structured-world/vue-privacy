@@ -19,16 +19,25 @@ We will respond within 48 hours and work with you to understand and address the 
 
 ## Known Vulnerabilities
 
-### CVE-2026-0775 (npm CLI) - Tracked
+### CVE-2026-0775 (npm CLI) - Won't Fix Upstream
 
 | Field | Value |
 |-------|-------|
-| Status | **Monitoring** - no patch available |
+| Status | **Won't fix** - vendor declined remediation |
 | Severity | High (CVSS 7.0) |
-| Package | `npm@<=11.8.0` (transitive via `@semantic-release/npm`) |
+| Package | `npm` (transitive via `@semantic-release/npm`) |
 | Impact | Development only - not in production bundle |
 | Tracking | [#87](https://github.com/structured-world/vue-privacy/issues/87) |
 
-**Risk assessment:** This is a development dependency used only for CI/CD publishing. The vulnerability requires local code execution to exploit. Production users are not affected.
+**Root cause:** Insecure module loading - npm loads modules from unsecured locations.
 
-**Action:** Dependabot alert dismissed as tolerable risk. Will update when npm releases a patch.
+**Vendor response:** npm maintainers [declined to fix](https://www.zerodayinitiative.com/advisories/ZDI-26-043/), claiming the behavior is "by design". ZDI published as 0-day on 2026-01-12 after vendor refusal.
+
+**Risk assessment:** This is a development dependency used only for CI/CD publishing. Exploitation requires:
+1. Local code execution on target machine
+2. Ability to place malicious modules in npm's search path
+3. User to run npm commands
+
+Production users are **not affected** - this package is not in the production bundle.
+
+**Action:** Dependabot alert dismissed as tolerable risk. No patch expected from upstream.
