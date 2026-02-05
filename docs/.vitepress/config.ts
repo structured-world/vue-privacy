@@ -28,6 +28,7 @@ const pageTitles: Record<string, string> = {
 };
 
 // JSON-LD Schemas
+// Organization is sw.foundation (the foundation), logo hosted on docs subdomain is valid per schema.org
 const organizationSchema = {
   "@context": "https://schema.org",
   "@type": "Organization",
@@ -37,6 +38,7 @@ const organizationSchema = {
   sameAs: ["https://github.com/structured-world/vue-privacy"],
 };
 
+// VitePress local search uses modal overlay, not URL params - omit SearchAction
 const webSiteSchema = {
   "@context": "https://schema.org",
   "@type": "WebSite",
@@ -44,14 +46,6 @@ const webSiteSchema = {
   name: "Vue Privacy Documentation",
   description:
     "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.",
-  potentialAction: {
-    "@type": "SearchAction",
-    target: {
-      "@type": "EntryPoint",
-      urlTemplate: `${hostname}/?search={search_term_string}`,
-    },
-    "query-input": "required name=search_term_string",
-  },
 };
 
 const softwareAppSchema = {
@@ -66,7 +60,7 @@ const softwareAppSchema = {
     priceCurrency: "USD",
   },
   downloadUrl: "https://www.npmjs.com/package/@structured-world/vue-privacy",
-  softwareVersion: "1.10.0",
+  softwareVersion: pkg.version,
   author: {
     "@type": "Organization",
     name: "sw.foundation",
@@ -78,6 +72,7 @@ function generateBreadcrumbs(relativePath: string): object | null {
   if (!cleanPath) return null; // Home page - no breadcrumbs
 
   const segments = cleanPath.split("/").filter(Boolean);
+  const isApiSection = segments[0] === "api";
   const items = [
     {
       "@type": "ListItem",
@@ -90,10 +85,15 @@ function generateBreadcrumbs(relativePath: string): object | null {
   let currentPath = "";
   segments.forEach((segment, index) => {
     currentPath += `/${segment}`;
+    // /guide/vue -> "Vue 3", /api/vue -> "Vue Plugin"
+    let title = pageTitles[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
+    if (isApiSection && segment === "vue") {
+      title = "Vue Plugin";
+    }
     items.push({
       "@type": "ListItem",
       position: index + 2,
-      name: pageTitles[segment] || segment.charAt(0).toUpperCase() + segment.slice(1),
+      name: title,
       item: `${hostname}${currentPath}`,
     });
   });

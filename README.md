@@ -14,14 +14,17 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 ## Features
 
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
+- **GDPR & CCPA** — Compliant with EU GDPR and California Consumer Privacy Act
+- **GDPR Roaming Protection** — Re-prompt consent when EU user travels to non-EU region
 - **EU Detection** — Auto-detect EU users via Cloudflare headers, IP API, or timezone heuristics
 - **Consent Banner** — Customizable GDPR/CCPA banner with dark mode support
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
 - **Script Blocking** — Block third-party scripts until consent is granted
 - **i18n** — 13 built-in locales (en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko)
-- **Remote Storage** — Pluggable backend for cross-device consent sync
+- **Remote Storage** — Pluggable backend for cross-device consent sync with rate limiting
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
+- **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
 - **UMD/CDN** — Use via `<script>` tag, no build tools needed
 - **TypeScript** — Full type safety
 - **Lightweight** — ~11kB gzip (UMD), no external dependencies
@@ -119,6 +122,23 @@ export default boot(consentBoot({
   });
   manager.init();
 </script>
+```
+
+### Vanilla JS (Non-Vue Projects)
+
+For projects without Vue, use the `/vanilla` entry point with pre-built CSS:
+
+```typescript
+import { createConsentManager } from '@structured-world/vue-privacy';
+import { createBanner, createPreferenceModal } from '@structured-world/vue-privacy/vanilla';
+import '@structured-world/vue-privacy/banner.css';
+import '@structured-world/vue-privacy/modal.css';
+
+const manager = createConsentManager({ gaId: 'G-XXXXXXXXXX' });
+await manager.init();
+
+createBanner(manager, { position: 'bottom' });
+createPreferenceModal(manager);
 ```
 
 ## Configuration
@@ -250,10 +270,15 @@ Sync consent across devices with a pluggable backend:
 ```typescript
 import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
 
-// Built-in Cloudflare KV adapter
+// Built-in Cloudflare KV adapter with rate limiting
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
-  storage: createKVStorage('/api/consent'),
+  storage: createKVStorage('/api/consent', {
+    rateLimit: {
+      maxRequests: 5,    // Max requests per window
+      windowMs: 60000,   // 1 minute window
+    },
+  }),
 });
 
 // Or implement your own
@@ -271,7 +296,9 @@ const manager = createConsentManager({
 ## Core API (Framework-agnostic)
 
 ```typescript
-import { createConsentManager } from '@structured-world/vue-privacy';
+import { createConsentManager, VERSION } from '@structured-world/vue-privacy';
+
+console.log('Vue Privacy version:', VERSION); // e.g., "1.10.0"
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
@@ -335,21 +362,25 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 | Consent banner component | ✅ |
 | Preference center modal | ✅ |
 | Google Consent Mode v2 | ✅ |
+| GDPR compliance | ✅ |
+| CCPA compliance | ✅ |
+| GDPR roaming protection | ✅ |
 | GA4 integration | ✅ |
 | GA4 event tracking (ecommerce, conversions) | ✅ |
 | EU geo-detection | ✅ |
 | Script blocking | ✅ |
 | i18n (13 locales) | ✅ |
 | Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
+| Vanilla JS entry point | ✅ |
 | UMD/CDN build | ✅ |
 | Remote consent storage | ✅ |
+| Rate limiting for KV storage | ✅ |
 | Dark mode support | ✅ |
 
 ## Planned
 
 | Feature | Description |
 |---------|-------------|
-| CCPA support | California Consumer Privacy Act compliance |
 | Analytics dashboard | Opt-in rates, banner interactions (via [privacy.structured.world](https://privacy.structured.world)) |
 
 ## Related Projects
