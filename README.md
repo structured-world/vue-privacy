@@ -21,7 +21,7 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
 - **Script Blocking** — Block third-party scripts until consent is granted
 - **i18n** — 13 built-in locales (en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko)
-- **Remote Storage** — Pluggable backend for cross-device consent sync with rate limiting
+- **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
 - **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
@@ -130,7 +130,7 @@ For projects without Vue, use the `/vanilla` entry point with pre-built CSS:
 
 ```typescript
 import { createConsentManager } from '@structured-world/vue-privacy';
-import { createBanner, createPreferenceModal } from '@structured-world/vue-privacy/vanilla';
+import { createBanner, createModal } from '@structured-world/vue-privacy/vanilla';
 import '@structured-world/vue-privacy/banner.css';
 import '@structured-world/vue-privacy/modal.css';
 
@@ -138,7 +138,7 @@ const manager = createConsentManager({ gaId: 'G-XXXXXXXXXX' });
 await manager.init();
 
 createBanner(manager, { position: 'bottom' });
-createPreferenceModal(manager);
+createModal({ manager });
 ```
 
 ## Configuration
@@ -270,13 +270,13 @@ Sync consent across devices with a pluggable backend:
 ```typescript
 import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
 
-// Built-in Cloudflare KV adapter with rate limiting
+// Built-in Cloudflare KV adapter with retry on rate limit
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
   storage: createKVStorage('/api/consent', {
-    rateLimit: {
-      maxRequests: 5,    // Max requests per window
-      windowMs: 60000,   // 1 minute window
+    maxRetries: 3,  // Retry up to 3 times on 429 responses
+    onRateLimited: (retryAfter, attempt) => {
+      console.log(`Rate limited, attempt ${attempt}`);
     },
   }),
 });
@@ -374,7 +374,7 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 | Vanilla JS entry point | ✅ |
 | UMD/CDN build | ✅ |
 | Remote consent storage | ✅ |
-| Rate limiting for KV storage | ✅ |
+| Retry on rate limit (KV storage) | ✅ |
 | Dark mode support | ✅ |
 
 ## Planned

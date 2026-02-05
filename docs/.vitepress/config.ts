@@ -59,7 +59,8 @@ const softwareAppSchema = {
     price: "0",
     priceCurrency: "USD",
   },
-  downloadUrl: "https://www.npmjs.com/package/@structured-world/vue-privacy",
+  // installUrl for package registry page, downloadUrl would require direct file link
+  installUrl: "https://www.npmjs.com/package/@structured-world/vue-privacy",
   softwareVersion: pkg.version,
   author: {
     "@type": "Organization",
@@ -170,7 +171,7 @@ export default defineConfig({
     ["meta", { property: "og:site_name", content: "Vue Privacy" }],
     // JSON-LD: Organization schema (global)
     ["script", { type: "application/ld+json" }, JSON.stringify(organizationSchema)],
-    // JSON-LD: WebSite schema with search action (global)
+    // JSON-LD: WebSite schema (global)
     ["script", { type: "application/ld+json" }, JSON.stringify(webSiteSchema)],
   ],
 
