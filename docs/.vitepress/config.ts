@@ -125,7 +125,8 @@ export default defineConfig({
     const description =
       pageData.description ||
       "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.";
-    const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "");
+    // Remove trailing slash for URL consistency with breadcrumbs
+    const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "").replace(/\/$/, "");
     const url = `${hostname}/${cleanPath}`;
 
     // Open Graph and Twitter meta tags
