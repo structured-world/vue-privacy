@@ -52,6 +52,9 @@ export default tseslint.config(
     rules: {
       ...pluginVue.configs["flat/recommended"].rules,
       "vue/multi-word-component-names": "off",
+      // no-useless-assignment doesn't understand Vue SFC <script setup> —
+      // it can't see that variables are used in <template>
+      "no-useless-assignment": "off",
     },
   }
 );
