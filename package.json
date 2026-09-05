@@ -114,7 +114,7 @@
     "@types/node": "^22.19.8",
     "@vitejs/plugin-vue": "^6.0.4",
     "@vitest/coverage-v8": "^4.0.18",
-    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "conventional-changelog-conventionalcommits": "^10.2.0",
     "eslint": "^10.0.0",
     "eslint-plugin-vue": "^10.7.0",
     "jsdom": "^29.0.1",
