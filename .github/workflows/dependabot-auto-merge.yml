@@ -23,10 +23,6 @@ on:
   push:
     branches: [main]
 
-permissions:
-  # Approving, disarming, merging and updating branches are done with the App token below.
-  pull-requests: read
-
 # One run per pull request (or per push to main), and a new event cancels the run it
 # superseded rather than leaving it racing toward a head that no longer exists.
 concurrency:
@@ -36,6 +32,8 @@ concurrency:
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
+    # Approving, disarming and merging are done with the App token below.
+    permissions: {}
     # Only the author here. Who triggered the run decides what the job does, not whether it
     # runs at all: a push by anyone else is the case that has to be handled.
     if: >-
@@ -115,6 +113,8 @@ jobs:
 
   update-behind:
     runs-on: ubuntu-latest
+    # Listing and updating branches are done with the App token below.
+    permissions: {}
     if: github.event_name == 'push'
 
     steps:

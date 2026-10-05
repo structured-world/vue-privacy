@@ -14,21 +14,21 @@ interface ConsentConfig {
   gaId?: string;
 
   /** Consent categories to manage */
-  categories?: Partial<Omit<ConsentCategories, 'necessary'>>;
+  categories?: Partial<Omit<ConsentCategories, "necessary">>;
 
   /** Banner UI configuration */
   banner?: Partial<BannerConfig>;
 
   /** Cookie configuration */
   cookie?: {
-    name?: string;    // Default: 'consent_preferences'
-    expiry?: number;  // Days, default: 365
+    name?: string; // Default: 'consent_preferences'
+    expiry?: number; // Days, default: 365
     domain?: string;
-    path?: string;    // Default: '/'
+    path?: string; // Default: '/'
   };
 
   /** EU detection mode */
-  euDetection?: 'auto' | 'cloudflare' | 'api' | 'always' | 'never';
+  euDetection?: "auto" | "cloudflare" | "api" | "always" | "never";
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;
@@ -84,7 +84,7 @@ interface ConsentCategories {
 ```typescript
 interface StoredConsent {
   /** Consent categories */
-  categories: Omit<ConsentCategories, 'necessary'>;
+  categories: Omit<ConsentCategories, "necessary">;
   /** Timestamp when consent was given */
   timestamp: number;
   /** Version of the consent configuration */
@@ -118,13 +118,13 @@ interface BannerConfig {
 ```typescript
 interface GoogleConsentSignals {
   /** Controls Google Analytics cookies */
-  analytics_storage: 'granted' | 'denied';
+  analytics_storage: "granted" | "denied";
   /** Controls advertising cookies */
-  ad_storage: 'granted' | 'denied';
+  ad_storage: "granted" | "denied";
   /** Controls whether user data can be sent to Google for ads */
-  ad_user_data: 'granted' | 'denied';
+  ad_user_data: "granted" | "denied";
   /** Controls personalized advertising */
-  ad_personalization: 'granted' | 'denied';
+  ad_personalization: "granted" | "denied";
 }
 ```
 
@@ -142,7 +142,7 @@ interface GeoDetectionResult {
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
   /** Detection method used */
-  method: 'cloudflare' | 'api' | 'fallback' | 'manual';
+  method: "cloudflare" | "api" | "fallback" | "manual";
 }
 ```
 
@@ -154,7 +154,7 @@ import {
   IPAPIGeoDetector,
   TimezoneGeoDetector,
   AutoGeoDetector,
-} from '@structured-world/vue-privacy';
+} from "@structured-world/vue-privacy";
 
 // Use a specific detector
 const detector = new CloudflareGeoDetector();
@@ -237,7 +237,7 @@ interface GA4PurchaseParams extends GA4EcommerceParams {
   /** Tax amount */
   tax?: number;
   /** Customer type */
-  customer_type?: 'new' | 'returning';
+  customer_type?: "new" | "returning";
 }
 ```
 
@@ -280,17 +280,15 @@ import type {
   GA4EcommerceParams,
   GA4PurchaseParams,
   GA4RouteMeta,
-} from '@structured-world/vue-privacy';
+} from "@structured-world/vue-privacy";
 
 // Type your cart items
-const cartItems: GA4Item[] = [
-  { item_id: 'SKU_1', item_name: 'Widget', price: 9.99, quantity: 2 }
-];
+const cartItems: GA4Item[] = [{ item_id: "SKU_1", item_name: "Widget", price: 9.99, quantity: 2 }];
 
 // Type your purchase params
 const purchaseData: GA4PurchaseParams = {
-  transaction_id: 'ORDER_123',
-  currency: 'USD',
+  transaction_id: "ORDER_123",
+  currency: "USD",
   value: 19.98,
   items: cartItems,
 };

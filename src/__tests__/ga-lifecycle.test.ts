@@ -489,12 +489,16 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
       const manager = euManager({ onGoogleAnalyticsError });
       await manager.init();
 
+      const [host] = gtagScripts();
+
       await vi.advanceTimersByTimeAsync(10_000);
       expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
-      expect(gtagScripts()).toHaveLength(0);
+      // The element belongs to the other integration and stays; the retry adds its own.
+      expect([...gtagScripts()]).toEqual([host]);
 
       await manager.acceptAll();
-      expect(gtagScripts()).toHaveLength(1);
+      expect(gtagScripts()).toHaveLength(2);
+      expect(gtagScripts()[0]).toBe(host);
     } finally {
       vi.useRealTimers();
     }
@@ -586,13 +590,16 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     const onGoogleAnalyticsError = vi.fn();
     const manager = euManager({ onGoogleAnalyticsError });
     await manager.init();
+    const [host] = gtagScripts();
 
     settlePendingTag("error");
     await settle();
     expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
 
+    // The failed element is the other integration's and stays; the retry loads its own.
     await manager.acceptAll();
-    expect(gtagScripts()).toHaveLength(1);
+    expect(gtagScripts()).toHaveLength(2);
+    expect(gtagScripts()[0]).toBe(host);
     settlePendingTag("load");
     await settle();
     expect(count("config")).toBe(1);

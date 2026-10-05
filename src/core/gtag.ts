@@ -77,6 +77,13 @@ export function isGoogleTagLoaded(): boolean {
  */
 const EXISTING_TAG_TIMEOUT_MS = 10_000;
 
+/**
+ * gtag.js elements another integration added that failed or did not run in time. They stay on
+ * the page (they are not ours to remove); a later attempt loads its own element instead of
+ * waiting on them again.
+ */
+const stalledTags = new WeakSet<HTMLScriptElement>();
+
 /** Commands that produce or configure hits; consent must be settled before them. */
 const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
 
@@ -163,19 +170,21 @@ export function loadGtagScript(gaId: string): Promise<void> {
     }
 
     const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
-    const existing = document.querySelector<HTMLScriptElement>(
-      `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
-    );
+    const existing = Array.from(
+      document.querySelectorAll<HTMLScriptElement>(
+        `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+      )
+    ).find((element) => !stalledTags.has(element));
     if (existing) {
       if (isGoogleTagLoaded()) {
         resolve();
         return;
       }
       // Its load or error event may already have fired before this call, and a settled script
-      // does not fire again; past the timeout it counts as failed and is replaced on retry.
+      // does not fire again; past the timeout it counts as failed, and a retry loads its own.
       const fail = () => {
         clearTimeout(timer);
-        existing.remove();
+        stalledTags.add(existing);
         reject(failure());
       };
       const timer = setTimeout(fail, EXISTING_TAG_TIMEOUT_MS);
