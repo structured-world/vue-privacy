@@ -465,6 +465,24 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
+  it("closes the preference centre when a consent callback resets the choice", async () => {
+    // The banner the reset shows must not stay hidden behind the still open preference centre.
+    let manager: ConsentManager | null = null;
+    const hidePreferenceCenter = vi.fn();
+    manager = euManager({
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics) manager?.resetConsent();
+      },
+    });
+    manager.onHidePreferenceCenter(hidePreferenceCenter);
+    await manager.init();
+
+    await manager.savePreferences({ analytics: true });
+
+    expect(hidePreferenceCenter).toHaveBeenCalledTimes(1);
+    expect(manager.getConsent()).toBeNull();
+  });
+
   it("stores the choice before running consent callbacks", async () => {
     // A callback that tracks or decides must see the choice being made, and a decision it
     // makes itself (a reset) must not be overwritten by the outer choice.

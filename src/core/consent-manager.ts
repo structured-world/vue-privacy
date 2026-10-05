@@ -660,13 +660,14 @@ export class ConsentManager {
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
     this.applyConsent(categories);
-    // A callback that made a newer decision owns the dialogs now (a reset shows the banner).
-    if (this.consentEpoch !== epoch) return;
 
-    this.hideBannerCallback?.();
+    // The preference centre closes either way; it would cover a banner a callback's reset
+    // just showed. The banner stays when a callback made a newer decision.
     this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
     this.config.onPreferenceCenterHide?.();
+    if (this.consentEpoch !== epoch) return;
+    this.hideBannerCallback?.();
+    this.config.onBannerHide?.();
   }
 
   /**
