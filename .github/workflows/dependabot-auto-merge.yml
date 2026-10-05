@@ -111,6 +111,9 @@ jobs:
       # Author attribution is the check, not proof of origin: only someone with write access can
       # push here, and they can merge a pull request themselves, so a forged author gains nothing.
       # A comparison longer than one response fails the step rather than skipping commits.
+      # Unresolved review threads block the merge itself: the ruleset on main requires
+      # conversation resolution, which GitHub evaluates at merge time, so a thread opened after
+      # the CI gate passed still holds an armed auto-merge.
       - name: Approve and enable auto-merge
         if: github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
         run: |
