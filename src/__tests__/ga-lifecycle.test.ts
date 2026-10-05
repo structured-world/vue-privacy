@@ -67,6 +67,30 @@ function preloadGtagScript(): void {
   document.head.appendChild(script);
 }
 
+/** Starts an EU visitor's init() and returns once its gtag.js is appended and still loading. */
+async function initWithPendingTag(
+  config: ConsentConfig = {}
+): Promise<{ manager: ConsentManager; initDone: Promise<void> }> {
+  scriptOutcome = "manual";
+  const manager = euManager(config);
+  const initDone = manager.init();
+  await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
+  return { manager, initDone };
+}
+
+/** Settles the one gtag.js on the page the way a browser would. */
+function settlePendingTag(outcome: "load" | "error"): void {
+  gtagScripts()[0].dispatchEvent(new Event(outcome));
+}
+
+/** One consent default, one `js`, one `config`, and exactly these updates. */
+function expectInitialisedOnce(updates: GoogleConsentSignals[]): void {
+  expect(consentCalls("default")).toHaveLength(1);
+  expect(consentCalls("update")).toEqual(updates);
+  expect(count("js")).toBe(1);
+  expect(count("config")).toBe(1);
+}
+
 function euManager(config: ConsentConfig = {}): ConsentManager {
   return new ConsentManager({
     gaId: GA_ID,
@@ -135,9 +159,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await settle();
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
-    expect(count("js")).toBe(1);
-    expect(count("config")).toBe(1);
-    expect(consentCalls("update")).toEqual([GRANTED, DENIED, ANALYTICS_ONLY]);
+    expectInitialisedOnce([GRANTED, DENIED, ANALYTICS_ONLY]);
     expect(gtagScripts()).toHaveLength(1);
   });
 
@@ -215,20 +237,15 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   it("sends only an update when consent changes while gtag.js is still loading", async () => {
     // The visitor clicks before the script's load event: initialisation is already in flight,
     // so the click must not start a second one.
-    scriptOutcome = "manual";
-    const manager = euManager();
-    const initDone = manager.init();
+    const { manager, initDone } = await initWithPendingTag();
 
-    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
     const choice = manager.acceptAll();
-    gtagScripts()[0].dispatchEvent(new Event("load"));
+    settlePendingTag("load");
     await choice;
     await initDone;
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
-    expect(consentCalls("update")).toEqual([GRANTED]);
-    expect(count("js")).toBe(1);
-    expect(count("config")).toBe(1);
+    expectInitialisedOnce([GRANTED]);
     expect(gtagScripts()).toHaveLength(1);
   });
 
@@ -256,45 +273,31 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await settle();
 
     expect(manager.getConsent()?.categories.analytics).toBe(true);
-    expect(consentCalls("default")).toHaveLength(1);
-    expect(consentCalls("update")).toEqual([GRANTED]);
-    expect(count("js")).toBe(1);
-    expect(count("config")).toBe(1);
+    expectInitialisedOnce([GRANTED]);
     expect(gtagScripts()).toHaveLength(1);
   });
 
   it("retries the load when it fails after a choice made during it", async () => {
     // The click found the first load in flight and started nothing; when that load then fails,
     // no later consent change may come to retry it, so the failure itself must.
-    scriptOutcome = "manual";
-    const manager = euManager();
-    const initDone = manager.init();
+    const { manager, initDone } = await initWithPendingTag();
 
-    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
     const choice = manager.acceptAll();
-    gtagScripts()[0].dispatchEvent(new Event("error"));
-
+    settlePendingTag("error");
     await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
-    gtagScripts()[0].dispatchEvent(new Event("load"));
+    settlePendingTag("load");
     await choice;
     await initDone;
     await settle();
 
-    expect(consentCalls("default")).toHaveLength(1);
-    expect(consentCalls("update")).toEqual([GRANTED]);
-    expect(count("js")).toBe(1);
-    expect(count("config")).toBe(1);
+    expectInitialisedOnce([GRANTED]);
   });
 
   it("resolves a choice only after config is queued", async () => {
     // `await acceptAll(); trackEvent(...)` must find `config` ahead of the event in dataLayer;
     // the consent update and the closed banner still happen at once.
-    scriptOutcome = "manual";
     const hideBanner = vi.fn();
-    const manager = euManager();
-    manager.onHideBanner(hideBanner);
-    const initDone = manager.init();
-    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
+    const { manager, initDone } = await initWithPendingTag({ onBannerHide: hideBanner });
 
     let resolved = false;
     const choice = manager.acceptAll().then(() => {
@@ -306,7 +309,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(hideBanner).toHaveBeenCalledTimes(1);
     expect(consentCalls("update")).toEqual([GRANTED]);
 
-    gtagScripts()[0].dispatchEvent(new Event("load"));
+    settlePendingTag("load");
     await choice;
     manager.trackEvent("sign_up");
     await initDone;

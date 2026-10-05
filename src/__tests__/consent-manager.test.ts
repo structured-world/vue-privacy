@@ -124,12 +124,18 @@ describe("ConsentManager with remote storage", () => {
     expect(manager.getConsent()?.categories.marketing).toBe(false);
   });
 
-  it("does not ask again after a refusal", async () => {
+  it.each([
+    ["rejectAll()", (m: ConsentManager) => m.rejectAll()],
+    [
+      "savePreferences() with every optional category off",
+      (m: ConsentManager) => m.savePreferences({ analytics: false, marketing: false }),
+    ],
+  ])("does not ask again after %s", async (_name, refuse) => {
     // A refusal is respected as long as an acceptance would be: the next page load restores it
     // without the banner.
     const first = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
     await first.init();
-    await first.rejectAll();
+    await refuse(first);
 
     const showBanner = vi.fn();
     const next = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
@@ -137,21 +143,7 @@ describe("ConsentManager with remote storage", () => {
     await next.init();
 
     expect(showBanner).not.toHaveBeenCalled();
-    expect(next.getConsent()?.categories.analytics).toBe(false);
-  });
-
-  it("does not ask again after saving every optional category off", async () => {
-    const first = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
-    await first.init();
-    await first.savePreferences({ analytics: false, marketing: false });
-
-    const showBanner = vi.fn();
-    const next = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
-    next.onShowBanner(showBanner);
-    await next.init();
-
-    expect(showBanner).not.toHaveBeenCalled();
-    expect(next.getConsent()?.categories.marketing).toBe(false);
+    expect(next.getConsent()?.categories).toMatchObject({ analytics: false, marketing: false });
   });
 
   it("asks again after a refusal when the consent version changes", async () => {
