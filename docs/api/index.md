@@ -168,20 +168,24 @@ Initialize Google Analytics with Consent Mode: `consent default`, script load, `
 ```typescript
 import { initGoogleAnalytics } from '@structured-world/vue-privacy';
 
-// Args: gaId, defaults, sendPageView
+// Args: gaId, defaults, sendPageView, waitForUpdate
 await initGoogleAnalytics('G-XXXXXXXXXX', true, false);
+```
 
-// Per-signal defaults, e.g. a returning visitor who allowed analytics only
+Or, instead of the call above, per-signal defaults, e.g. for a returning visitor who allowed analytics only. The choice is already final, so `waitForUpdate` is `0`:
+
+```typescript
 await initGoogleAnalytics('G-XXXXXXXXXX', {
   analytics_storage: 'granted',
   ad_storage: 'denied',
   ad_user_data: 'denied',
   ad_personalization: 'denied',
-}, false);
+}, false, 0);
 ```
 
 `defaults` is `true` (deny every signal), `false` (grant every signal) or the signals themselves.
 Set `sendPageView` to `false` for SPA apps where you track navigation manually.
+`waitForUpdate` (default `500`) is how long tags hold their first hits for a consent update; `0` omits `wait_for_update`. If gtag.js is already on the page, the defaults come too late to apply, so the same signals follow as an update.
 
 Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default` after the tag has loaded (Consent Mode expects defaults only before it loads) and another `config`, which counts another page view. `ConsentManager` does this for you.
 

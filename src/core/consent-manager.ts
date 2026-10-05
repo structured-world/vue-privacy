@@ -23,7 +23,8 @@ import {
   clearConsentUid,
 } from "./storage";
 import {
-  initGoogleAnalytics,
+  sendInitialConsent,
+  configureGoogleAnalytics,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -53,6 +54,9 @@ export const CCPA_REGIONS = new Set([
   "ut",
 ]);
 
+/** How long tags hold their first hits for an undecided visitor's consent update. */
+const DEFAULT_WAIT_FOR_UPDATE_MS = 500;
+
 /**
  * Consent Manager - orchestrates consent flow
  */
@@ -71,8 +75,12 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private routerCleanup: (() => void) | null = null;
-  /** Set by the first consent push; its presence turns every later push into an update. */
-  private gaInit: Promise<void> | null = null;
+  /** The page's `consent default` was issued; every later push is an update. */
+  private gaDefaultsSent = false;
+  /** gtag.js load and `config`, in flight or done; reset after a failed load. */
+  private gaLoad: Promise<void> | null = null;
+  /** The visitor chose (accept, reject, save) while or after `init()` resolved their state. */
+  private choiceMade = false;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -170,6 +178,16 @@ export class ConsentManager {
     if (this.initialized) return;
     this.initialized = true;
 
+    await this.resolveInitialConsent();
+    // Callers start router tracking once init() resolves; its page views must follow `config`.
+    await this.gaLoad;
+  }
+
+  /**
+   * Restore or decide the visitor's consent state, or show the banner. Every `await` here may
+   * let the visitor choose first; the choice then stands and this flow stops.
+   */
+  private async resolveInitialConsent(): Promise<void> {
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
       this.scriptBlockerCleanup = initScriptBlocker(this);
@@ -199,7 +217,7 @@ export class ConsentManager {
             duration: 0,
           },
         ];
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
 
@@ -208,6 +226,7 @@ export class ConsentManager {
       // NOTE: This runs geo detection on every page load for non-EU users — intentional
       // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
       const needsReconsent = await this.checkRoamingToEU(stored);
+      if (this.choiceMade) return;
       if (!needsReconsent) {
         // User is not in EU now — non-EU consent remains valid.
         // Update cookie with fresh geo data from roaming check (for debugging/analytics).
@@ -224,7 +243,7 @@ export class ConsentManager {
             this.config
           );
         }
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
       // User is now in EU but consent was given outside EU — fall through to show banner
@@ -244,6 +263,7 @@ export class ConsentManager {
             // so we must check current location before restoring.
             // If user is now in EU, they need fresh GDPR-compliant consent.
             const geoResult = await this.performGeoDetection();
+            if (this.choiceMade) return;
 
             if (geoResult.isEU) {
               // User is in EU — cannot use remote consent without GDPR disclosure.
@@ -265,13 +285,15 @@ export class ConsentManager {
                 },
                 this.config
               );
-              await this.applyConsent(remote.categories);
+              this.applyConsent(remote.categories);
               return;
             }
           }
         } catch {
           // Remote storage failed — fall through to geo detection
         }
+        // Also covers a choice made while remote.get() was pending.
+        if (this.choiceMade) return;
       }
     }
 
@@ -295,12 +317,13 @@ export class ConsentManager {
           },
         ];
       }
+      if (this.choiceMade) return;
     }
 
     if (this.isEU) {
-      // EU user: initialize GA with denied defaults, show banner
+      // EU user: denied defaults that wait for the banner's answer, then show the banner
       if (this.config.gaId) {
-        await this.pushGoogleConsent(categoriesToGoogleSignals({}));
+        this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
       }
 
       // Show banner (or defer if component hasn't mounted yet)
@@ -320,7 +343,7 @@ export class ConsentManager {
         functional: true,
       };
 
-      await this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
       // Persist CCPA consent so geo-detection is not repeated on next visit
       this.saveConsentWithRemote(grantedCategories);
       this.config.onCCPAUser?.();
@@ -334,7 +357,7 @@ export class ConsentManager {
         functional: true,
       };
 
-      await this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
     }
   }
 
@@ -360,6 +383,10 @@ export class ConsentManager {
         },
         this.config
       );
+    } else {
+      // No cookie for a refusal, and none left from an earlier grant either: it would be
+      // restored on the next page load.
+      clearConsent(this.config);
     }
 
     if (this.remoteStorage) {
@@ -483,26 +510,37 @@ export class ConsentManager {
   }
 
   /**
-   * Send consent signals to Google Consent Mode. With `gaId`, the first push initializes GA
-   * with them as the single `consent default`; every later push is a `consent update`.
-   * Without `gaId` the site loads gtag itself, so every push is an update.
+   * Send consent signals to Google Consent Mode. With `gaId`, the first push is the page's
+   * single `consent default`; every later push is a `consent update`. Without `gaId` the site
+   * loads gtag itself, so every push is an update.
+   *
+   * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
+   *   tags need not hold their first hits for an update
    */
-  private async pushGoogleConsent(signals: GoogleConsentSignals): Promise<void> {
-    if (!this.config.gaId || this.gaInit) {
+  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
+    const gaId = this.config.gaId;
+    if (!gaId || this.gaDefaultsSent) {
       updateGoogleConsent(signals);
-      return;
+    } else {
+      this.gaDefaultsSent = true;
+      sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
     }
-    // Assigned before the await: a choice made while gtag.js is loading must update,
-    // not start a second initialization.
-    this.gaInit = initGoogleAnalytics(this.config.gaId, signals, this.config.sendPageView ?? true);
-    await this.gaInit;
+    if (!gaId) return;
+
+    // Loading never fails a consent choice; a failed load is retried on the next push.
+    this.gaLoad ??= configureGoogleAnalytics(gaId, this.config.sendPageView ?? true).catch(
+      (error: unknown) => {
+        this.gaLoad = null;
+        this.config.onGoogleAnalyticsError?.(error);
+      }
+    );
   }
 
   /**
    * Apply consent settings
    */
-  private async applyConsent(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
-    await this.pushGoogleConsent(categoriesToGoogleSignals(categories));
+  private applyConsent(categories: Omit<ConsentCategories, "necessary">): void {
+    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
 
     // Notify config callback
     this.config.onConsentChange?.({
@@ -527,13 +565,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.applyConsent(categories);
-    this.saveConsentWithRemote(categories);
-
-    this.hideBannerCallback?.();
-    this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
-    this.config.onPreferenceCenterHide?.();
+    this.choose(categories);
   }
 
   /**
@@ -546,13 +578,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.applyConsent(categories);
-    this.saveConsentWithRemote(categories);
-
-    this.hideBannerCallback?.();
-    this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
-    this.config.onPreferenceCenterHide?.();
+    this.choose(categories);
   }
 
   /**
@@ -565,8 +591,17 @@ export class ConsentManager {
       functional: categories.functional ?? true,
     };
 
-    await this.applyConsent(finalCategories);
-    this.saveConsentWithRemote(finalCategories);
+    this.choose(finalCategories);
+  }
+
+  /**
+   * Apply, persist and close the dialogs for the visitor's own choice. Marks it so a pending
+   * `init()` does not replace it with the state it was still resolving.
+   */
+  private choose(categories: Omit<ConsentCategories, "necessary">): void {
+    this.choiceMade = true;
+    this.applyConsent(categories);
+    this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();

@@ -43,7 +43,8 @@ export function categoriesToGoogleSignals(
  * Set default consent state (should be called BEFORE loading gtag.js)
  *
  * @param signals - Consent signals to set as defaults
- * @param waitForUpdate - Milliseconds to wait for consent update (for async CMPs)
+ * @param waitForUpdate - Milliseconds tags hold their first hits for a consent update (for
+ *   async CMPs); `0` omits `wait_for_update` when the defaults are already final
  */
 export function setConsentDefaults(
   signals: Partial<GoogleConsentSignals>,
@@ -53,10 +54,32 @@ export function setConsentDefaults(
 
   if (typeof window === "undefined") return;
 
-  window.gtag("consent", "default", {
-    ...signals,
-    wait_for_update: waitForUpdate,
-  });
+  window.gtag(
+    "consent",
+    "default",
+    waitForUpdate > 0 ? { ...signals, wait_for_update: waitForUpdate } : { ...signals }
+  );
+}
+
+/**
+ * Whether a gtag.js script (for any measurement ID) is already on the page.
+ */
+export function isGtagScriptPresent(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.querySelector('script[src*="googletagmanager.com/gtag/js"]') !== null;
+}
+
+/**
+ * Issue the page's consent defaults. Consent Mode applies defaults only before gtag.js loads,
+ * so when the tag is already on the page the same signals follow as an update.
+ *
+ * @param signals - Initial consent signals
+ * @param waitForUpdate - See {@link setConsentDefaults}
+ */
+export function sendInitialConsent(signals: GoogleConsentSignals, waitForUpdate = 500): void {
+  const tagPresent = isGtagScriptPresent();
+  setConsentDefaults(signals, waitForUpdate);
+  if (tagPresent) updateConsent(signals);
 }
 
 /**
@@ -94,7 +117,11 @@ export function loadGtagScript(gaId: string): Promise<void> {
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load gtag.js for ${gaId}`));
+    script.onerror = () => {
+      // A failed element would make the next attempt look "already loaded" and skip the retry.
+      script.remove();
+      reject(new Error(`Failed to load gtag.js for ${gaId}`));
+    };
 
     document.head.appendChild(script);
   });
@@ -158,31 +185,44 @@ export function trackEvent(eventName: string, params?: Record<string, unknown>):
  * @param gaId - Google Analytics measurement ID
  * @param defaults - Default consent signals, or `true` to deny all / `false` to grant all
  * @param sendPageView - Whether to send automatic page_view (false for SPA)
+ * @param waitForUpdate - See {@link setConsentDefaults}; pass `0` when the defaults are final
  */
 export async function initGoogleAnalytics(
   gaId: string,
   defaults: boolean | GoogleConsentSignals = true,
-  sendPageView = true
+  sendPageView = true,
+  waitForUpdate = 500
 ): Promise<void> {
   initGtag();
 
   // Set defaults BEFORE loading script
   if (typeof defaults === "boolean") {
     const value = defaults ? "denied" : "granted";
-    setConsentDefaults({
-      analytics_storage: value,
-      ad_storage: value,
-      ad_user_data: value,
-      ad_personalization: value,
-    });
+    sendInitialConsent(
+      {
+        analytics_storage: value,
+        ad_storage: value,
+        ad_user_data: value,
+        ad_personalization: value,
+      },
+      waitForUpdate
+    );
   } else {
-    setConsentDefaults(defaults);
+    sendInitialConsent(defaults, waitForUpdate);
   }
 
-  // Load the script
+  await configureGoogleAnalytics(gaId, sendPageView);
+}
+
+/**
+ * Load gtag.js and issue `js` and `config`; the consent defaults must already be set.
+ *
+ * @param gaId - Google Analytics measurement ID
+ * @param sendPageView - Whether `config` sends the automatic page_view
+ */
+export async function configureGoogleAnalytics(gaId: string, sendPageView: boolean): Promise<void> {
   await loadGtagScript(gaId);
 
-  // Initialize GA
   if (typeof window !== "undefined") {
     window.gtag("js", new Date());
     window.gtag("config", gaId, {

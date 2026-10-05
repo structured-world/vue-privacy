@@ -43,6 +43,13 @@ interface ConsentConfig {
    */
   sendPageView?: boolean;
 
+  /**
+   * Called when gtag.js fails to load (an ad blocker, a network error).
+   * The banner still shows and choices are still saved; the next consent
+   * change retries the load.
+   */
+  onGoogleAnalyticsError?: (error: unknown) => void;
+
   /** Consent version (changing resets consent) */
   version?: string;
 

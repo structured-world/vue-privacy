@@ -99,6 +99,21 @@ describe("ConsentManager with remote storage", () => {
     expect(cookieStore).not.toContain("consent_preferences");
   });
 
+  it("removes an earlier grant when the visitor rejects all", async () => {
+    // Regression: rejecting wrote no cookie but left the earlier grant in place, so the next
+    // page load restored "accept all" for a visitor who had withdrawn consent.
+    const manager = new ConsentManager({ geoDetector: createMockGeoDetector(true) });
+
+    await manager.init();
+    await manager.acceptAll();
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+
+    await manager.rejectAll();
+
+    expect(manager.getConsent()).toBeNull();
+    expect(cookieStore).not.toContain("consent_preferences");
+  });
+
   it("restores consent from remote storage when consent_uid cookie exists", async () => {
     // Simulate returning user with consent_uid cookie
     cookieStore = "consent_uid=existing-user-id";
