@@ -42,7 +42,7 @@ const {
 |----------|------|-------------|
 | `consent` | `Ref<StoredConsent \| null>` | Current consent state |
 | `isEU` | `Ref<boolean>` | Whether user is in EU |
-| `hasConsent` | `Ref<boolean>` | Whether user has given consent |
+| `hasConsent` | `Ref<boolean>` | Whether user has made a choice (refusal included) |
 | `acceptAll` | `() => Promise<void>` | Accept all categories |
 | `rejectAll` | `() => Promise<void>` | Reject non-essential |
 | `resetConsent` | `() => void` | Clear consent and show banner |

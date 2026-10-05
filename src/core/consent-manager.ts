@@ -79,6 +79,8 @@ export class ConsentManager {
   private gaDefaultsSent = false;
   /** gtag.js load and `config`, in flight or done; reset after a failed load. */
   private gaLoad: Promise<void> | null = null;
+  /** A consent push found the load in flight; a failure of that attempt retries at once. */
+  private gaRetryOnFailure = false;
   /** The visitor chose (accept, reject, save) while or after `init()` resolved their state. */
   private choiceMade = false;
   private bannerPending = false;
@@ -362,35 +364,29 @@ export class ConsentManager {
   }
 
   /**
-   * Persist consent locally and (if remote storage is configured) remotely.
-   * Sets cookies only when at least one non-necessary category is accepted.
-   * Fire-and-forget: remote push does not block UI.
+   * Persist the decision locally and (if remote storage is configured) remotely, a refusal
+   * exactly like an acceptance: asking again after a refusal pressures towards acceptance, and
+   * a cookie that only records the choice is strictly necessary for the consent mechanism, so
+   * it needs no consent itself (ePrivacy Directive Art. 5(3) exemption). The local cookie is the
+   * primary record and is read before remote storage. Fire-and-forget: the remote push does
+   * not block UI.
    */
   private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
-    if (hasNonNecessary) {
-      // Include geo data so EU/CCPA status can be restored on page reload.
-      // Use ?? undefined to omit null values — if geo detection didn't run
-      // (isEU=null), we don't store it rather than storing null explicitly.
-      storeConsent(
-        {
-          categories,
-          isEU: this.isEU ?? undefined,
-          geoMethod: this.geoResult?.method,
-          countryCode: this.geoResult?.countryCode,
-          region: this.geoResult?.region,
-        },
-        this.config
-      );
-    } else {
-      // No cookie for a refusal, and none left from an earlier grant either: it would be
-      // restored on the next page load. consent_uid goes too, or a failed remote write of the
-      // refusal below would let the next visit fetch the earlier grant by it; the write still
-      // targets this.userId, so the remote record is overwritten when it succeeds.
-      clearConsent(this.config);
-      clearConsentUid(this.config);
-    }
+    // Include geo data so EU/CCPA status can be restored on page reload.
+    // Use ?? undefined to omit null values — if geo detection didn't run
+    // (isEU=null), we don't store it rather than storing null explicitly.
+    storeConsent(
+      {
+        categories,
+        isEU: this.isEU ?? undefined,
+        geoMethod: this.geoResult?.method,
+        countryCode: this.geoResult?.countryCode,
+        region: this.geoResult?.region,
+      },
+      this.config
+    );
 
     if (this.remoteStorage) {
       const version = this.config.version ?? DEFAULT_CONFIG.version;
@@ -399,6 +395,8 @@ export class ConsentManager {
       this.remoteStorage
         .set(this.userId, consent)
         .then((id) => {
+          // A remote identifier is issued only once something was granted; an existing one is
+          // kept on a refusal, whose write overwrites the record it points to.
           if (id && hasNonNecessary) {
             this.userId = id;
             setConsentUid(id, this.config);
@@ -530,9 +528,23 @@ export class ConsentManager {
     }
     if (!gaId) return;
 
-    // Loading never fails a consent choice; a failed load is retried on the next push.
-    this.gaLoad ??= configureGoogleAnalytics(gaId, this.config.sendPageView ?? true).catch(
-      (error: unknown) => {
+    if (this.gaLoad) {
+      // In flight or done. Should the attempt in flight fail, this push still gets its retry.
+      this.gaRetryOnFailure = true;
+      return;
+    }
+    this.loadGoogleAnalytics(gaId);
+  }
+
+  /**
+   * One attempt to load gtag.js and queue `js` and `config`. The promise never rejects, so a
+   * failed load never fails a consent choice or `init()`; it settles only after any retry the
+   * attempt triggered, so waiting on it means `config` is queued if it can be.
+   */
+  private loadGoogleAnalytics(gaId: string): void {
+    this.gaRetryOnFailure = false;
+    this.gaLoad = configureGoogleAnalytics(gaId, this.config.sendPageView ?? true).catch(
+      (error: unknown): Promise<void> | undefined => {
         this.gaLoad = null;
         try {
           this.config.onGoogleAnalyticsError?.(error);
@@ -540,6 +552,11 @@ export class ConsentManager {
           // A throwing callback must not fail init(), which integrations wait on before
           // starting router tracking.
         }
+        // A consent change during this attempt found it in flight and started nothing, and no
+        // later change may come; retry for it now. Otherwise the next push retries.
+        if (!this.gaRetryOnFailure) return undefined;
+        this.loadGoogleAnalytics(gaId);
+        return this.gaLoad ?? undefined;
       }
     );
   }
@@ -573,7 +590,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    this.choose(categories);
+    await this.choose(categories);
   }
 
   /**
@@ -586,7 +603,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    this.choose(categories);
+    await this.choose(categories);
   }
 
   /**
@@ -599,14 +616,17 @@ export class ConsentManager {
       functional: categories.functional ?? true,
     };
 
-    this.choose(finalCategories);
+    await this.choose(finalCategories);
   }
 
   /**
-   * Apply, persist and close the dialogs for the visitor's own choice. Marks it so a pending
-   * `init()` does not replace it with the state it was still resolving.
+   * Apply, persist and close the dialogs for the visitor's own choice, all at once. Marks it
+   * so a pending `init()` does not replace it with the state it was still resolving.
+   *
+   * @returns Settles once gtag.js loading settles, so a caller that awaits the choice and then
+   *   tracks an event finds `config` queued ahead of it
    */
-  private choose(categories: Omit<ConsentCategories, "necessary">): void {
+  private async choose(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
     this.choiceMade = true;
     this.applyConsent(categories);
     this.saveConsentWithRemote(categories);
@@ -615,6 +635,8 @@ export class ConsentManager {
     this.hidePreferenceCenterCallback?.();
     this.config.onBannerHide?.();
     this.config.onPreferenceCenterHide?.();
+
+    await this.gaLoad;
   }
 
   /**
@@ -638,6 +660,10 @@ export class ConsentManager {
     clearConsent(this.config);
     clearConsentUid(this.config);
     this.userId = null;
+    // Undecided again: the signals go back to denied while the banner asks, and a pending
+    // init() may establish that state instead of treating an earlier choice as standing.
+    this.choiceMade = false;
+    this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
     this.showBannerCallback?.();
     this.config.onBannerShow?.();
   }

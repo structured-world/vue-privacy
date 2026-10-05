@@ -39,15 +39,17 @@ await manager.acceptAll();
 
 #### `rejectAll(): Promise<void>`
 
-Reject all non-essential categories.
+Reject all non-essential categories. The refusal is stored like an acceptance (same cookie, lifetime and version), so the banner does not ask again on the next page; changing `version` asks again.
 
 ```typescript
 await manager.rejectAll();
 ```
 
+The consent signals and the closed banner take effect at once; the returned promise settles once gtag.js has loaded (or failed to), so an event tracked after `await` follows `config`. The same holds for `acceptAll()` and `savePreferences()`.
+
 #### `savePreferences(categories): Promise<void>`
 
-Save specific category preferences.
+Save specific category preferences. Every choice is stored, including one with every optional category off.
 
 ```typescript
 await manager.savePreferences({
@@ -70,13 +72,17 @@ if (consent) {
 
 #### `hasConsent(): boolean`
 
-Check if user has given consent.
+Check if the user has made a choice: an acceptance, a partial choice or a refusal.
 
 ```typescript
 if (manager.hasConsent()) {
   // User has made a choice
 }
 ```
+
+#### `resetConsent(): void`
+
+Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
 
 #### `isEUUser(): boolean`
 

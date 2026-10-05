@@ -220,8 +220,9 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     const initDone = manager.init();
 
     await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
-    await manager.acceptAll();
+    const choice = manager.acceptAll();
     gtagScripts()[0].dispatchEvent(new Event("load"));
+    await choice;
     await initDone;
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
@@ -260,6 +261,100 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(count("js")).toBe(1);
     expect(count("config")).toBe(1);
     expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("retries the load when it fails after a choice made during it", async () => {
+    // The click found the first load in flight and started nothing; when that load then fails,
+    // no later consent change may come to retry it, so the failure itself must.
+    scriptOutcome = "manual";
+    const manager = euManager();
+    const initDone = manager.init();
+
+    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
+    const choice = manager.acceptAll();
+    gtagScripts()[0].dispatchEvent(new Event("error"));
+
+    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
+    gtagScripts()[0].dispatchEvent(new Event("load"));
+    await choice;
+    await initDone;
+    await settle();
+
+    expect(consentCalls("default")).toHaveLength(1);
+    expect(consentCalls("update")).toEqual([GRANTED]);
+    expect(count("js")).toBe(1);
+    expect(count("config")).toBe(1);
+  });
+
+  it("resolves a choice only after config is queued", async () => {
+    // `await acceptAll(); trackEvent(...)` must find `config` ahead of the event in dataLayer;
+    // the consent update and the closed banner still happen at once.
+    scriptOutcome = "manual";
+    const hideBanner = vi.fn();
+    const manager = euManager();
+    manager.onHideBanner(hideBanner);
+    const initDone = manager.init();
+    await vi.waitFor(() => expect(gtagScripts()).toHaveLength(1));
+
+    let resolved = false;
+    const choice = manager.acceptAll().then(() => {
+      resolved = true;
+    });
+    await settle();
+
+    expect(resolved).toBe(false);
+    expect(hideBanner).toHaveBeenCalledTimes(1);
+    expect(consentCalls("update")).toEqual([GRANTED]);
+
+    gtagScripts()[0].dispatchEvent(new Event("load"));
+    await choice;
+    manager.trackEvent("sign_up");
+    await initDone;
+
+    const order = commands().map((c) => String(c[0]));
+    expect(order.indexOf("config")).toBeLessThan(order.indexOf("event"));
+  });
+
+  it("returns to the undecided state on resetConsent while init() is pending", async () => {
+    // A reset after an early choice must not leave the choice guard set: the pending EU flow
+    // then still applies, and the granted signals go back to denied while the banner asks.
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const showBanner = vi.fn();
+    const manager = euManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    manager.onShowBanner(showBanner);
+
+    const initDone = manager.init();
+    await manager.acceptAll();
+    manager.resetConsent();
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(showBanner).toHaveBeenCalled();
+    expect(manager.getConsent()).toBeNull();
+  });
+
+  it("restores a refusal that replaced an earlier grant outside consent jurisdictions", async () => {
+    // Regression: withdrawing an earlier grant left nothing stored, so the next visit from a
+    // non-consent jurisdiction granted every signal again.
+    const first = euManager();
+    await first.init();
+    await first.acceptAll();
+    await first.rejectAll();
+
+    window.dataLayer = [];
+    delete (window as Partial<Window>).gtag;
+    document.head.innerHTML = "";
+    const next = new ConsentManager({
+      gaId: GA_ID,
+      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+    });
+    await next.init();
+
+    expect(consentCalls("default")).toEqual([DENIED]);
+    expect(consentCalls("update")).toEqual([]);
   });
 
   it("resolves init() when the error callback itself throws", async () => {
