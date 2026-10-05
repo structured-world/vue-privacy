@@ -132,7 +132,7 @@
     "vue-tsc": "^3.3.12"
   },
   "resolutions": {
-    "esbuild": ">=0.25.0",
+    "esbuild": "0.27.2",
     "npm": ">=11.9.0"
   }
 }

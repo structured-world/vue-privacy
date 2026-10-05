@@ -54,6 +54,11 @@ jobs:
       - name: Test
         run: yarn test --coverage
 
+      # The docs site has its own toolchain (vitepress on vite 5); building it here keeps a
+      # dependency update that breaks it from merging.
+      - name: Docs build
+        run: yarn docs:build
+
       - name: Upload coverage
         uses: codecov/codecov-action@v7
         if: matrix.node-version == '22.x'
