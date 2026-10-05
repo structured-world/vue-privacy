@@ -93,8 +93,6 @@ export class ConsentManager {
    * no longer describes the visitor.
    */
   private consentEpoch = 0;
-  /** A refusal made on this page: not stored, so it lasts for the page only. */
-  private pageRefusal: StoredConsent | null = null;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -394,35 +392,32 @@ export class ConsentManager {
   }
 
   /**
-   * Persist a granted consent locally and (if remote storage is configured) remotely. Only a
-   * grant is remembered: a refusal is not stored, so the banner keeps asking and the visitor
-   * can still grant consent later, and it clears an earlier grant so that grant cannot come back.
-   * Fire-and-forget: the remote push does not block UI.
+   * Persist the visitor's choice locally and (if remote storage is configured) remotely. A
+   * refusal is stored like a grant, for the cookie's lifetime (365 days by default): an opt-out
+   * must stay in effect (California Civil Code 1798.135(c)(4)), and a site that needs a refused
+   * category asks again in context. Fire-and-forget: the remote push does not block UI.
    */
   private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
-    // `functional` does not count: rejectAll() keeps it on, so counting it would store every
-    // refusal.
+    // `functional` does not count: rejectAll() keeps it on, and only analytics or marketing
+    // is a grant worth a remote identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
-    if (hasNonNecessary) {
-      // Include geo data so EU/CCPA status can be restored on page reload.
-      // Use ?? undefined to omit null values — if geo detection didn't run
-      // (isEU=null), we don't store it rather than storing null explicitly.
-      storeConsent(
-        {
-          categories,
-          isEU: this.isEU ?? undefined,
-          geoMethod: this.geoResult?.method,
-          countryCode: this.geoResult?.countryCode,
-          region: this.geoResult?.region,
-        },
-        this.config
-      );
-    } else {
-      // consent_uid goes too, or a failed remote write of the refusal below would let the next
-      // visit fetch the earlier grant by it; the write still targets this.userId, so the remote
-      // record is overwritten when it succeeds.
-      clearConsent(this.config);
+    // Include geo data so EU/CCPA status can be restored on page reload.
+    // Use ?? undefined to omit null values — if geo detection didn't run
+    // (isEU=null), we don't store it rather than storing null explicitly.
+    storeConsent(
+      {
+        categories,
+        isEU: this.isEU ?? undefined,
+        geoMethod: this.geoResult?.method,
+        countryCode: this.geoResult?.countryCode,
+        region: this.geoResult?.region,
+      },
+      this.config
+    );
+    if (!hasNonNecessary) {
+      // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
+      // an earlier remote grant, should the remote write of this refusal fail.
       clearConsentUid(this.config);
     }
 
@@ -674,14 +669,6 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
-    this.pageRefusal =
-      categories.analytics || categories.marketing
-        ? null
-        : {
-            categories,
-            timestamp: Date.now(),
-            version: this.config.version ?? DEFAULT_CONFIG.version,
-          };
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
@@ -699,15 +686,14 @@ export class ConsentManager {
   }
 
   /**
-   * Get current consent state: the stored grant, or a refusal made on this page (which is not
-   * stored, so the next page starts undecided)
+   * Get the stored choice (a grant or a refusal), or null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
-    return getStoredConsent(this.config) ?? this.pageRefusal;
+    return getStoredConsent(this.config);
   }
 
   /**
-   * Check if a granted consent is stored (a refusal is not stored)
+   * Check if the visitor's choice is stored (a grant or a refusal)
    */
   hasConsent(): boolean {
     return getStoredConsent(this.config) !== null;
@@ -723,7 +709,6 @@ export class ConsentManager {
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
-    this.pageRefusal = null;
     this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
@@ -736,8 +721,7 @@ export class ConsentManager {
   }
 
   /**
-   * Whether tracking calls are suppressed: analytics was refused on this page (a refusal is not
-   * stored, so this lasts for the page only), or the stored consent leaves it off. Before any
+   * Whether tracking calls are suppressed: the stored choice leaves analytics off. Before any
    * choice, events are sent under the Consent Mode defaults (cookieless pings).
    */
   private analyticsSuppressed(): boolean {

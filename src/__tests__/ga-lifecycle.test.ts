@@ -521,9 +521,9 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(show).not.toHaveBeenCalled();
   });
 
-  it("keeps a refusal as this page's consent without storing it", async () => {
+  it("keeps a refusal as the current consent", async () => {
     // Regression: the refusal cleared the cookie and getConsent() returned null, so the script
-    // blocker kept functional scripts added after the choice blocked on this page.
+    // blocker kept functional scripts added after the choice blocked.
     storeConsent({ categories: { analytics: true, marketing: true, functional: true } });
     const manager = euManager();
     await manager.init();
@@ -534,7 +534,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
       marketing: false,
       functional: true,
     });
-    expect(manager.hasConsent()).toBe(false);
+    expect(manager.hasConsent()).toBe(true);
 
     manager.resetConsent();
     expect(manager.getConsent()).toBeNull();

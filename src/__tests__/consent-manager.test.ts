@@ -93,14 +93,13 @@ describe("ConsentManager with remote storage", () => {
       expect(mockStorage.set).toHaveBeenCalledTimes(1);
     });
 
-    // A refusal is not stored: no consent_uid and no consent cookie.
+    // The refusal is stored in the consent cookie; consent_uid is kept for grants only.
     expect(cookieStore).not.toContain("consent_uid");
-    expect(cookieStore).not.toContain("consent_preferences");
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
   });
 
-  it("removes an earlier grant when the visitor rejects all", async () => {
-    // Regression: rejecting wrote no cookie but left the earlier grant in place, so the next
-    // page load restored "accept all" for a visitor who had withdrawn consent.
+  it("replaces an earlier grant when the visitor rejects all", async () => {
+    // Regression: the next page load restored "accept all" for a visitor who had withdrawn.
     const manager = new ConsentManager({ geoDetector: createMockGeoDetector(true) });
 
     await manager.init();
@@ -109,10 +108,12 @@ describe("ConsentManager with remote storage", () => {
 
     await manager.rejectAll();
 
-    // Nothing is stored; getConsent() still reports the refusal for the rest of this page.
-    expect(manager.hasConsent()).toBe(false);
-    expect(manager.getConsent()?.categories.analytics).toBe(false);
-    expect(cookieStore).not.toContain("consent_preferences");
+    expect(manager.hasConsent()).toBe(true);
+    expect(manager.getConsent()?.categories).toEqual({
+      analytics: false,
+      marketing: false,
+      functional: true,
+    });
   });
 
   it.each([
@@ -121,9 +122,8 @@ describe("ConsentManager with remote storage", () => {
       "savePreferences() with every optional category off",
       (m: ConsentManager) => m.savePreferences({ analytics: false, marketing: false }),
     ],
-  ])("asks again on the next page after %s", async (_name, refuse) => {
-    // Only a grant is remembered: after a refusal the banner keeps asking, so the visitor can
-    // still grant consent later.
+  ])("remembers a refusal on the next page after %s", async (_name, refuse) => {
+    // A refusal is stored like a grant: the banner does not ask again on every page.
     const first = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
     await first.init();
     await refuse(first);
@@ -133,8 +133,27 @@ describe("ConsentManager with remote storage", () => {
     next.onShowBanner(showBanner);
     await next.init();
 
-    expect(showBanner).toHaveBeenCalledTimes(1);
-    expect(next.getConsent()).toBeNull();
+    expect(showBanner).not.toHaveBeenCalled();
+    expect(next.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("keeps a CCPA opt-out on the next page instead of granting again", async () => {
+    // Regression: the opt-out was not stored, so the next page granted everything silently and
+    // stored that grant (California Civil Code 1798.135(c)(4): the opt-out must be honoured).
+    const californian = () =>
+      new ConsentManager({
+        ccpaEnabled: true,
+        geoDetector: createMockGeoDetector(false, "US", "CA"),
+      });
+    const first = californian();
+    await first.init();
+    await first.savePreferences({ analytics: false, marketing: false });
+
+    const next = californian();
+    await next.init();
+
+    expect(next.getConsent()?.categories.analytics).toBe(false);
+    expect(next.getConsent()?.categories.marketing).toBe(false);
   });
 
   it("does not restore consent_uid when a grant's remote write completes after a withdrawal", async () => {
@@ -198,7 +217,7 @@ describe("ConsentManager with remote storage", () => {
     await nextVisit.init();
 
     expect(mockStorage.get).not.toHaveBeenCalled();
-    expect(cookieStore).not.toContain("consent_preferences");
+    expect(nextVisit.getConsent()?.categories.analytics).toBe(false);
   });
 
   it("restores consent from remote storage when consent_uid cookie exists", async () => {

@@ -39,7 +39,7 @@ await manager.acceptAll();
 
 #### `rejectAll(): Promise<void>`
 
-Reject all non-essential categories. A refusal is not stored: the banner asks again on the next page, so the visitor can still grant consent later. Rejecting after an earlier grant removes that grant.
+Reject all non-essential categories. The refusal is stored like a grant, for the consent cookie's lifetime (`cookie.expiry`, 365 days by default), and replaces an earlier grant; the banner does not ask again on every page.
 
 ```typescript
 await manager.rejectAll();
@@ -49,7 +49,7 @@ The consent signals, the stored choice and the closed banner take effect at once
 
 #### `savePreferences(categories): Promise<void>`
 
-Save specific category preferences. A choice that grants analytics or marketing is stored; one with both off is a refusal and is not stored, whatever `functional` is set to (`rejectAll()` itself keeps functional on).
+Save specific category preferences. Every choice is stored, a refusal included.
 
 ```typescript
 await manager.savePreferences({
@@ -61,7 +61,7 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get the current consent: the stored grant, or a refusal made on this page. A refusal is not stored, so on the next page this returns `null` until the visitor chooses again.
+Get the stored choice (a grant or a refusal), or `null` while the visitor has not chosen.
 
 ```typescript
 const consent = manager.getConsent();
@@ -72,11 +72,11 @@ if (consent) {
 
 #### `hasConsent(): boolean`
 
-Check if a granted consent is stored. A refusal is not stored, so it returns `false` after `rejectAll()`.
+Check if the visitor's choice is stored: `true` after a grant and after a refusal. Use `getConsent()` to see which categories it allows.
 
 ```typescript
 if (manager.hasConsent()) {
-  // A granted consent is stored
+  // The visitor has chosen
 }
 ```
 
@@ -94,7 +94,7 @@ if (manager.isEUUser()) {
 
 Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
 
-Events are always sent to Google Analytics. When analytics consent is denied, Google Consent Mode prevents the data from being stored. After the user refuses analytics on the current page, or when a stored consent leaves analytics off, the event is not sent at all. A refusal is not stored, so on the next page the user is undecided again.
+Events are always sent to Google Analytics. When analytics consent is denied, Google Consent Mode prevents the data from being stored. When the stored choice leaves analytics off, the event is not sent at all.
 
 ```typescript
 manager.trackPageView("/docs/guide");
