@@ -699,10 +699,10 @@ export class ConsentManager {
   }
 
   /**
-   * Check if the visitor's choice is stored (a grant or a refusal)
+   * Check if the visitor has chosen (a grant or a refusal); agrees with getConsent()
    */
   hasConsent(): boolean {
-    return getStoredConsent(this.config) !== null;
+    return this.getConsent() !== null;
   }
 
   /**

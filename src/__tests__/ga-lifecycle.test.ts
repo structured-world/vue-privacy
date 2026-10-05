@@ -573,6 +573,8 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     manager.trackPageView("/after-refusal");
     expect(count("event")).toBe(events);
     expect(manager.getConsent()?.categories.analytics).toBe(false);
+    // Both getters describe the same choice: the visitor has decided.
+    expect(manager.hasConsent()).toBe(true);
   });
 
   it("applies a choice when the remote storage throws synchronously", async () => {
