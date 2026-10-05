@@ -109,7 +109,9 @@ describe("ConsentManager with remote storage", () => {
 
     await manager.rejectAll();
 
-    expect(manager.getConsent()).toBeNull();
+    // Nothing is stored; getConsent() still reports the refusal for the rest of this page.
+    expect(manager.hasConsent()).toBe(false);
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
     expect(cookieStore).not.toContain("consent_preferences");
   });
 

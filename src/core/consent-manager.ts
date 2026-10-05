@@ -93,8 +93,8 @@ export class ConsentManager {
    * no longer describes the visitor.
    */
   private consentEpoch = 0;
-  /** The visitor refused analytics on this page; not stored, so it lasts for the page only. */
-  private analyticsRefusedOnPage = false;
+  /** A refusal made on this page: not stored, so it lasts for the page only. */
+  private pageRefusal: StoredConsent | null = null;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -674,7 +674,14 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
-    this.analyticsRefusedOnPage = !categories.analytics;
+    this.pageRefusal =
+      categories.analytics || categories.marketing
+        ? null
+        : {
+            categories,
+            timestamp: Date.now(),
+            version: this.config.version ?? DEFAULT_CONFIG.version,
+          };
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
@@ -692,10 +699,11 @@ export class ConsentManager {
   }
 
   /**
-   * Get current consent state
+   * Get current consent state: the stored grant, or a refusal made on this page (which is not
+   * stored, so the next page starts undecided)
    */
   getConsent(): StoredConsent | null {
-    return getStoredConsent(this.config);
+    return getStoredConsent(this.config) ?? this.pageRefusal;
   }
 
   /**
@@ -715,7 +723,7 @@ export class ConsentManager {
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
-    this.analyticsRefusedOnPage = false;
+    this.pageRefusal = null;
     this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
@@ -733,9 +741,8 @@ export class ConsentManager {
    * choice, events are sent under the Consent Mode defaults (cookieless pings).
    */
   private analyticsSuppressed(): boolean {
-    if (this.analyticsRefusedOnPage) return true;
-    const stored = getStoredConsent(this.config);
-    return stored !== null && !stored.categories.analytics;
+    const consent = this.getConsent();
+    return consent !== null && !consent.categories.analytics;
   }
 
   /**

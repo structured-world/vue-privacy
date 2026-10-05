@@ -61,7 +61,7 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get current stored consent.
+Get the current consent: the stored grant, or a refusal made on this page. A refusal is not stored, so on the next page this returns `null` until the visitor chooses again.
 
 ```typescript
 const consent = manager.getConsent();

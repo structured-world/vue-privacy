@@ -108,7 +108,14 @@ jobs:
             --jq '[.commits[].author.login // "unknown"
                    | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length')
           if [ "$foreign" != "0" ]; then
-            echo "$HEAD_SHA carries $foreign commit(s) by someone else; leaving auto-merge off"
+            # The maintainer's own run may have skipped disarming because this head had already
+            # replaced theirs, so auto-merge armed for an earlier head can still be on.
+            current=$(gh pr view "$PR_NUMBER" --json autoMergeRequest,headRefOid \
+              --jq '"\(.autoMergeRequest != null) \(.headRefOid)"')
+            if [ "${current##* }" = "$HEAD_SHA" ] && [ "${current%% *}" = "true" ]; then
+              gh pr merge --disable-auto "$PR_NUMBER"
+            fi
+            echo "$HEAD_SHA carries $foreign commit(s) by someone else; auto-merge stays off"
             exit 0
           fi
           gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" \
@@ -144,7 +151,7 @@ jobs:
       # the full pipeline before it can merge.
       - name: Bring armed Dependabot pull requests up to date with main
         run: |
-          gh pr list --author "app/dependabot" --state open \
+          gh pr list --author "app/dependabot" --state open --limit 1000 \
             --json number,headRefOid,autoMergeRequest \
             --jq '.[] | select(.autoMergeRequest != null) | "\(.number) \(.headRefOid)"' |
           while read -r number head; do
