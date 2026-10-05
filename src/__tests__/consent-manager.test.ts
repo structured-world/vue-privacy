@@ -114,6 +114,44 @@ describe("ConsentManager with remote storage", () => {
     expect(cookieStore).not.toContain("consent_preferences");
   });
 
+  it("drops consent_uid on withdrawal so a failed remote write cannot restore the grant", async () => {
+    // Regression: the withdrawal cleared the local cookie but kept consent_uid; when the remote
+    // write of the refusal failed, the next non-EU visit fetched the old remote grant by uid.
+    const remoteGrant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(remoteGrant),
+      set: vi.fn().mockResolvedValue("granted-uid"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+    await vi.waitFor(() => expect(cookieStore).toContain("consent_uid=granted-uid"));
+
+    mockStorage.set.mockRejectedValue(new Error("Network error"));
+    await manager.rejectAll();
+    expect(cookieStore).not.toContain("consent_uid");
+
+    const nextVisit = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(false),
+      version: "1.0",
+    });
+    mockStorage.get.mockClear();
+    await nextVisit.init();
+
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(cookieStore).not.toContain("consent_preferences");
+  });
+
   it("restores consent from remote storage when consent_uid cookie exists", async () => {
     // Simulate returning user with consent_uid cookie
     cookieStore = "consent_uid=existing-user-id";

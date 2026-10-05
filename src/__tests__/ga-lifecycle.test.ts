@@ -262,6 +262,19 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(gtagScripts()).toHaveLength(1);
   });
 
+  it("resolves init() when the error callback itself throws", async () => {
+    // A throwing callback must not turn a failed tag load into a failed init(): integrations
+    // start router tracking only after init() resolves.
+    scriptOutcome = "error";
+    const manager = euManager({
+      onGoogleAnalyticsError: () => {
+        throw new Error("callback bug");
+      },
+    });
+
+    await expect(manager.init()).resolves.toBeUndefined();
+  });
+
   it("keeps a choice made while init() is still detecting the location", async () => {
     // The preference centre can be opened before geo detection resolves. When it does, the
     // EU flow must neither send its denied defaults over the choice nor show the banner.

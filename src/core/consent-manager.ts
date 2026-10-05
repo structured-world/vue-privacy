@@ -385,8 +385,11 @@ export class ConsentManager {
       );
     } else {
       // No cookie for a refusal, and none left from an earlier grant either: it would be
-      // restored on the next page load.
+      // restored on the next page load. consent_uid goes too, or a failed remote write of the
+      // refusal below would let the next visit fetch the earlier grant by it; the write still
+      // targets this.userId, so the remote record is overwritten when it succeeds.
       clearConsent(this.config);
+      clearConsentUid(this.config);
     }
 
     if (this.remoteStorage) {
@@ -531,7 +534,12 @@ export class ConsentManager {
     this.gaLoad ??= configureGoogleAnalytics(gaId, this.config.sendPageView ?? true).catch(
       (error: unknown) => {
         this.gaLoad = null;
-        this.config.onGoogleAnalyticsError?.(error);
+        try {
+          this.config.onGoogleAnalyticsError?.(error);
+        } catch {
+          // A throwing callback must not fail init(), which integrations wait on before
+          // starting router tracking.
+        }
       }
     );
   }
