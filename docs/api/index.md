@@ -72,7 +72,7 @@ if (consent) {
 
 #### `hasConsent(): boolean`
 
-Check if the visitor's choice is stored: `true` after a grant and after a refusal. Use `getConsent()` to see which categories it allows.
+Check if the visitor has chosen: `true` after a grant and after a refusal, whenever `getConsent()` returns a choice. Use `getConsent()` to see which categories it allows.
 
 ```typescript
 if (manager.hasConsent()) {
