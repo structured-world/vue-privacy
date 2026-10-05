@@ -4,6 +4,8 @@ declare global {
   interface Window {
     dataLayer: unknown[];
     gtag: (...args: unknown[]) => void;
+    /** Created by gtag.js and Google Tag Manager when they run. */
+    google_tag_manager?: unknown;
   }
 }
 
@@ -62,24 +64,24 @@ export function setConsentDefaults(
 }
 
 /**
- * Whether a gtag.js script (for any measurement ID) is already on the page.
+ * Whether a Google tag (gtag.js or Google Tag Manager) has already run on the page. A script
+ * element alone is not enough: one still downloading has not processed any command yet.
  */
-export function isGtagScriptPresent(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.querySelector('script[src*="googletagmanager.com/gtag/js"]') !== null;
+export function isGoogleTagLoaded(): boolean {
+  return typeof window !== "undefined" && window.google_tag_manager !== undefined;
 }
 
 /**
- * Issue the page's consent defaults. Consent Mode applies defaults only before gtag.js loads,
- * so when the tag is already on the page the same signals follow as an update.
+ * Issue the page's consent defaults. Consent Mode applies defaults only before the Google tag
+ * runs, so when it already has, the same signals follow as an update.
  *
  * @param signals - Initial consent signals
  * @param waitForUpdate - See {@link setConsentDefaults}
  */
 export function sendInitialConsent(signals: GoogleConsentSignals, waitForUpdate = 500): void {
-  const tagPresent = isGtagScriptPresent();
+  const tagLoaded = isGoogleTagLoaded();
   setConsentDefaults(signals, waitForUpdate);
-  if (tagPresent) updateConsent(signals);
+  if (tagLoaded) updateConsent(signals);
 }
 
 /**
@@ -178,7 +180,7 @@ export function trackEvent(eventName: string, params?: Record<string, unknown>):
 }
 
 /**
- * Initialize Google Analytics: consent defaults, script load, `js` and `config`.
+ * Initialize Google Analytics: consent defaults, `js` and `config` queued, then the script load.
  * Call it once per page; later consent changes go through {@link updateConsent}, since a
  * second call issues another `consent default` and another `config` (another page_view).
  *
@@ -211,22 +213,22 @@ export async function initGoogleAnalytics(
     sendInitialConsent(defaults, waitForUpdate);
   }
 
-  await configureGoogleAnalytics(gaId, sendPageView);
+  queueGoogleAnalyticsConfig(gaId, sendPageView);
+  await loadGtagScript(gaId);
 }
 
 /**
- * Load gtag.js and issue `js` and `config`; the consent defaults must already be set.
+ * Queue `js` and `config` right after the consent defaults, as Google's own snippet does: the
+ * dataLayer is processed in order once gtag.js runs, so every later event follows `config`
+ * whether the script is still loading, failed and is retried, or already ran.
  *
  * @param gaId - Google Analytics measurement ID
  * @param sendPageView - Whether `config` sends the automatic page_view
  */
-export async function configureGoogleAnalytics(gaId: string, sendPageView: boolean): Promise<void> {
-  await loadGtagScript(gaId);
-
-  if (typeof window !== "undefined") {
-    window.gtag("js", new Date());
-    window.gtag("config", gaId, {
-      send_page_view: sendPageView,
-    });
-  }
+export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean): void {
+  if (typeof window === "undefined") return;
+  window.gtag("js", new Date());
+  window.gtag("config", gaId, {
+    send_page_view: sendPageView,
+  });
 }

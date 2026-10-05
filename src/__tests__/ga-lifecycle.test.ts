@@ -60,11 +60,17 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** A tag the site loaded itself before the manager ran. */
-function preloadGtagScript(): void {
+/** A gtag.js element the site added itself; `ran` marks it as already executed. */
+function preloadGtagScript(ran: boolean): void {
   const script = document.createElement("script");
   script.src = GTAG_SRC;
   document.head.appendChild(script);
+  if (ran) window.google_tag_manager = {};
+}
+
+/** dataLayer command names in order, with the consent kind spelled out. */
+function order(): string[] {
+  return commands().map((c) => String(c[0]) + (c[0] === "consent" ? `:${c[1]}` : ""));
 }
 
 /** Starts an EU visitor's init() and returns once its gtag.js is appended and still loading. */
@@ -122,6 +128,7 @@ beforeEach(() => {
   // Fresh gtag per test: initGtag() keeps an existing function, which would close over an
   // earlier test's dataLayer array.
   delete (window as Partial<Window>).gtag;
+  delete window.google_tag_manager;
   vi.restoreAllMocks();
 
   // jsdom does not fetch scripts; settle each appended gtag.js the way the test asks.
@@ -166,8 +173,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   it("issues the consent default before js and config", async () => {
     await euManager().init();
 
-    const order = commands().map((c) => String(c[0]) + (c[0] === "consent" ? `:${c[1]}` : ""));
-    expect(order).toEqual(["consent:default", "js", "config"]);
+    expect(order()).toEqual(["consent:default", "js", "config"]);
   });
 
   it("counts one page_view on a first visit that accepts all", async () => {
@@ -217,14 +223,14 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(count("config")).toBe(1);
   });
 
-  it("follows a late default with an update when gtag.js was already on the page", async () => {
-    // Defaults apply only before the tag loads; a site that loaded gtag.js itself would keep
+  it("follows a late default with an update when the Google tag already ran", async () => {
+    // Defaults apply only before the tag runs; a site that loaded gtag.js itself would keep
     // its own consent state unless the stored choice also arrives as an update.
     storeConsent(
       { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
       {}
     );
-    preloadGtagScript();
+    preloadGtagScript(true);
 
     await euManager().init();
 
@@ -232,6 +238,17 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(consentCalls("update")).toEqual([ANALYTICS_ONLY]);
     expect(count("config")).toBe(1);
     expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("keeps the update wait when another gtag.js is still downloading", async () => {
+    // A script element alone does not mean the tag ran: the undecided visitor's default is
+    // still on time and must keep holding the first hits for the banner's answer.
+    preloadGtagScript(false);
+
+    await euManager().init();
+
+    expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(consentCalls("update")).toEqual([]);
   });
 
   it("sends only an update when consent changes while gtag.js is still loading", async () => {
@@ -259,6 +276,8 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     manager.onShowBanner(showBanner);
 
     await manager.init();
+    // init() does not wait for the tag; the failure is reported once the load settles.
+    await settle();
 
     expect(showBanner).toHaveBeenCalledTimes(1);
     expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
@@ -266,7 +285,6 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
       new Error(`Failed to load gtag.js for ${GA_ID}`)
     );
     expect(gtagScripts()).toHaveLength(0);
-    expect(count("config")).toBe(0);
 
     scriptOutcome = "load";
     await manager.acceptAll();
@@ -293,29 +311,50 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expectInitialisedOnce([GRANTED]);
   });
 
-  it("resolves a choice only after config is queued", async () => {
-    // `await acceptAll(); trackEvent(...)` must find `config` ahead of the event in dataLayer;
-    // the consent update and the closed banner still happen at once.
-    const hideBanner = vi.fn();
-    const { manager, initDone } = await initWithPendingTag({ onBannerHide: hideBanner });
-
-    let resolved = false;
-    const choice = manager.acceptAll().then(() => {
-      resolved = true;
-    });
-    await settle();
-
-    expect(resolved).toBe(false);
-    expect(hideBanner).toHaveBeenCalledTimes(1);
-    expect(consentCalls("update")).toEqual([GRANTED]);
-
-    settlePendingTag("load");
-    await choice;
-    manager.trackEvent("sign_up");
+  it("queues config ahead of events tracked while gtag.js is still loading", async () => {
+    // `js` and `config` are queued with the default, as in Google's snippet, so an event
+    // tracked before the script runs is still processed after them.
+    const { manager, initDone } = await initWithPendingTag();
     await initDone;
 
-    const order = commands().map((c) => String(c[0]));
-    expect(order.indexOf("config")).toBeLessThan(order.indexOf("event"));
+    await manager.acceptAll();
+    manager.trackEvent("sign_up");
+    settlePendingTag("load");
+
+    expect(order()).toEqual(["consent:default", "js", "config", "consent:update", "event"]);
+  });
+
+  it("queues config ahead of page views tracked after a failed load", async () => {
+    // Regression: init() resolved with no config queued after a failed load, so router page
+    // views tracked before the retry came ahead of `js` and `config`.
+    scriptOutcome = "error";
+    const manager = euManager();
+    await manager.init();
+
+    manager.trackPageView("/after-failure");
+    scriptOutcome = "load";
+    await manager.acceptAll();
+    await settle();
+
+    expect(order().indexOf("config")).toBeLessThan(order().indexOf("event"));
+    expect(count("config")).toBe(1);
+    expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("delivers no stale grant to listeners after consent is withdrawn", async () => {
+    // Regression: the grant's callbacks waited for gtag.js; a reset made meanwhile was followed
+    // by that stale grant reaching the script blocker, which then ran blocked scripts.
+    const { manager } = await initWithPendingTag();
+    const seen: boolean[] = [];
+    manager.onConsentChange((categories) => seen.push(categories.analytics));
+
+    void manager.acceptAll();
+    manager.resetConsent();
+    const atReset = [...seen];
+    settlePendingTag("load");
+    await settle();
+
+    expect(seen).toEqual(atReset);
   });
 
   it("returns to the undecided state on resetConsent while init() is pending", async () => {
@@ -353,6 +392,33 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await initDone;
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(consentCalls("update")).toEqual([]);
+  });
+
+  it("still detects the jurisdiction after a reset during the remote lookup", async () => {
+    // A reset stops init() from applying consent, not from learning where the visitor is:
+    // isCCPAUser() drives the site's "Do Not Sell" link for this page.
+    cookieStore = "consent_uid=uid-1";
+    let resolveRemote: (value: null) => void = () => {};
+    const manager = euManager({
+      ccpaEnabled: true,
+      storage: {
+        get: () => new Promise((resolve) => (resolveRemote = resolve)),
+        set: vi.fn().mockResolvedValue(null),
+      },
+      geoDetector: {
+        detect: vi
+          .fn()
+          .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+      },
+    });
+
+    const initDone = manager.init();
+    manager.resetConsent();
+    resolveRemote(null);
+    await initDone;
+
+    expect(manager.isCCPAUser()).toBe(true);
     expect(consentCalls("update")).toEqual([]);
   });
 

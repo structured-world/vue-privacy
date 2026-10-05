@@ -24,7 +24,8 @@ import {
 } from "./storage";
 import {
   sendInitialConsent,
-  configureGoogleAnalytics,
+  queueGoogleAnalyticsConfig,
+  loadGtagScript,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -77,8 +78,10 @@ export class ConsentManager {
   private routerCleanup: (() => void) | null = null;
   /** The page's `consent default` was issued; every later push is an update. */
   private gaDefaultsSent = false;
-  /** gtag.js load and `config`, in flight or done; reset after a failed load. */
-  private gaLoad: Promise<void> | null = null;
+  /** A gtag.js load attempt is in flight. */
+  private gaLoading = false;
+  /** gtag.js loaded; no further attempt is needed. */
+  private gaLoaded = false;
   /** A consent push found the load in flight; a failure of that attempt retries at once. */
   private gaRetryOnFailure = false;
   /**
@@ -178,22 +181,14 @@ export class ConsentManager {
   }
 
   /**
-   * Initialize consent manager
+   * Initialize consent manager: restore or decide the visitor's consent state, or show the
+   * banner. Every `await` here may let the visitor choose or reset first; that then stands,
+   * and the rest of this flow only finishes detecting the jurisdiction.
    */
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
 
-    await this.resolveInitialConsent();
-    // Callers start router tracking once init() resolves; its page views must follow `config`.
-    await this.gaLoad;
-  }
-
-  /**
-   * Restore or decide the visitor's consent state, or show the banner. Every `await` here may
-   * let the visitor choose or reset first; that then stands and this flow stops.
-   */
-  private async resolveInitialConsent(): Promise<void> {
     const epoch = this.consentEpoch;
     const superseded = (): boolean => this.consentEpoch !== epoch;
 
@@ -226,7 +221,7 @@ export class ConsentManager {
             duration: 0,
           },
         ];
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
 
@@ -252,7 +247,7 @@ export class ConsentManager {
             this.config
           );
         }
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
       // User is now in EU but consent was given outside EU — fall through to show banner
@@ -294,15 +289,15 @@ export class ConsentManager {
                 },
                 this.config
               );
-              await this.applyConsent(remote.categories);
+              this.applyConsent(remote.categories);
               return;
             }
           }
         } catch {
           // Remote storage failed — fall through to geo detection
         }
-        // Also covers a choice or reset made while remote.get() was pending.
-        if (superseded()) return;
+        // A choice or reset made while remote.get() was pending is caught after geo detection
+        // below, which still runs: isEUUser() and isCCPAUser() must hold for this page.
       }
     }
 
@@ -326,8 +321,9 @@ export class ConsentManager {
           },
         ];
       }
-      if (superseded()) return;
     }
+    // Every await is behind us: a choice or reset made meanwhile stands over what this flow read.
+    if (superseded()) return;
 
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
@@ -352,12 +348,10 @@ export class ConsentManager {
         functional: true,
       };
 
-      // Saved before the callbacks are awaited, so a choice made while they wait overwrites it.
-      const applied = this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
       // Persist CCPA consent so geo-detection is not repeated on next visit
       this.saveConsentWithRemote(grantedCategories);
       this.config.onCCPAUser?.();
-      await applied;
     } else {
       // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
       // Don't store — this is the default state for unrestricted jurisdictions.
@@ -368,7 +362,7 @@ export class ConsentManager {
         functional: true,
       };
 
-      await this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
     }
   }
 
@@ -521,8 +515,9 @@ export class ConsentManager {
 
   /**
    * Send consent signals to Google Consent Mode. With `gaId`, the first push is the page's
-   * single `consent default`; every later push is a `consent update`. Without `gaId` the site
-   * loads gtag itself, so every push is an update.
+   * single `consent default`, followed at once by `js` and `config`, so every event queued
+   * later follows them; every later push is a `consent update`. Without `gaId` the site loads
+   * gtag itself, so every push is an update.
    *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
@@ -534,49 +529,49 @@ export class ConsentManager {
     } else {
       this.gaDefaultsSent = true;
       sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
+      queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
     if (!gaId) return;
 
-    if (this.gaLoad) {
-      // In flight or done. Should the attempt in flight fail, this push still gets its retry.
+    if (this.gaLoading) {
+      // Should the attempt in flight fail, this push still gets its retry.
       this.gaRetryOnFailure = true;
       return;
     }
-    this.loadGoogleAnalytics(gaId);
+    if (!this.gaLoaded) this.loadGtag(gaId);
   }
 
   /**
-   * One attempt to load gtag.js and queue `js` and `config`. The promise never rejects, so a
-   * failed load never fails a consent choice or `init()`; it settles only after any retry the
-   * attempt triggered, so waiting on it means `config` is queued if it can be.
+   * One attempt to load gtag.js, which then processes the queued commands. Nothing waits on
+   * it: a blocked or failed load never holds up or fails the consent flow.
    */
-  private loadGoogleAnalytics(gaId: string): void {
+  private loadGtag(gaId: string): void {
+    this.gaLoading = true;
     this.gaRetryOnFailure = false;
-    this.gaLoad = configureGoogleAnalytics(gaId, this.config.sendPageView ?? true).catch(
-      (error: unknown): Promise<void> | undefined => {
-        this.gaLoad = null;
+    loadGtagScript(gaId).then(
+      () => {
+        this.gaLoading = false;
+        this.gaLoaded = true;
+      },
+      (error: unknown) => {
+        this.gaLoading = false;
         try {
           this.config.onGoogleAnalyticsError?.(error);
         } catch {
-          // A throwing callback must not fail init(), which integrations wait on before
-          // starting router tracking.
+          // A throwing callback must not break the consent flow.
         }
         // A consent change during this attempt found it in flight and started nothing, and no
         // later change may come; retry for it now. Otherwise the next push retries.
-        if (!this.gaRetryOnFailure) return undefined;
-        this.loadGoogleAnalytics(gaId);
-        return this.gaLoad ?? undefined;
+        if (this.gaRetryOnFailure) this.loadGtag(gaId);
       }
     );
   }
 
   /**
-   * Apply consent settings: the signals at once, the callbacks once gtag.js loading settles,
-   * since a callback may track an event that must follow `config`.
+   * Apply consent settings
    */
-  private async applyConsent(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
+  private applyConsent(categories: Omit<ConsentCategories, "necessary">): void {
     this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
-    await this.gaLoad;
 
     // Notify config callback
     this.config.onConsentChange?.({
@@ -601,7 +596,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.choose(categories);
+    this.choose(categories);
   }
 
   /**
@@ -614,7 +609,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.choose(categories);
+    this.choose(categories);
   }
 
   /**
@@ -627,27 +622,22 @@ export class ConsentManager {
       functional: categories.functional ?? true,
     };
 
-    await this.choose(finalCategories);
+    this.choose(finalCategories);
   }
 
   /**
-   * Apply, persist and close the dialogs for the visitor's own choice, all at once. Advances
-   * the epoch so a pending `init()` does not replace it with the state it was still resolving.
-   *
-   * @returns Settles once gtag.js loading settles and the callbacks ran, so a caller that
-   *   awaits the choice and then tracks an event finds `config` queued ahead of it
+   * Apply, persist and close the dialogs for the visitor's own choice. Advances the epoch so a
+   * pending `init()` does not replace it with the state it was still resolving.
    */
-  private async choose(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
+  private choose(categories: Omit<ConsentCategories, "necessary">): void {
     this.consentEpoch++;
-    const applied = this.applyConsent(categories);
+    this.applyConsent(categories);
     this.saveConsentWithRemote(categories);
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();
     this.config.onBannerHide?.();
     this.config.onPreferenceCenterHide?.();
-
-    await applied;
   }
 
   /**

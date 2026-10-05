@@ -45,7 +45,7 @@ Reject all non-essential categories. The refusal is stored like an acceptance (s
 await manager.rejectAll();
 ```
 
-The consent signals and the closed banner take effect at once; the returned promise settles once gtag.js has loaded (or failed to), so an event tracked after `await` follows `config`. The same holds for `acceptAll()` and `savePreferences()`.
+The consent signals, the stored choice and the closed banner take effect at once, as for `acceptAll()` and `savePreferences()`. `config` is queued together with the first consent default, so events tracked at any later point follow it, even while gtag.js is still loading.
 
 #### `savePreferences(categories): Promise<void>`
 
