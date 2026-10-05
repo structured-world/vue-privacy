@@ -88,6 +88,11 @@ export class ConsentManager {
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
   private destroyed = false;
   /**
+   * The choice made on this page. It takes precedence over the cookie, which may be blocked or
+   * fail to write, so tracking and the script blocker follow the visitor's latest decision.
+   */
+  private pageChoice: StoredConsent | null = null;
+  /**
    * Advanced by every choice and every reset. `init()` remembers it when it starts and stops at
    * its next step if it moved: what it read before then (a stored grant, an undecided visitor)
    * no longer describes the visitor.
@@ -375,20 +380,28 @@ export class ConsentManager {
     }
   }
 
-  /** Rewrite the stored choice, if any, with the location detected since it was made. */
+  /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
   private storeLocationWithChoice(): void {
-    const current = getStoredConsent(this.config);
+    const current = this.getConsent();
     if (!current || this.isEU === null) return;
-    storeConsent(
-      {
-        categories: current.categories,
-        isEU: this.isEU,
-        geoMethod: this.geoResult?.method,
-        countryCode: this.geoResult?.countryCode,
-        region: this.geoResult?.region,
-      },
-      this.config
-    );
+    storeConsent(this.choiceRecord(current.categories), this.config);
+    if (this.pageChoice) this.pageChoice = this.choiceRecord(current.categories);
+  }
+
+  /**
+   * A choice with the location it was made in, so EU/CCPA status can be restored on reload.
+   * `?? undefined` omits a location that was not detected rather than storing null.
+   */
+  private choiceRecord(categories: Omit<ConsentCategories, "necessary">): StoredConsent {
+    return {
+      categories,
+      timestamp: Date.now(),
+      version: this.config.version ?? DEFAULT_CONFIG.version,
+      isEU: this.isEU ?? undefined,
+      geoMethod: this.geoResult?.method,
+      countryCode: this.geoResult?.countryCode,
+      region: this.geoResult?.region,
+    };
   }
 
   /**
@@ -402,19 +415,7 @@ export class ConsentManager {
     // is a grant worth a remote identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
-    // Include geo data so EU/CCPA status can be restored on page reload.
-    // Use ?? undefined to omit null values — if geo detection didn't run
-    // (isEU=null), we don't store it rather than storing null explicitly.
-    storeConsent(
-      {
-        categories,
-        isEU: this.isEU ?? undefined,
-        geoMethod: this.geoResult?.method,
-        countryCode: this.geoResult?.countryCode,
-        region: this.geoResult?.region,
-      },
-      this.config
-    );
+    storeConsent(this.choiceRecord(categories), this.config);
     if (!hasNonNecessary) {
       // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
       // an earlier remote grant, should the remote write of this refusal fail.
@@ -610,6 +611,7 @@ export class ConsentManager {
    */
   private applyConsent(categories: Omit<ConsentCategories, "necessary">): void {
     this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
+    const epoch = this.consentEpoch;
 
     // Notify config callback
     this.config.onConsentChange?.({
@@ -618,8 +620,10 @@ export class ConsentManager {
       version: this.config.version ?? DEFAULT_CONFIG.version,
     });
 
-    // Notify registered listeners (script blocker, etc.)
+    // Notify registered listeners (script blocker, etc.). A callback that reset consent or made
+    // another choice replaced these categories; the script blocker must not act on them.
     for (const listener of this.consentChangeListeners) {
+      if (this.consentEpoch !== epoch) return;
       listener(categories);
     }
   }
@@ -669,6 +673,7 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
+    this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
@@ -686,10 +691,11 @@ export class ConsentManager {
   }
 
   /**
-   * Get the stored choice (a grant or a refusal), or null while the visitor is undecided
+   * Get the visitor's choice (a grant or a refusal): the one made on this page, else the stored
+   * one, or null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
-    return getStoredConsent(this.config);
+    return this.pageChoice ?? getStoredConsent(this.config);
   }
 
   /**
@@ -706,6 +712,7 @@ export class ConsentManager {
     clearConsent(this.config);
     clearConsentUid(this.config);
     this.userId = null;
+    this.pageChoice = null;
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;

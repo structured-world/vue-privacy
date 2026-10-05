@@ -540,6 +540,41 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
+  it("does not notify listeners of a choice a consent callback replaced", async () => {
+    // Regression: a callback that reset consent was followed by listener notifications with the
+    // superseded grant, so the script blocker could run scripts the visitor no longer allowed.
+    let manager: ConsentManager | null = null;
+    manager = euManager({
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics) manager?.resetConsent();
+      },
+    });
+    const listener = vi.fn();
+    manager.onConsentChange(listener);
+    await manager.init();
+
+    await manager.acceptAll();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("suppresses tracking after a refusal even when the consent cookie cannot be written", async () => {
+    // Regression: with cookies blocked the refusal could not be read back, so events were sent.
+    Object.defineProperty(document, "cookie", {
+      get: () => "",
+      set: () => {},
+      configurable: true,
+    });
+    const manager = euManager();
+    await manager.init();
+    await manager.rejectAll();
+
+    const events = count("event");
+    manager.trackEvent("sign_up");
+    manager.trackPageView("/after-refusal");
+    expect(count("event")).toBe(events);
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
   it("applies a choice when the remote storage throws synchronously", async () => {
     // Regression: a set() that threw instead of rejecting aborted the choice before its
     // consent update, listeners and dialog handling; remote storage is best-effort.

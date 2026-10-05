@@ -101,12 +101,17 @@ jobs:
       # merging main into the branch is re-armed the same way, but only when every commit the
       # head adds over the base is Dependabot's or the bot's merge: a merge can carry a
       # maintainer's commit pushed just before it, whose own disarm run then sees a moved head.
+      # Author attribution is the check, not proof of origin: only someone with write access can
+      # push here, and they can merge a pull request themselves, so a forged author gains nothing.
+      # A comparison longer than one response fails the step rather than skipping commits.
       - name: Approve and enable auto-merge
         if: github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
         run: |
           foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${HEAD_SHA}" \
-            --jq '[.commits[].author.login // "unknown"
-                   | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length')
+            --jq 'if .total_commits != (.commits | length) then error("comparison is incomplete")
+                  else [.commits[].author.login // "unknown"
+                        | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length
+                  end')
           if [ "$foreign" != "0" ]; then
             # The maintainer's own run may have skipped disarming because this head had already
             # replaced theirs, so auto-merge armed for an earlier head can still be on.
