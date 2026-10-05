@@ -135,6 +135,32 @@ describe("ConsentManager with remote storage", () => {
     expect(next.getConsent()).toBeNull();
   });
 
+  it("does not restore consent_uid when a grant's remote write completes after a withdrawal", async () => {
+    // Regression: the grant's pending remote write finished after the visitor rejected and
+    // wrote its consent_uid back, so the next visit could fetch the withdrawn grant.
+    let finishGrant: (id: string) => void = () => {};
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi
+        .fn()
+        .mockImplementationOnce(() => new Promise<string>((resolve) => (finishGrant = resolve)))
+        .mockResolvedValue(null),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+    await manager.rejectAll();
+    finishGrant("granted-uid");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(cookieStore).not.toContain("consent_uid");
+  });
+
   it("drops consent_uid on withdrawal so a failed remote write cannot restore the grant", async () => {
     // Regression: the withdrawal cleared the local cookie but kept consent_uid; when the remote
     // write of the refusal failed, the next non-EU visit fetched the old remote grant by uid.

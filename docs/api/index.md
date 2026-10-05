@@ -94,7 +94,7 @@ if (manager.isEUUser()) {
 
 Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
 
-Events are always sent to Google Analytics. When analytics consent is denied, Google Consent Mode prevents the data from being stored. If a user has explicitly denied analytics consent (stored in cookie), the event is not sent at all.
+Events are always sent to Google Analytics. When analytics consent is denied, Google Consent Mode prevents the data from being stored. After the user refuses analytics on the current page, or when a stored consent leaves analytics off, the event is not sent at all. A refusal is not stored, so on the next page the user is undecided again.
 
 ```typescript
 manager.trackPageView('/docs/guide');

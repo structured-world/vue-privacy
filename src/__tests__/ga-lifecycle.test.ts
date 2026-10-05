@@ -444,6 +444,62 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(consentCalls("update")).toEqual([GRANTED]);
   });
 
+  it("sends no events after the visitor rejects on this page", async () => {
+    // A refusal is not stored, but on the page where it was made tracking calls stay
+    // suppressed; a later grant on the same page lets them through again.
+    const manager = euManager();
+    await manager.init();
+
+    await manager.rejectAll();
+    manager.trackEvent("sign_up");
+    manager.trackPageView("/after-refusal");
+    expect(count("event")).toBe(0);
+
+    await manager.acceptAll();
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+  });
+
+  it("queues the banner when a reset happens before the banner component mounts", async () => {
+    // init() stops after a reset made during geo detection; with no banner callback yet, the
+    // reset itself must leave the banner pending for the component that mounts later.
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = euManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+
+    const initDone = manager.init();
+    manager.resetConsent();
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    const showBanner = vi.fn();
+    manager.onShowBanner(showBanner);
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up on another integration's gtag.js element that never settles", async () => {
+    // Its load or error event may have fired before the manager ran; waiting only for future
+    // events would hang the load forever and block every retry.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      scriptOutcome = "manual";
+      preloadGtagScript(false);
+      const onGoogleAnalyticsError = vi.fn();
+      const manager = euManager({ onGoogleAnalyticsError });
+      await manager.init();
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
+      expect(gtagScripts()).toHaveLength(0);
+
+      await manager.acceptAll();
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("leaves the banner shown when a consent callback resets the choice", async () => {
     // The reset made inside the callback is the latest decision; the outer choice must not
     // then hide the banner the reset just showed.

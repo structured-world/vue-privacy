@@ -50,6 +50,11 @@ jobs:
           test -f dist/vue-privacy.umd.cjs
           test -f dist/vue-privacy-banner.css
           test -f dist/vue-privacy-modal.css
+          test -f dist/index.d.ts
+          test -f dist/vue/index.d.ts
+          test -f dist/vitepress/index.d.ts
+          test -f dist/quasar/index.d.ts
+          test -f dist/vanilla/index.d.ts
 
       - name: Test
         run: yarn test --coverage

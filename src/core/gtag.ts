@@ -71,6 +71,12 @@ export function isGoogleTagLoaded(): boolean {
   return typeof window !== "undefined" && window.google_tag_manager !== undefined;
 }
 
+/**
+ * How long a gtag.js element another integration added may take to run before it counts as
+ * failed: long enough for a slow network, short enough that a lost load is retried this page.
+ */
+const EXISTING_TAG_TIMEOUT_MS = 10_000;
+
 /** Commands that produce or configure hits; consent must be settled before them. */
 const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
 
@@ -165,15 +171,23 @@ export function loadGtagScript(gaId: string): Promise<void> {
         resolve();
         return;
       }
-      existing.addEventListener("load", () => resolve(), { once: true });
+      // Its load or error event may already have fired before this call, and a settled script
+      // does not fire again; past the timeout it counts as failed and is replaced on retry.
+      const fail = () => {
+        clearTimeout(timer);
+        existing.remove();
+        reject(failure());
+      };
+      const timer = setTimeout(fail, EXISTING_TAG_TIMEOUT_MS);
       existing.addEventListener(
-        "error",
+        "load",
         () => {
-          existing.remove();
-          reject(failure());
+          clearTimeout(timer);
+          resolve();
         },
         { once: true }
       );
+      existing.addEventListener("error", fail, { once: true });
       return;
     }
 

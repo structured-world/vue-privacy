@@ -91,6 +91,8 @@ export class ConsentManager {
    * no longer describes the visitor.
    */
   private consentEpoch = 0;
+  /** The visitor refused analytics on this page; not stored, so it lasts for the page only. */
+  private analyticsRefusedOnPage = false;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -423,12 +425,14 @@ export class ConsentManager {
     if (this.remoteStorage) {
       const version = this.config.version ?? DEFAULT_CONFIG.version;
       const consent: StoredConsent = { categories, timestamp: Date.now(), version };
+      const epoch = this.consentEpoch;
 
       this.remoteStorage
         .set(this.userId, consent)
         .then((id) => {
-          // A remote identifier is kept only for a grant.
-          if (id && hasNonNecessary) {
+          // A remote identifier is kept only for a grant, and only while it is still the latest
+          // decision: a withdrawal or reset made meanwhile must not get the grant's id back.
+          if (id && hasNonNecessary && this.consentEpoch === epoch) {
             this.userId = id;
             setConsentUid(id, this.config);
           }
@@ -661,6 +665,7 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
+    this.analyticsRefusedOnPage = !categories.analytics;
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
@@ -699,9 +704,27 @@ export class ConsentManager {
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
+    this.analyticsRefusedOnPage = false;
     this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
-    this.showBannerCallback?.();
+    // A pending init() stops after this reset, so with no banner mounted yet the reset itself
+    // leaves the banner pending for the component that mounts later.
+    if (this.showBannerCallback) {
+      this.showBannerCallback();
+    } else {
+      this.bannerPending = true;
+    }
     this.config.onBannerShow?.();
+  }
+
+  /**
+   * Whether tracking calls are suppressed: analytics was refused on this page (a refusal is not
+   * stored, so this lasts for the page only), or the stored consent leaves it off. Before any
+   * choice, events are sent under the Consent Mode defaults (cookieless pings).
+   */
+  private analyticsSuppressed(): boolean {
+    if (this.analyticsRefusedOnPage) return true;
+    const stored = getStoredConsent(this.config);
+    return stored !== null && !stored.categories.analytics;
   }
 
   /**
@@ -710,13 +733,7 @@ export class ConsentManager {
    * Before user makes a choice, page views are sent under Consent Mode defaults (cookieless pings).
    */
   trackPageView(path: string, title?: string): void {
-    const stored = getStoredConsent(this.config);
-    // Intentional: Only suppress when user EXPLICITLY denied analytics.
-    // Before user makes a choice (no cookie), page views are sent under Google Consent Mode v2
-    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
-    if (stored && !stored.categories.analytics) {
-      return;
-    }
+    if (this.analyticsSuppressed()) return;
     gtagTrackPageView(path, title);
   }
 
@@ -735,17 +752,7 @@ export class ConsentManager {
    * ```
    */
   trackEvent(eventName: string, params?: Record<string, unknown>): void {
-    // Read consent state fresh on every call — handles runtime changes from
-    // acceptAll/rejectAll/savePreferences without needing instance state sync.
-    // NOTE: getStoredConsent() reads from cookie on each call, so consent changes
-    // made via acceptAll/rejectAll/savePreferences are reflected immediately.
-    const stored = getStoredConsent(this.config);
-    // Intentional: Only suppress when user EXPLICITLY denied analytics.
-    // Before user makes a choice (no cookie), events are sent under Google Consent Mode v2
-    // defaults - cookieless pings with no tracking cookies set. This is GDPR-compliant.
-    if (stored && !stored.categories.analytics) {
-      return;
-    }
+    if (this.analyticsSuppressed()) return;
     gtagTrackEvent(eventName, params);
   }
 
