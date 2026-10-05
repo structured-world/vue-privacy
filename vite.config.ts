@@ -3,7 +3,9 @@ import vue from "@vitejs/plugin-vue";
 import dts from "vite-plugin-dts";
 import { resolve } from "path";
 import { copyFileSync, mkdirSync } from "fs";
-// `with { type: "json" }` requires Node 20.10+ (aligned with package.json engines).
+// Building needs Node 22.12+ (the toolchain's minimum; CI runs 22.x and 24.x), which covers
+// `with { type: "json" }` and `import.meta.dirname`. package.json `engines` is about consumers
+// of the built library, not this build.
 import pkg from "./package.json" with { type: "json" };
 
 /**

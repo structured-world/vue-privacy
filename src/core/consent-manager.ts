@@ -655,11 +655,13 @@ export class ConsentManager {
    * pending `init()` does not replace it with the state it was still resolving.
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
-    this.consentEpoch++;
+    const epoch = ++this.consentEpoch;
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
     this.applyConsent(categories);
+    // A callback that made a newer decision owns the dialogs now (a reset shows the banner).
+    if (this.consentEpoch !== epoch) return;
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();

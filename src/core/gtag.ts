@@ -71,9 +71,31 @@ export function isGoogleTagLoaded(): boolean {
   return typeof window !== "undefined" && window.google_tag_manager !== undefined;
 }
 
+/** Commands that produce or configure hits; consent must be settled before them. */
+const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
+
+function commandOf(entry: unknown): ArrayLike<unknown> {
+  return entry as ArrayLike<unknown>;
+}
+
+/**
+ * Until the Google tag runs the dataLayer is only a queue. Moves the consent command gtag()
+ * just pushed ahead of the first measurement command queued at or after `from`, so hits queued
+ * earlier (by the site's own snippet, or before the choice) are processed under it. Moving the
+ * entry gtag() created keeps it the Arguments object gtag.js expects.
+ */
+function moveAheadOfMeasurement(from: number): void {
+  const queue = window.dataLayer;
+  const at = queue.findIndex(
+    (entry, i) => i >= from && MEASUREMENT_COMMANDS.has(String(commandOf(entry)[0]))
+  );
+  if (at >= 0) queue.splice(at, 0, queue.pop());
+}
+
 /**
  * Issue the page's consent defaults. Consent Mode applies defaults only before the Google tag
- * runs, so when it already has, the same signals follow as an update.
+ * runs: when it already has, the same signals follow as an update; when it has not, the default
+ * goes ahead of any measurement command already queued.
  *
  * @param signals - Initial consent signals
  * @param waitForUpdate - See {@link setConsentDefaults}
@@ -81,7 +103,9 @@ export function isGoogleTagLoaded(): boolean {
 export function sendInitialConsent(signals: GoogleConsentSignals, waitForUpdate = 500): void {
   const tagLoaded = isGoogleTagLoaded();
   setConsentDefaults(signals, waitForUpdate);
+  if (typeof window === "undefined") return;
   if (tagLoaded) updateConsent(signals);
+  else moveAheadOfMeasurement(0);
 }
 
 /**
@@ -98,9 +122,10 @@ export function updateConsent(signals: Partial<GoogleConsentSignals>): void {
 }
 
 /**
- * Consent update from the consent manager. Until the Google tag runs the dataLayer is only a
- * queue, and an update pushed now would be processed after the queued `config` and its page
- * view; it goes ahead of the queued `js` instead, so those hits follow the latest choice.
+ * Consent update from the consent manager. Until the Google tag runs, an update pushed now
+ * would be processed after the queued `config` and its page view; it goes ahead of the
+ * measurement commands queued after the last consent default instead, so those hits follow the
+ * latest choice and the default cannot override it.
  *
  * @param signals - Consent signals to update
  */
@@ -108,10 +133,12 @@ export function queueConsentUpdate(signals: GoogleConsentSignals): void {
   updateConsent(signals);
   if (typeof window === "undefined" || isGoogleTagLoaded()) return;
   const queue = window.dataLayer;
-  const jsAt = queue.findIndex((entry) => (entry as ArrayLike<unknown>)[0] === "js");
-  if (jsAt < 0) return;
-  // Moving the entry gtag() just pushed keeps it the Arguments object gtag.js expects.
-  queue.splice(jsAt, 0, queue.pop());
+  let lastDefault = -1;
+  queue.forEach((entry, i) => {
+    const command = commandOf(entry);
+    if (command[0] === "consent" && command[1] === "default") lastDefault = i;
+  });
+  moveAheadOfMeasurement(lastDefault + 1);
 }
 
 /**

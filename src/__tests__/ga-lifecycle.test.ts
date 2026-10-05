@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
-import { initGoogleAnalytics } from "../core/gtag";
+import { initGoogleAnalytics, initGtag } from "../core/gtag";
 import { storeConsent } from "../core/storage";
 import type { ConsentConfig, GeoDetectionResult, GoogleConsentSignals } from "../core/types";
 
@@ -411,6 +411,58 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(order()).toEqual(["consent:default", "consent:update", "js", "config"]);
     expect(consentCalls("update")).toEqual([DENIED]);
+  });
+
+  it("puts the default ahead of a host snippet's queued js and config", async () => {
+    // The site's own gtag snippet queued js/config before the manager ran and its script is
+    // still downloading: the denied default must be processed before that config's page view.
+    initGtag();
+    window.gtag("js", new Date());
+    window.gtag("config", GA_ID);
+    scriptOutcome = "manual";
+    preloadGtagScript(false);
+
+    await euManager().init();
+
+    expect(order()).toEqual(["consent:default", "js", "config"]);
+  });
+
+  it("keeps an update after the default when the host queued its own js first", async () => {
+    // Placing the update ahead of measurement must not put it ahead of the default, which
+    // would then override the choice.
+    initGtag();
+    window.gtag("js", new Date());
+    scriptOutcome = "manual";
+    const manager = euManager();
+    await manager.init();
+
+    await manager.acceptAll();
+
+    const commandOrder = order();
+    expect(commandOrder.indexOf("consent:default")).toBe(0);
+    expect(commandOrder.indexOf("consent:update")).toBe(1);
+    expect(consentCalls("update")).toEqual([GRANTED]);
+  });
+
+  it("leaves the banner shown when a consent callback resets the choice", async () => {
+    // The reset made inside the callback is the latest decision; the outer choice must not
+    // then hide the banner the reset just showed.
+    const events: string[] = [];
+    let manager: ConsentManager | null = null;
+    manager = euManager({
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics) manager?.resetConsent();
+      },
+    });
+    manager.onShowBanner(() => events.push("show"));
+    manager.onHideBanner(() => events.push("hide"));
+    await manager.init();
+    events.length = 0;
+
+    await manager.acceptAll();
+
+    expect(events.at(-1)).toBe("show");
+    expect(manager.getConsent()).toBeNull();
   });
 
   it("stores the choice before running consent callbacks", async () => {
