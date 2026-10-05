@@ -98,7 +98,27 @@ export function updateConsent(signals: Partial<GoogleConsentSignals>): void {
 }
 
 /**
+ * Consent update from the consent manager. Until the Google tag runs the dataLayer is only a
+ * queue, and an update pushed now would be processed after the queued `config` and its page
+ * view; it goes ahead of the queued `js` instead, so those hits follow the latest choice.
+ *
+ * @param signals - Consent signals to update
+ */
+export function queueConsentUpdate(signals: GoogleConsentSignals): void {
+  updateConsent(signals);
+  if (typeof window === "undefined" || isGoogleTagLoaded()) return;
+  const queue = window.dataLayer;
+  const jsAt = queue.findIndex((entry) => (entry as ArrayLike<unknown>)[0] === "js");
+  if (jsAt < 0) return;
+  // Moving the entry gtag() just pushed keeps it the Arguments object gtag.js expects.
+  queue.splice(jsAt, 0, queue.pop());
+}
+
+/**
  * Load Google Analytics gtag.js script
+ *
+ * An element for this ID that is already on the page counts only once the Google tag ran;
+ * while it is still downloading, this settles with it.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
@@ -109,9 +129,24 @@ export function loadGtagScript(gaId: string): Promise<void> {
       return;
     }
 
-    // Check if already loaded
-    if (document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`)) {
-      resolve();
+    const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+    );
+    if (existing) {
+      if (isGoogleTagLoaded()) {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener(
+        "error",
+        () => {
+          existing.remove();
+          reject(failure());
+        },
+        { once: true }
+      );
       return;
     }
 
@@ -120,9 +155,9 @@ export function loadGtagScript(gaId: string): Promise<void> {
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
     script.onload = () => resolve();
     script.onerror = () => {
-      // A failed element would make the next attempt look "already loaded" and skip the retry.
+      // A failed element would make the next attempt wait on it instead of retrying.
       script.remove();
-      reject(new Error(`Failed to load gtag.js for ${gaId}`));
+      reject(failure());
     };
 
     document.head.appendChild(script);
@@ -227,6 +262,14 @@ export async function initGoogleAnalytics(
  */
 export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean): void {
   if (typeof window === "undefined") return;
+  initGtag();
+  // Once per page: a retried initialisation would otherwise queue a second `config`, and
+  // both are processed (two page views) once the tag loads.
+  const queued = window.dataLayer.some((entry) => {
+    const command = entry as ArrayLike<unknown>;
+    return command[0] === "config" && command[1] === gaId;
+  });
+  if (queued) return;
   window.gtag("js", new Date());
   window.gtag("config", gaId, {
     send_page_view: sendPageView,

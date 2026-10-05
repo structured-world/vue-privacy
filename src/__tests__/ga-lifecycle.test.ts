@@ -321,7 +321,8 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     manager.trackEvent("sign_up");
     settlePendingTag("load");
 
-    expect(order()).toEqual(["consent:default", "js", "config", "consent:update", "event"]);
+    // The update made before the tag ran is placed ahead of `js` and `config`.
+    expect(order()).toEqual(["consent:default", "consent:update", "js", "config", "event"]);
   });
 
   it("queues config ahead of page views tracked after a failed load", async () => {
@@ -393,6 +394,82 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
     expect(consentCalls("update")).toEqual([]);
+  });
+
+  it("orders a withdrawal made before gtag.js runs ahead of config", async () => {
+    // A returning visitor's final grant queues `config` (and its page view) at once; a refusal
+    // made before the tag runs must be processed before that hit, not after it.
+    storeConsent(
+      { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+      {}
+    );
+    scriptOutcome = "manual";
+    const manager = euManager();
+    await manager.init();
+
+    await manager.rejectAll();
+
+    expect(order()).toEqual(["consent:default", "consent:update", "js", "config"]);
+    expect(consentCalls("update")).toEqual([DENIED]);
+  });
+
+  it("stores the choice before running consent callbacks", async () => {
+    // A callback that tracks or decides must see the choice being made, and a decision it
+    // makes itself (a reset) must not be overwritten by the outer choice.
+    const seenInCallback: (boolean | undefined)[] = [];
+    let manager: ConsentManager | null = null;
+    manager = euManager({
+      onConsentChange: (consent) => {
+        seenInCallback.push(manager?.getConsent()?.categories.analytics);
+        if (consent.categories.analytics) manager?.resetConsent();
+      },
+    });
+    await manager.init();
+
+    await manager.acceptAll();
+
+    expect(seenInCallback).toEqual([true]);
+    expect(manager.getConsent()).toBeNull();
+  });
+
+  it("keeps the location of a choice made while init() detects it", async () => {
+    // Regression: the choice was stored before geo detection resolved, without isEU; on the
+    // next EU page load the roaming check took it for non-EU consent and asked again.
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = euManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+
+    const initDone = manager.init();
+    await manager.rejectAll();
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(manager.getConsent()).toMatchObject({
+      isEU: true,
+      countryCode: "DE",
+      categories: { analytics: false },
+    });
+  });
+
+  it("waits for a gtag.js element that another integration added and is still loading", async () => {
+    // Regression: the element's mere presence counted as loaded, so its failure was neither
+    // reported nor retried.
+    scriptOutcome = "manual";
+    preloadGtagScript(false);
+    const onGoogleAnalyticsError = vi.fn();
+    const manager = euManager({ onGoogleAnalyticsError });
+    await manager.init();
+
+    settlePendingTag("error");
+    await settle();
+    expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
+
+    await manager.acceptAll();
+    expect(gtagScripts()).toHaveLength(1);
+    settlePendingTag("load");
+    await settle();
+    expect(count("config")).toBe(1);
   });
 
   it("still detects the jurisdiction after a reset during the remote lookup", async () => {
@@ -565,5 +642,18 @@ describe("initGoogleAnalytics defaults", () => {
     await initGoogleAnalytics(GA_ID, GRANTED, true, 0);
 
     expect(consentCalls("default")).toEqual([GRANTED]);
+  });
+
+  it("queues config once when retried after a failed load", async () => {
+    // Both queued `config` commands would be processed once a retry loads the tag, each with
+    // its own page view.
+    scriptOutcome = "error";
+    await expect(initGoogleAnalytics(GA_ID, true)).rejects.toThrow();
+
+    scriptOutcome = "load";
+    await initGoogleAnalytics(GA_ID, true);
+
+    expect(count("js")).toBe(1);
+    expect(count("config")).toBe(1);
   });
 });

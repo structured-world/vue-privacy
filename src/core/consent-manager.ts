@@ -25,6 +25,7 @@ import {
 import {
   sendInitialConsent,
   queueGoogleAnalyticsConfig,
+  queueConsentUpdate,
   loadGtagScript,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
@@ -190,7 +191,13 @@ export class ConsentManager {
     this.initialized = true;
 
     const epoch = this.consentEpoch;
-    const superseded = (): boolean => this.consentEpoch !== epoch;
+    const superseded = (): boolean => {
+      if (this.consentEpoch === epoch) return false;
+      // A choice made meanwhile was stored before its location was known; without it, the
+      // next page load would take an EU visitor's choice for non-EU consent and ask again.
+      this.storeLocationWithChoice();
+      return true;
+    };
 
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
@@ -366,6 +373,22 @@ export class ConsentManager {
     }
   }
 
+  /** Rewrite the stored choice, if any, with the location detected since it was made. */
+  private storeLocationWithChoice(): void {
+    const current = getStoredConsent(this.config);
+    if (!current || this.isEU === null) return;
+    storeConsent(
+      {
+        categories: current.categories,
+        isEU: this.isEU,
+        geoMethod: this.geoResult?.method,
+        countryCode: this.geoResult?.countryCode,
+        region: this.geoResult?.region,
+      },
+      this.config
+    );
+  }
+
   /**
    * Persist the decision locally and (if remote storage is configured) remotely, a refusal
    * exactly like an acceptance: asking again after a refusal pressures towards acceptance, and
@@ -524,8 +547,10 @@ export class ConsentManager {
    */
   private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
     const gaId = this.config.gaId;
-    if (!gaId || this.gaDefaultsSent) {
+    if (!gaId) {
       updateGoogleConsent(signals);
+    } else if (this.gaDefaultsSent) {
+      queueConsentUpdate(signals);
     } else {
       this.gaDefaultsSent = true;
       sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
@@ -631,8 +656,10 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     this.consentEpoch++;
-    this.applyConsent(categories);
+    // Stored before the callbacks run: they see this choice, and a decision they make
+    // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
+    this.applyConsent(categories);
 
     this.hideBannerCallback?.();
     this.hidePreferenceCenterCallback?.();
