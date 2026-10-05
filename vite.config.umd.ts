@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-// `with { type: "json" }` requires Node 20.10+ (aligned with package.json engines).
+// Building needs Node 22.12+ (the toolchain's minimum; CI runs 22.x and 24.x), which covers
+// `with { type: "json" }` and `import.meta.dirname`. package.json `engines` is about consumers
+// of the built library, not this build.
 import pkg from "./package.json" with { type: "json" };
 
 /**
@@ -17,7 +19,7 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: resolve(__dirname, "src/umd.ts"),
+      entry: resolve(import.meta.dirname, "src/umd.ts"),
       name: "VuePrivacy",
       formats: ["umd"],
       fileName: () => "vue-privacy.umd.cjs",

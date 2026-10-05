@@ -42,9 +42,17 @@ gtag('js', new Date());
 gtag('config', 'G-XXXXXXXXXX');
 ```
 
+A returning visitor's stored choice is known before the tag loads, so the single `default` carries it (for example `analytics_storage: 'granted'` with the ad signals `denied`) and the page needs no update. The same holds outside consent jurisdictions, where every signal defaults to `granted`. These defaults are final, so they carry no `wait_for_update` and the first page view is not held back; `wait_for_update: 500` is used only while the banner is still waiting for an answer.
+
+If your page already loaded gtag.js before the library runs, the defaults come too late to apply, so the library follows them with an update carrying the same signals.
+
+The `default`, `js` and `config` commands run once per page; a consent change never repeats them.
+
+If gtag.js fails to load (an ad blocker, a network error), the banner still shows and choices are still saved; `onGoogleAnalyticsError` receives the error and the next consent change retries the load.
+
 ### 3. Update on Consent
 
-When the user gives consent:
+Each later choice (accept, reject, saved preferences) sends one update:
 
 ```javascript
 gtag('consent', 'update', {

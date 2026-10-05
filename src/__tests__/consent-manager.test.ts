@@ -93,9 +93,83 @@ describe("ConsentManager with remote storage", () => {
       expect(mockStorage.set).toHaveBeenCalledTimes(1);
     });
 
-    // consent_uid should NOT be set for rejected consent
+    // A refusal is not stored: no consent_uid and no consent cookie.
     expect(cookieStore).not.toContain("consent_uid");
-    // consent_preferences should NOT be set either (GDPR strict)
+    expect(cookieStore).not.toContain("consent_preferences");
+  });
+
+  it("removes an earlier grant when the visitor rejects all", async () => {
+    // Regression: rejecting wrote no cookie but left the earlier grant in place, so the next
+    // page load restored "accept all" for a visitor who had withdrawn consent.
+    const manager = new ConsentManager({ geoDetector: createMockGeoDetector(true) });
+
+    await manager.init();
+    await manager.acceptAll();
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+
+    await manager.rejectAll();
+
+    expect(manager.getConsent()).toBeNull();
+    expect(cookieStore).not.toContain("consent_preferences");
+  });
+
+  it.each([
+    ["rejectAll()", (m: ConsentManager) => m.rejectAll()],
+    [
+      "savePreferences() with every optional category off",
+      (m: ConsentManager) => m.savePreferences({ analytics: false, marketing: false }),
+    ],
+  ])("asks again on the next page after %s", async (_name, refuse) => {
+    // Only a grant is remembered: after a refusal the banner keeps asking, so the visitor can
+    // still grant consent later.
+    const first = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
+    await first.init();
+    await refuse(first);
+
+    const showBanner = vi.fn();
+    const next = new ConsentManager({ geoDetector: createMockGeoDetector(true, "DE") });
+    next.onShowBanner(showBanner);
+    await next.init();
+
+    expect(showBanner).toHaveBeenCalledTimes(1);
+    expect(next.getConsent()).toBeNull();
+  });
+
+  it("drops consent_uid on withdrawal so a failed remote write cannot restore the grant", async () => {
+    // Regression: the withdrawal cleared the local cookie but kept consent_uid; when the remote
+    // write of the refusal failed, the next non-EU visit fetched the old remote grant by uid.
+    const remoteGrant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(remoteGrant),
+      set: vi.fn().mockResolvedValue("granted-uid"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+    await vi.waitFor(() => expect(cookieStore).toContain("consent_uid=granted-uid"));
+
+    mockStorage.set.mockRejectedValue(new Error("Network error"));
+    await manager.rejectAll();
+    expect(cookieStore).not.toContain("consent_uid");
+
+    const nextVisit = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(false),
+      version: "1.0",
+    });
+    mockStorage.get.mockClear();
+    await nextVisit.init();
+
+    expect(mockStorage.get).not.toHaveBeenCalled();
     expect(cookieStore).not.toContain("consent_preferences");
   });
 

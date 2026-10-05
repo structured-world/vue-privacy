@@ -39,15 +39,17 @@ await manager.acceptAll();
 
 #### `rejectAll(): Promise<void>`
 
-Reject all non-essential categories.
+Reject all non-essential categories. A refusal is not stored: the banner asks again on the next page, so the visitor can still grant consent later. Rejecting after an earlier grant removes that grant.
 
 ```typescript
 await manager.rejectAll();
 ```
 
+The consent signals, the stored choice and the closed banner take effect at once, as for `acceptAll()` and `savePreferences()`. `config` is queued together with the first consent default, so events tracked at any later point follow it, even while gtag.js is still loading.
+
 #### `savePreferences(categories): Promise<void>`
 
-Save specific category preferences.
+Save specific category preferences. A choice that grants at least one optional category is stored; one with every optional category off is a refusal and is not.
 
 ```typescript
 await manager.savePreferences({
@@ -70,11 +72,11 @@ if (consent) {
 
 #### `hasConsent(): boolean`
 
-Check if user has given consent.
+Check if a granted consent is stored. A refusal is not stored, so it returns `false` after `rejectAll()`.
 
 ```typescript
 if (manager.hasConsent()) {
-  // User has made a choice
+  // A granted consent is stored
 }
 ```
 
@@ -115,7 +117,7 @@ if (manager.isInitialized()) {
 
 #### `resetConsent(): void`
 
-Clear stored consent and show banner again.
+Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
 
 ```typescript
 manager.resetConsent();
@@ -163,16 +165,31 @@ trackPageView('/new-page', 'Custom Title');
 
 ### initGoogleAnalytics
 
-Initialize Google Analytics with Consent Mode.
+Initialize Google Analytics with Consent Mode: `consent default`, script load, `js`, `config`.
 
 ```typescript
 import { initGoogleAnalytics } from '@structured-world/vue-privacy';
 
-// Args: gaId, defaultDenied, sendPageView
+// Args: gaId, defaults, sendPageView, waitForUpdate
 await initGoogleAnalytics('G-XXXXXXXXXX', true, false);
 ```
 
+Or, instead of the call above, per-signal defaults, e.g. for a returning visitor who allowed analytics only. The choice is already final, so `waitForUpdate` is `0`:
+
+```typescript
+await initGoogleAnalytics('G-XXXXXXXXXX', {
+  analytics_storage: 'granted',
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+}, false, 0);
+```
+
+`defaults` is `true` (deny every signal), `false` (grant every signal) or the signals themselves.
 Set `sendPageView` to `false` for SPA apps where you track navigation manually.
+`waitForUpdate` (default `500`) is how long tags hold their first hits for a consent update; `0` omits `wait_for_update`. If gtag.js is already on the page, the defaults come too late to apply, so the same signals follow as an update.
+
+Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default` after the tag has loaded (Consent Mode expects defaults only before it loads) and another `config`, which counts another page view. `ConsentManager` does this for you.
 
 ## Storage Functions
 

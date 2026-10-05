@@ -8,6 +8,7 @@ import type {
   GA4EcommerceParams,
   GA4PurchaseParams,
   GA4GenerateLeadParams,
+  GoogleConsentSignals,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
@@ -22,7 +23,10 @@ import {
   clearConsentUid,
 } from "./storage";
 import {
-  initGoogleAnalytics,
+  sendInitialConsent,
+  queueGoogleAnalyticsConfig,
+  queueConsentUpdate,
+  loadGtagScript,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -52,6 +56,9 @@ export const CCPA_REGIONS = new Set([
   "ut",
 ]);
 
+/** How long tags hold their first hits for an undecided visitor's consent update. */
+const DEFAULT_WAIT_FOR_UPDATE_MS = 500;
+
 /**
  * Consent Manager - orchestrates consent flow
  */
@@ -70,6 +77,20 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private routerCleanup: (() => void) | null = null;
+  /** The page's `consent default` was issued; every later push is an update. */
+  private gaDefaultsSent = false;
+  /** A gtag.js load attempt is in flight. */
+  private gaLoading = false;
+  /** gtag.js loaded; no further attempt is needed. */
+  private gaLoaded = false;
+  /** A consent push found the load in flight; a failure of that attempt retries at once. */
+  private gaRetryOnFailure = false;
+  /**
+   * Advanced by every choice and every reset. `init()` remembers it when it starts and stops at
+   * its next step if it moved: what it read before then (a stored grant, an undecided visitor)
+   * no longer describes the visitor.
+   */
+  private consentEpoch = 0;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -161,11 +182,22 @@ export class ConsentManager {
   }
 
   /**
-   * Initialize consent manager
+   * Initialize consent manager: restore or decide the visitor's consent state, or show the
+   * banner. Every `await` here may let the visitor choose or reset first; that then stands,
+   * and the rest of this flow only finishes detecting the jurisdiction.
    */
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+
+    const epoch = this.consentEpoch;
+    const superseded = (): boolean => {
+      if (this.consentEpoch === epoch) return false;
+      // A choice made meanwhile was stored before its location was known; without it, the
+      // next page load would take an EU visitor's choice for non-EU consent and ask again.
+      this.storeLocationWithChoice();
+      return true;
+    };
 
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
@@ -196,7 +228,7 @@ export class ConsentManager {
             duration: 0,
           },
         ];
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
 
@@ -205,6 +237,7 @@ export class ConsentManager {
       // NOTE: This runs geo detection on every page load for non-EU users — intentional
       // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
       const needsReconsent = await this.checkRoamingToEU(stored);
+      if (superseded()) return;
       if (!needsReconsent) {
         // User is not in EU now — non-EU consent remains valid.
         // Update cookie with fresh geo data from roaming check (for debugging/analytics).
@@ -221,7 +254,7 @@ export class ConsentManager {
             this.config
           );
         }
-        await this.applyConsent(stored.categories);
+        this.applyConsent(stored.categories);
         return;
       }
       // User is now in EU but consent was given outside EU — fall through to show banner
@@ -241,6 +274,7 @@ export class ConsentManager {
             // so we must check current location before restoring.
             // If user is now in EU, they need fresh GDPR-compliant consent.
             const geoResult = await this.performGeoDetection();
+            if (superseded()) return;
 
             if (geoResult.isEU) {
               // User is in EU — cannot use remote consent without GDPR disclosure.
@@ -262,13 +296,15 @@ export class ConsentManager {
                 },
                 this.config
               );
-              await this.applyConsent(remote.categories);
+              this.applyConsent(remote.categories);
               return;
             }
           }
         } catch {
           // Remote storage failed — fall through to geo detection
         }
+        // A choice or reset made while remote.get() was pending is caught after geo detection
+        // below, which still runs: isEUUser() and isCCPAUser() must hold for this page.
       }
     }
 
@@ -293,12 +329,13 @@ export class ConsentManager {
         ];
       }
     }
+    // Every await is behind us: a choice or reset made meanwhile stands over what this flow read.
+    if (superseded()) return;
 
     if (this.isEU) {
-      // EU user: initialize GA with denied defaults, show banner
+      // EU user: denied defaults that wait for the banner's answer, then show the banner
       if (this.config.gaId) {
-        const sendPageView = this.config.sendPageView ?? true;
-        await initGoogleAnalytics(this.config.gaId, true, sendPageView);
+        this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
       }
 
       // Show banner (or defer if component hasn't mounted yet)
@@ -318,7 +355,7 @@ export class ConsentManager {
         functional: true,
       };
 
-      await this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
       // Persist CCPA consent so geo-detection is not repeated on next visit
       this.saveConsentWithRemote(grantedCategories);
       this.config.onCCPAUser?.();
@@ -332,14 +369,31 @@ export class ConsentManager {
         functional: true,
       };
 
-      await this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories);
     }
   }
 
+  /** Rewrite the stored choice, if any, with the location detected since it was made. */
+  private storeLocationWithChoice(): void {
+    const current = getStoredConsent(this.config);
+    if (!current || this.isEU === null) return;
+    storeConsent(
+      {
+        categories: current.categories,
+        isEU: this.isEU,
+        geoMethod: this.geoResult?.method,
+        countryCode: this.geoResult?.countryCode,
+        region: this.geoResult?.region,
+      },
+      this.config
+    );
+  }
+
   /**
-   * Persist consent locally and (if remote storage is configured) remotely.
-   * Sets cookies only when at least one non-necessary category is accepted.
-   * Fire-and-forget: remote push does not block UI.
+   * Persist a granted consent locally and (if remote storage is configured) remotely. Only a
+   * grant is remembered: a refusal is not stored, so the banner keeps asking and the visitor
+   * can still grant consent later, and it clears an earlier grant so that grant cannot come back.
+   * Fire-and-forget: the remote push does not block UI.
    */
   private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
     const hasNonNecessary = categories.analytics || categories.marketing;
@@ -358,6 +412,12 @@ export class ConsentManager {
         },
         this.config
       );
+    } else {
+      // consent_uid goes too, or a failed remote write of the refusal below would let the next
+      // visit fetch the earlier grant by it; the write still targets this.userId, so the remote
+      // record is overwritten when it succeeds.
+      clearConsent(this.config);
+      clearConsentUid(this.config);
     }
 
     if (this.remoteStorage) {
@@ -367,6 +427,7 @@ export class ConsentManager {
       this.remoteStorage
         .set(this.userId, consent)
         .then((id) => {
+          // A remote identifier is kept only for a grant.
           if (id && hasNonNecessary) {
             this.userId = id;
             setConsentUid(id, this.config);
@@ -481,18 +542,66 @@ export class ConsentManager {
   }
 
   /**
+   * Send consent signals to Google Consent Mode. With `gaId`, the first push is the page's
+   * single `consent default`, followed at once by `js` and `config`, so every event queued
+   * later follows them; every later push is a `consent update`. Without `gaId` the site loads
+   * gtag itself, so every push is an update.
+   *
+   * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
+   *   tags need not hold their first hits for an update
+   */
+  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
+    const gaId = this.config.gaId;
+    if (!gaId) {
+      updateGoogleConsent(signals);
+    } else if (this.gaDefaultsSent) {
+      queueConsentUpdate(signals);
+    } else {
+      this.gaDefaultsSent = true;
+      sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
+      queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
+    }
+    if (!gaId) return;
+
+    if (this.gaLoading) {
+      // Should the attempt in flight fail, this push still gets its retry.
+      this.gaRetryOnFailure = true;
+      return;
+    }
+    if (!this.gaLoaded) this.loadGtag(gaId);
+  }
+
+  /**
+   * One attempt to load gtag.js, which then processes the queued commands. Nothing waits on
+   * it: a blocked or failed load never holds up or fails the consent flow.
+   */
+  private loadGtag(gaId: string): void {
+    this.gaLoading = true;
+    this.gaRetryOnFailure = false;
+    loadGtagScript(gaId).then(
+      () => {
+        this.gaLoading = false;
+        this.gaLoaded = true;
+      },
+      (error: unknown) => {
+        this.gaLoading = false;
+        try {
+          this.config.onGoogleAnalyticsError?.(error);
+        } catch {
+          // A throwing callback must not break the consent flow.
+        }
+        // A consent change during this attempt found it in flight and started nothing, and no
+        // later change may come; retry for it now. Otherwise the next push retries.
+        if (this.gaRetryOnFailure) this.loadGtag(gaId);
+      }
+    );
+  }
+
+  /**
    * Apply consent settings
    */
-  private async applyConsent(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
-    // Initialize GA if configured
-    if (this.config.gaId) {
-      const sendPageView = this.config.sendPageView ?? true;
-      await initGoogleAnalytics(this.config.gaId, !categories.analytics, sendPageView);
-    }
-
-    // Update Google Consent Mode
-    const signals = categoriesToGoogleSignals(categories);
-    updateGoogleConsent(signals);
+  private applyConsent(categories: Omit<ConsentCategories, "necessary">): void {
+    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
 
     // Notify config callback
     this.config.onConsentChange?.({
@@ -517,13 +626,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.applyConsent(categories);
-    this.saveConsentWithRemote(categories);
-
-    this.hideBannerCallback?.();
-    this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
-    this.config.onPreferenceCenterHide?.();
+    this.choose(categories);
   }
 
   /**
@@ -536,13 +639,7 @@ export class ConsentManager {
       functional: true,
     };
 
-    await this.applyConsent(categories);
-    this.saveConsentWithRemote(categories);
-
-    this.hideBannerCallback?.();
-    this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
-    this.config.onPreferenceCenterHide?.();
+    this.choose(categories);
   }
 
   /**
@@ -555,13 +652,27 @@ export class ConsentManager {
       functional: categories.functional ?? true,
     };
 
-    await this.applyConsent(finalCategories);
-    this.saveConsentWithRemote(finalCategories);
+    this.choose(finalCategories);
+  }
 
-    this.hideBannerCallback?.();
+  /**
+   * Apply, persist and close the dialogs for the visitor's own choice. Advances the epoch so a
+   * pending `init()` does not replace it with the state it was still resolving.
+   */
+  private choose(categories: Omit<ConsentCategories, "necessary">): void {
+    const epoch = ++this.consentEpoch;
+    // Stored before the callbacks run: they see this choice, and a decision they make
+    // themselves (a reset, another choice) is the last one written.
+    this.saveConsentWithRemote(categories);
+    this.applyConsent(categories);
+
+    // The preference centre closes either way; it would cover a banner a callback's reset
+    // just showed. The banner stays when a callback made a newer decision.
     this.hidePreferenceCenterCallback?.();
-    this.config.onBannerHide?.();
     this.config.onPreferenceCenterHide?.();
+    if (this.consentEpoch !== epoch) return;
+    this.hideBannerCallback?.();
+    this.config.onBannerHide?.();
   }
 
   /**
@@ -572,7 +683,7 @@ export class ConsentManager {
   }
 
   /**
-   * Check if user has made a consent choice
+   * Check if a granted consent is stored (a refusal is not stored)
    */
   hasConsent(): boolean {
     return getStoredConsent(this.config) !== null;
@@ -585,6 +696,10 @@ export class ConsentManager {
     clearConsent(this.config);
     clearConsentUid(this.config);
     this.userId = null;
+    // Undecided again: the signals go back to denied while the banner asks, and a pending
+    // init() stops instead of restoring or granting what it read before the reset.
+    this.consentEpoch++;
+    this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
     this.showBannerCallback?.();
     this.config.onBannerShow?.();
   }
