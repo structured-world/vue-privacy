@@ -85,6 +85,8 @@ export class ConsentManager {
   private gaLoaded = false;
   /** A consent push found the load in flight; a failure of that attempt retries at once. */
   private gaRetryOnFailure = false;
+  /** destroy() ran: a load still in flight settles without reporting or retrying. */
+  private destroyed = false;
   /**
    * Advanced by every choice and every reset. `init()` remembers it when it starts and stops at
    * its next step if it moved: what it read before then (a stored grant, an undecided visitor)
@@ -398,6 +400,8 @@ export class ConsentManager {
    * Fire-and-forget: the remote push does not block UI.
    */
   private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
+    // `functional` does not count: rejectAll() keeps it on, so counting it would store every
+    // refusal.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     if (hasNonNecessary) {
@@ -426,9 +430,12 @@ export class ConsentManager {
       const version = this.config.version ?? DEFAULT_CONFIG.version;
       const consent: StoredConsent = { categories, timestamp: Date.now(), version };
       const epoch = this.consentEpoch;
+      const storage = this.remoteStorage;
 
-      this.remoteStorage
-        .set(this.userId, consent)
+      // Started inside a promise so that a set() throwing synchronously is caught like a
+      // rejection instead of aborting the visitor's choice.
+      Promise.resolve()
+        .then(() => storage.set(this.userId, consent))
         .then((id) => {
           // A remote identifier is kept only for a grant, and only while it is still the latest
           // decision: a withdrawal or reset made meanwhile must not get the grant's id back.
@@ -589,6 +596,8 @@ export class ConsentManager {
       },
       (error: unknown) => {
         this.gaLoading = false;
+        // The app that owned this manager is gone; nothing may be reported or appended for it.
+        if (this.destroyed) return;
         try {
           this.config.onGoogleAnalyticsError?.(error);
         } catch {
@@ -676,6 +685,8 @@ export class ConsentManager {
     this.hidePreferenceCenterCallback?.();
     this.config.onPreferenceCenterHide?.();
     if (this.consentEpoch !== epoch) return;
+    // A banner requested before its component mounted is answered by this choice.
+    this.bannerPending = false;
     this.hideBannerCallback?.();
     this.config.onBannerHide?.();
   }
@@ -921,6 +932,7 @@ export class ConsentManager {
    * Call when unmounting the app.
    */
   destroy(): void {
+    this.destroyed = true;
     this.scriptBlockerCleanup?.();
     this.scriptBlockerCleanup = null;
 

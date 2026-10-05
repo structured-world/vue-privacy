@@ -98,10 +98,19 @@ jobs:
       # Every update type, majors included: the required checks are the gate. Both operations
       # name the head this run inspected: the approval is recorded against that commit, and
       # the merge refuses outright if the head has moved. A head the release bot produced by
-      # merging main into the branch is re-armed the same way.
+      # merging main into the branch is re-armed the same way, but only when every commit the
+      # head adds over the base is Dependabot's or the bot's merge: a merge can carry a
+      # maintainer's commit pushed just before it, whose own disarm run then sees a moved head.
       - name: Approve and enable auto-merge
         if: github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
         run: |
+          foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${HEAD_SHA}" \
+            --jq '[.commits[].author.login // "unknown"
+                   | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length')
+          if [ "$foreign" != "0" ]; then
+            echo "$HEAD_SHA carries $foreign commit(s) by someone else; leaving auto-merge off"
+            exit 0
+          fi
           gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" \
             -f event=APPROVE -f commit_id="$HEAD_SHA" --silent
           gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_NUMBER"
@@ -110,6 +119,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
 
   update-behind:
     runs-on: ubuntu-latest

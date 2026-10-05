@@ -3,7 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
 import { initGoogleAnalytics, initGtag } from "../core/gtag";
 import { storeConsent } from "../core/storage";
-import type { ConsentConfig, GeoDetectionResult, GoogleConsentSignals } from "../core/types";
+import type {
+  ConsentConfig,
+  ConsentStorage,
+  GeoDetectionResult,
+  GoogleConsentSignals,
+} from "../core/types";
 
 // Google Consent Mode contract: one `consent default` before the tag loads, one `js` and
 // one `config` per page, then only `consent update` calls. These tests read the commands
@@ -502,6 +507,52 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("drops a reset's pending banner when the visitor chooses before the banner mounts", async () => {
+    // Regression: the pending flag outlived the choice, so the banner component mounting later
+    // asked a visitor who had already decided.
+    const manager = euManager();
+    manager.resetConsent();
+    await manager.acceptAll();
+
+    const show = vi.fn();
+    manager.onShowBanner(show);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("applies a choice when the remote storage throws synchronously", async () => {
+    // Regression: a set() that threw instead of rejecting aborted the choice before its
+    // consent update, listeners and dialog handling; remote storage is best-effort.
+    const storage: ConsentStorage = {
+      get: async () => null,
+      set: () => {
+        throw new Error("storage down");
+      },
+    };
+    const manager = euManager({ storage });
+    await manager.init();
+    const hide = vi.fn();
+    manager.onHideBanner(hide);
+
+    await manager.acceptAll();
+    expect(consentCalls("update")).toEqual([GRANTED]);
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops loading gtag.js once the manager is destroyed", async () => {
+    // Regression: a load that failed after destroy() still reported the error and retried,
+    // appending a new script for an app that had unmounted.
+    const onGoogleAnalyticsError = vi.fn();
+    const { manager, initDone } = await initWithPendingTag({ onGoogleAnalyticsError });
+    await initDone;
+    await manager.acceptAll();
+
+    manager.destroy();
+    settlePendingTag("error");
+    await settle();
+    expect(onGoogleAnalyticsError).not.toHaveBeenCalled();
+    expect(gtagScripts()).toHaveLength(0);
   });
 
   it("leaves the banner shown when a consent callback resets the choice", async () => {
