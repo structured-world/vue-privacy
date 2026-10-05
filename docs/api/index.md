@@ -80,10 +80,6 @@ if (manager.hasConsent()) {
 }
 ```
 
-#### `resetConsent(): void`
-
-Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
-
 #### `isEUUser(): boolean`
 
 Check if user is detected as EU.
@@ -121,7 +117,7 @@ if (manager.isInitialized()) {
 
 #### `resetConsent(): void`
 
-Clear stored consent and show banner again.
+Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
 
 ```typescript
 manager.resetConsent();

@@ -319,8 +319,8 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   });
 
   it("returns to the undecided state on resetConsent while init() is pending", async () => {
-    // A reset after an early choice must not leave the choice guard set: the pending EU flow
-    // then still applies, and the granted signals go back to denied while the banner asks.
+    // A reset after an early choice makes the visitor undecided again: the granted signals go
+    // back to denied and the banner asks, whatever the pending flow then resolves.
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
     const showBanner = vi.fn();
     const manager = euManager({
@@ -337,6 +337,62 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(consentCalls("update").at(-1)).toEqual(DENIED);
     expect(showBanner).toHaveBeenCalled();
     expect(manager.getConsent()).toBeNull();
+  });
+
+  it("does not grant over a reset made while init() detects a non-EU location", async () => {
+    // Regression: the reset cleared the choice guard, so the pending flow could not tell it
+    // from an untouched start and granted every signal while the banner was asking.
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = euManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+
+    const initDone = manager.init();
+    manager.resetConsent();
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+
+    expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(consentCalls("update")).toEqual([]);
+  });
+
+  it("does not restore a grant cleared by a reset during the roaming check", async () => {
+    // init() read the stored grant before the reset; when its location check returns, that
+    // stale grant must not be stored or signalled again.
+    storeConsent(
+      { categories: { analytics: true, marketing: true, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = euManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+
+    const initDone = manager.init();
+    manager.resetConsent();
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+
+    expect(manager.getConsent()).toBeNull();
+    expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(consentCalls("update")).toEqual([]);
+  });
+
+  it("runs consent callbacks after config is queued", async () => {
+    // A site tracking an event from onConsentChange must find `config` ahead of it.
+    let tracked: ConsentManager | null = null;
+    const { manager } = await initWithPendingTag({
+      onConsentChange: () => tracked?.trackEvent("consent_changed"),
+    });
+    tracked = manager;
+
+    const choice = manager.acceptAll();
+    settlePendingTag("load");
+    await choice;
+
+    const order = commands().map((c) => String(c[0]));
+    expect(order).toContain("event");
+    expect(order.indexOf("config")).toBeLessThan(order.indexOf("event"));
   });
 
   it("restores a refusal that replaced an earlier grant outside consent jurisdictions", async () => {
