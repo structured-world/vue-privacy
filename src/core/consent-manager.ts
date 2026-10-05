@@ -362,9 +362,10 @@ export class ConsentManager {
         functional: true,
       };
 
-      this.applyConsent(grantedCategories);
-      // Persist CCPA consent so geo-detection is not repeated on next visit
+      // Persisted before it is applied, so geo-detection is not repeated on the next visit and
+      // an opt-out a consent callback makes in response is the last choice written.
       this.saveConsentWithRemote(grantedCategories);
+      this.applyConsent(grantedCategories);
       this.config.onCCPAUser?.();
     } else {
       // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").

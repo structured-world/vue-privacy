@@ -156,6 +156,27 @@ describe("ConsentManager with remote storage", () => {
     expect(next.getConsent()?.categories.marketing).toBe(false);
   });
 
+  it("keeps a CCPA opt-out made in a consent callback during init()", async () => {
+    // Regression: init() stored the silent grant after the callbacks ran, overwriting an
+    // opt-out the site made in response to that grant, so the next page tracked again.
+    let first: ConsentManager | null = null;
+    first = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CA"),
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics) void first?.rejectAll();
+      },
+    });
+    await first.init();
+
+    const next = new ConsentManager({
+      ccpaEnabled: true,
+      geoDetector: createMockGeoDetector(false, "US", "CA"),
+    });
+    await next.init();
+    expect(next.getConsent()?.categories.analytics).toBe(false);
+  });
+
   it("does not restore consent_uid when a grant's remote write completes after a withdrawal", async () => {
     // Regression: the grant's pending remote write finished after the visitor rejected and
     // wrote its consent_uid back, so the next visit could fetch the withdrawn grant.
