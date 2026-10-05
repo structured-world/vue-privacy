@@ -1,8 +1,9 @@
 name: Dependabot Auto-Merge
 
 # Arms GitHub auto-merge on every Dependabot pull request. The merge itself happens only once
-# the required status checks on main (the CI build jobs: lint, type check, build, dist
-# verification, tests) pass on the pull request's head; a failing build leaves it open.
+# the required status checks on main (the whole CI pipeline: lint, type check, build, dist
+# verification, tests, docs build, review threads) pass on a head that is up to date with
+# main; a failing pipeline leaves it open.
 #
 # `pull_request_target`, not `pull_request`, because of how Dependabot runs are isolated: a
 # workflow triggered by Dependabot on `pull_request` receives Dependabot secrets rather than
@@ -17,15 +18,19 @@ name: Dependabot Auto-Merge
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
+  # main requires pull requests to be up to date before merging, and Dependabot rebases only
+  # on conflicts: after each merge the remaining armed pull requests are brought up to date.
+  push:
+    branches: [main]
 
 permissions:
-  # Approving, disarming and merging are done with the App token below.
+  # Approving, disarming, merging and updating branches are done with the App token below.
   pull-requests: read
 
-# One run per pull request, and a new push cancels the run it superseded rather than leaving
-# it racing toward a head that no longer exists.
+# One run per pull request (or per push to main), and a new event cancels the run it
+# superseded rather than leaving it racing toward a head that no longer exists.
 concurrency:
-  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  group: dependabot-auto-merge-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,7 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     # Only the author here. Who triggered the run decides what the job does, not whether it
     # runs at all: a push by anyone else is the case that has to be handled.
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    if: >-
+      github.event_name == 'pull_request_target'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
 
     steps:
       # Pinned to a commit SHA, not a tag, because `pull_request_target` puts the App's private
@@ -51,10 +58,11 @@ jobs:
 
       # Auto-merge, once enabled, outlives the head it was enabled for: a maintainer adding
       # commits to an open Dependabot pull request would otherwise have them merged. A run
-      # caused by someone else's push therefore disarms it. `github.actor` is who caused the
-      # event and a rerun keeps it, so this holds on every attempt.
+      # caused by anyone other than Dependabot or the release bot (which only merges main into
+      # the branch, below) therefore disarms it. `github.actor` is who caused the event and a
+      # rerun keeps it, so this holds on every attempt.
       - name: Disarm auto-merge when someone else moved the head
-        if: github.actor != 'dependabot[bot]'
+        if: github.actor != 'dependabot[bot]' && github.actor != 'sw-release-bot[bot]'
         # The head is checked because disarming has no precondition of its own; without it a
         # slow run from one push could disable what a later Dependabot run armed. Every value
         # arrives through the environment, never interpolated into the script.
@@ -91,9 +99,10 @@ jobs:
 
       # Every update type, majors included: the required checks are the gate. Both operations
       # name the head this run inspected: the approval is recorded against that commit, and
-      # the merge refuses outright if the head has moved.
+      # the merge refuses outright if the head has moved. A head the release bot produced by
+      # merging main into the branch is re-armed the same way.
       - name: Approve and enable auto-merge
-        if: github.actor == 'dependabot[bot]'
+        if: github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
         run: |
           gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" \
             -f event=APPROVE -f commit_id="$HEAD_SHA" --silent
@@ -103,3 +112,42 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  update-behind:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASER_APP_ID }}
+          private-key: ${{ secrets.RELEASER_APP_PRIVATE_KEY }}
+          # `contents` to merge main into the pull request branch, `pull-requests` to list them.
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Merges main into every open Dependabot pull request that has auto-merge armed and is
+      # behind main (a merge, not a rebase: no history is rewritten). The push comes from the
+      # release bot, which the job above treats as trusted and re-arms; the new head then runs
+      # the full pipeline before it can merge.
+      - name: Bring armed Dependabot pull requests up to date with main
+        run: |
+          gh pr list --author "app/dependabot" --state open \
+            --json number,headRefOid,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null) | "\(.number) \(.headRefOid)"' |
+          while read -r number head; do
+            behind=$(gh api "repos/${GH_REPO}/compare/${MAIN_SHA}...${head}" --jq .behind_by)
+            if [ "$behind" -gt 0 ]; then
+              if gh pr update-branch "$number"; then
+                echo "#$number: merged main ($behind commits behind)"
+              else
+                echo "::warning::#$number could not be brought up to date with main"
+              fi
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          MAIN_SHA: ${{ github.sha }}
