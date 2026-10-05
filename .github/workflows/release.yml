@@ -50,6 +50,9 @@ jobs:
           test -f dist/vue/index.js
           test -f dist/vitepress/index.js
           test -f dist/quasar/index.js
+          test -f dist/vue-privacy.umd.cjs
+          test -f dist/vue-privacy-banner.css
+          test -f dist/vue-privacy-modal.css
 
       - name: Semantic Release
         env:

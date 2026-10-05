@@ -17,7 +17,7 @@ export default defineConfig({
   },
   build: {
     lib: {
-      entry: resolve(__dirname, "src/umd.ts"),
+      entry: resolve(import.meta.dirname, "src/umd.ts"),
       name: "VuePrivacy",
       formats: ["umd"],
       fileName: () => "vue-privacy.umd.cjs",
