@@ -8,6 +8,7 @@ import type {
   GA4EcommerceParams,
   GA4PurchaseParams,
   GA4GenerateLeadParams,
+  GoogleConsentSignals,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
@@ -70,6 +71,8 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private routerCleanup: (() => void) | null = null;
+  /** Set by the first consent push; its presence turns every later push into an update. */
+  private gaInit: Promise<void> | null = null;
   private bannerPending = false;
   private preferenceCenterPending = false;
   private consentChangeListeners: Array<
@@ -297,8 +300,7 @@ export class ConsentManager {
     if (this.isEU) {
       // EU user: initialize GA with denied defaults, show banner
       if (this.config.gaId) {
-        const sendPageView = this.config.sendPageView ?? true;
-        await initGoogleAnalytics(this.config.gaId, true, sendPageView);
+        await this.pushGoogleConsent(categoriesToGoogleSignals({}));
       }
 
       // Show banner (or defer if component hasn't mounted yet)
@@ -481,18 +483,26 @@ export class ConsentManager {
   }
 
   /**
+   * Send consent signals to Google Consent Mode. With `gaId`, the first push initializes GA
+   * with them as the single `consent default`; every later push is a `consent update`.
+   * Without `gaId` the site loads gtag itself, so every push is an update.
+   */
+  private async pushGoogleConsent(signals: GoogleConsentSignals): Promise<void> {
+    if (!this.config.gaId || this.gaInit) {
+      updateGoogleConsent(signals);
+      return;
+    }
+    // Assigned before the await: a choice made while gtag.js is loading must update,
+    // not start a second initialization.
+    this.gaInit = initGoogleAnalytics(this.config.gaId, signals, this.config.sendPageView ?? true);
+    await this.gaInit;
+  }
+
+  /**
    * Apply consent settings
    */
   private async applyConsent(categories: Omit<ConsentCategories, "necessary">): Promise<void> {
-    // Initialize GA if configured
-    if (this.config.gaId) {
-      const sendPageView = this.config.sendPageView ?? true;
-      await initGoogleAnalytics(this.config.gaId, !categories.analytics, sendPageView);
-    }
-
-    // Update Google Consent Mode
-    const signals = categoriesToGoogleSignals(categories);
-    updateGoogleConsent(signals);
+    await this.pushGoogleConsent(categoriesToGoogleSignals(categories));
 
     // Notify config callback
     this.config.onConsentChange?.({

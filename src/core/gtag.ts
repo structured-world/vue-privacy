@@ -151,34 +151,32 @@ export function trackEvent(eventName: string, params?: Record<string, unknown>):
 }
 
 /**
- * Initialize Google Analytics with consent defaults
+ * Initialize Google Analytics: consent defaults, script load, `js` and `config`.
+ * Call it once per page; later consent changes go through {@link updateConsent}, since a
+ * second call issues another `consent default` and another `config` (another page_view).
  *
  * @param gaId - Google Analytics measurement ID
- * @param defaultDenied - Whether to default to denied consent (for EU users)
+ * @param defaults - Default consent signals, or `true` to deny all / `false` to grant all
  * @param sendPageView - Whether to send automatic page_view (false for SPA)
  */
 export async function initGoogleAnalytics(
   gaId: string,
-  defaultDenied = true,
+  defaults: boolean | GoogleConsentSignals = true,
   sendPageView = true
 ): Promise<void> {
   initGtag();
 
   // Set defaults BEFORE loading script
-  if (defaultDenied) {
+  if (typeof defaults === "boolean") {
+    const value = defaults ? "denied" : "granted";
     setConsentDefaults({
-      analytics_storage: "denied",
-      ad_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
+      analytics_storage: value,
+      ad_storage: value,
+      ad_user_data: value,
+      ad_personalization: value,
     });
   } else {
-    setConsentDefaults({
-      analytics_storage: "granted",
-      ad_storage: "granted",
-      ad_user_data: "granted",
-      ad_personalization: "granted",
-    });
+    setConsentDefaults(defaults);
   }
 
   // Load the script

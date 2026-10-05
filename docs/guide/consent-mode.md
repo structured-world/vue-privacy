@@ -42,9 +42,13 @@ gtag('js', new Date());
 gtag('config', 'G-XXXXXXXXXX');
 ```
 
+A returning visitor's stored choice is known before the tag loads, so the single `default` carries it (for example `analytics_storage: 'granted'` with the ad signals `denied`) and the page needs no update.
+
+The `default`, `js` and `config` commands run once per page; a consent change never repeats them.
+
 ### 3. Update on Consent
 
-When the user gives consent:
+Each later choice (accept, reject, saved preferences) sends one update:
 
 ```javascript
 gtag('consent', 'update', {

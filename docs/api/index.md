@@ -163,16 +163,27 @@ trackPageView('/new-page', 'Custom Title');
 
 ### initGoogleAnalytics
 
-Initialize Google Analytics with Consent Mode.
+Initialize Google Analytics with Consent Mode: `consent default`, script load, `js`, `config`.
 
 ```typescript
 import { initGoogleAnalytics } from '@structured-world/vue-privacy';
 
-// Args: gaId, defaultDenied, sendPageView
+// Args: gaId, defaults, sendPageView
 await initGoogleAnalytics('G-XXXXXXXXXX', true, false);
+
+// Per-signal defaults, e.g. a returning visitor who allowed analytics only
+await initGoogleAnalytics('G-XXXXXXXXXX', {
+  analytics_storage: 'granted',
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+}, false);
 ```
 
+`defaults` is `true` (deny every signal), `false` (grant every signal) or the signals themselves.
 Set `sendPageView` to `false` for SPA apps where you track navigation manually.
+
+Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default` after the tag has loaded (Consent Mode expects defaults only before it loads) and another `config`, which counts another page view. `ConsentManager` does this for you.
 
 ## Storage Functions
 
