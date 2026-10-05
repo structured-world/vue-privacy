@@ -76,14 +76,20 @@ jobs:
             echo "auto-merge disarmed: the head moved under a push by $PUSHER"
             # The head check and the disarm are not atomic: a Dependabot update landing in
             # between may already have been armed by its own run, which this just undid. Read
-            # the head again; if Dependabot moved it, arm that new head again.
-            after=$(gh pr view "$PR_NUMBER" --json headRefOid,commits \
-              --jq '"\(.headRefOid) \(.commits[-1].authors[0].login)"')
-            new_head=${after%% *}
-            new_author=${after##* }
-            if [ "$new_head" != "$HEAD_SHA" ] && [ "$new_author" = "dependabot[bot]" ]; then
-              gh pr merge --auto --squash --match-head-commit "$new_head" "$PR_NUMBER"
-              echo "re-armed for $new_head, a Dependabot update that landed meanwhile"
+            # the head again; arm it again only when every commit it adds over the base passes
+            # the same author check as the approval step (the newest commit alone may sit on
+            # top of the commit that caused this run).
+            new_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+            if [ "$new_head" != "$HEAD_SHA" ]; then
+              foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${new_head}" \
+                --jq 'if .total_commits != (.commits | length) then error("comparison is incomplete")
+                      else [.commits[].author.login // "unknown"
+                            | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length
+                      end')
+              if [ "$foreign" = "0" ]; then
+                gh pr merge --auto --squash --match-head-commit "$new_head" "$PR_NUMBER"
+                echo "re-armed for $new_head, a Dependabot update that landed meanwhile"
+              fi
             fi
           else
             echo "auto-merge was not armed; nothing to disarm"
@@ -94,6 +100,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PUSHER: ${{ github.triggering_actor }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
 
       # Every update type, majors included: the required checks are the gate. Both operations
       # name the head this run inspected: the approval is recorded against that commit, and
