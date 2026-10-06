@@ -509,6 +509,37 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     }
   });
 
+  it("does not add a second gtag.js when a timed-out element recovers", async () => {
+    // Regression: an element marked as stalled that later ran was skipped by the lookup, so the
+    // next attempt appended a second gtag.js even though the tag was already up.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      scriptOutcome = "manual";
+      preloadGtagScript(false);
+      const manager = euManager();
+      await manager.init();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      window.google_tag_manager = {};
+      await manager.acceptAll();
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns a copy of this page's choice from getConsent()", async () => {
+    // Regression: the live object came back, so a preference UI editing it changed the
+    // effective consent before the visitor saved anything.
+    const manager = euManager();
+    await manager.init();
+    await manager.rejectAll();
+
+    const view = manager.getConsent();
+    if (view) view.categories.analytics = true;
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
   it("drops a reset's pending banner when the visitor chooses before the banner mounts", async () => {
     // Regression: the pending flag outlived the choice, so the banner component mounting later
     // asked a visitor who had already decided.

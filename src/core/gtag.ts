@@ -190,16 +190,19 @@ export function loadGtagScript(gaId: string): Promise<void> {
     }
 
     const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
-    const existing = Array.from(
+    const matching = Array.from(
       document.querySelectorAll<HTMLScriptElement>(
         `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
       )
-    ).find((element) => !stalledTags.has(element));
+    );
+    // Any element for this ID, one given up on as stalled included, may since have run: then
+    // the tag is up and another element would only load it twice.
+    if (matching.length > 0 && isGoogleTagLoaded()) {
+      resolve();
+      return;
+    }
+    const existing = matching.find((element) => !stalledTags.has(element));
     if (existing) {
-      if (isGoogleTagLoaded()) {
-        resolve();
-        return;
-      }
       // Its load or error event may already have fired before this call, and a settled script
       // does not fire again; past the timeout it counts as failed, and a retry loads its own.
       const fail = () => {

@@ -58,9 +58,12 @@ jobs:
       # commits to an open Dependabot pull request would otherwise have them merged. A run
       # caused by anyone other than Dependabot or the release bot (which only merges main into
       # the branch, below) therefore disarms it. `github.actor` is who caused the event and a
-      # rerun keeps it, so this holds on every attempt.
+      # rerun keeps it, so this holds on every attempt. A reopen moves no head: it is handled by
+      # the approval step below, whose commit check decides whether to arm.
       - name: Disarm auto-merge when someone else moved the head
-        if: github.actor != 'dependabot[bot]' && github.actor != 'sw-release-bot[bot]'
+        if: >-
+          github.event.action != 'reopened'
+          && github.actor != 'dependabot[bot]' && github.actor != 'sw-release-bot[bot]'
         # The head is checked because disarming has no precondition of its own; without it a
         # slow run from one push could disable what a later Dependabot run armed. Every value
         # arrives through the environment, never interpolated into the script.
@@ -113,9 +116,12 @@ jobs:
       # A comparison longer than one response fails the step rather than skipping commits.
       # Unresolved review threads block the merge itself: the ruleset on main requires
       # conversation resolution, which GitHub evaluates at merge time, so a thread opened after
-      # the CI gate passed still holds an armed auto-merge.
+      # the CI gate passed still holds an armed auto-merge. Closing a pull request drops its
+      # auto-merge, so a reopen by anyone arms it again here, through the same commit check.
       - name: Approve and enable auto-merge
-        if: github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
+        if: >-
+          github.event.action == 'reopened'
+          || github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
         run: |
           foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${HEAD_SHA}" \
             --jq 'if .total_commits != (.commits | length) then error("comparison is incomplete")

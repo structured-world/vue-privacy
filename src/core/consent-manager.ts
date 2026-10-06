@@ -386,7 +386,7 @@ export class ConsentManager {
 
   /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
   private storeLocationWithChoice(): void {
-    const current = this.getConsent();
+    const current = this.choiceInEffect();
     if (!current || this.isEU === null) return;
     storeConsent(this.choiceRecord(current.categories), this.config);
     if (this.pageChoice) this.pageChoice = this.choiceRecord(current.categories);
@@ -706,6 +706,16 @@ export class ConsentManager {
    * one, or null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
+    // A copy, like the snapshot parsed from the cookie: editing the result must not change the
+    // consent in effect before the visitor saves it.
+    if (this.pageChoice) {
+      return { ...this.pageChoice, categories: { ...this.pageChoice.categories } };
+    }
+    return getStoredConsent(this.config);
+  }
+
+  /** The choice in effect, read without the copy getConsent() hands out (internal reads only). */
+  private choiceInEffect(): StoredConsent | null {
     return this.pageChoice ?? getStoredConsent(this.config);
   }
 
@@ -713,7 +723,7 @@ export class ConsentManager {
    * Check if the visitor has chosen (a grant or a refusal); agrees with getConsent()
    */
   hasConsent(): boolean {
-    return this.getConsent() !== null;
+    return this.choiceInEffect() !== null;
   }
 
   /**
@@ -743,7 +753,7 @@ export class ConsentManager {
    * choice, events are sent under the Consent Mode defaults (cookieless pings).
    */
   private analyticsSuppressed(): boolean {
-    const consent = this.getConsent();
+    const consent = this.choiceInEffect();
     return consent !== null && !consent.categories.analytics;
   }
 
