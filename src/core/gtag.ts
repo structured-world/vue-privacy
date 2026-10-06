@@ -100,8 +100,21 @@ const stalledTags = new WeakSet<HTMLScriptElement>();
 /** Commands that produce or configure hits; consent must be settled before them. */
 const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
 
-function commandOf(entry: unknown): ArrayLike<unknown> {
-  return entry as ArrayLike<unknown>;
+/**
+ * The gtag() command a dataLayer entry holds, or null for a plain object pushed directly. gtag()
+ * pushes its Arguments object (some snippets push arrays); an event object may carry any
+ * parameter, `length` included, so having one does not make it a command.
+ */
+function commandOf(entry: unknown): ArrayLike<unknown> | null {
+  if (Array.isArray(entry)) return entry;
+  return Object.prototype.toString.call(entry) === "[object Arguments]"
+    ? (entry as ArrayLike<unknown>)
+    : null;
+}
+
+function isConsentDefault(entry: unknown): boolean {
+  const command = commandOf(entry);
+  return command !== null && command[0] === "consent" && command[1] === "default";
 }
 
 /**
@@ -111,19 +124,15 @@ function commandOf(entry: unknown): ArrayLike<unknown> {
  */
 export function hasConsentDefault(): boolean {
   if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return false;
-  return window.dataLayer.some((entry) => {
-    if (typeof entry !== "object" || entry === null || !("length" in entry)) return false;
-    const command = commandOf(entry);
-    return command[0] === "consent" && command[1] === "default";
-  });
+  return window.dataLayer.some(isConsentDefault);
 }
 
 function isMeasurement(entry: unknown): boolean {
-  if (typeof entry !== "object" || entry === null) return false;
+  const command = commandOf(entry);
+  if (command !== null) return MEASUREMENT_COMMANDS.has(String(command[0]));
   // Google Tag Manager's snippet and `dataLayer.push({ event })` queue plain objects, and their
   // event (the snippet's `gtm.js`) fires the container's tags just like a gtag() event.
-  if (!("length" in entry) && "event" in entry) return true;
-  return MEASUREMENT_COMMANDS.has(String(commandOf(entry)[0]));
+  return typeof entry === "object" && entry !== null && "event" in entry;
 }
 
 /**
@@ -181,8 +190,7 @@ export function queueConsentUpdate(signals: GoogleConsentSignals): void {
   const queue = window.dataLayer;
   let lastDefault = -1;
   queue.forEach((entry, i) => {
-    const command = commandOf(entry);
-    if (command[0] === "consent" && command[1] === "default") lastDefault = i;
+    if (isConsentDefault(entry)) lastDefault = i;
   });
   moveAheadOfMeasurement(lastDefault + 1);
 }
@@ -374,8 +382,8 @@ export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean):
   // Once per page: a retried initialisation would otherwise queue a second `config`, and
   // both are processed (two page views) once the tag loads.
   const queued = window.dataLayer.some((entry) => {
-    const command = entry as ArrayLike<unknown>;
-    return command[0] === "config" && command[1] === gaId;
+    const command = commandOf(entry);
+    return command !== null && command[0] === "config" && command[1] === gaId;
   });
   if (queued) return;
   window.gtag("js", new Date());

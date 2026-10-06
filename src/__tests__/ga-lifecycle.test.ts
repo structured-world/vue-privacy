@@ -759,6 +759,39 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(defaultIndex).toBeLessThan(window.dataLayer.indexOf(gtmBootstrap));
   });
 
+  it("puts the consent default ahead of a queued event object with a length field", async () => {
+    // Regression: any entry with `length` was taken for a gtag() command, so an event object
+    // carrying a `length` parameter stayed ahead of the default and fired its tags first.
+    const progressEvent = { event: "video_progress", length: 30 };
+    window.dataLayer.push(progressEvent);
+    const manager = euManager();
+    await manager.init();
+
+    const defaultIndex = window.dataLayer.findIndex((entry) => {
+      const command = Array.from(entry as ArrayLike<unknown>);
+      return command[0] === "consent" && command[1] === "default";
+    });
+    expect(defaultIndex).toBeGreaterThanOrEqual(0);
+    expect(defaultIndex).toBeLessThan(window.dataLayer.indexOf(progressEvent));
+  });
+
+  it("writes remotely the categories the visitor chose, not a callback's later edit", async () => {
+    // Regression: the queued remote record shared the categories object handed to the consent
+    // callbacks, so an edit they made was saved remotely as the visitor's choice.
+    const set = vi.fn<ConsentStorage["set"]>().mockResolvedValue(null);
+    const manager = euManager({
+      storage: { get: async () => null, set },
+      onConsentChange: (consent) => {
+        consent.categories.analytics = true;
+      },
+    });
+    await manager.init();
+
+    await manager.rejectAll();
+    await settle();
+    expect(set.mock.calls[0]?.[1].categories.analytics).toBe(false);
+  });
+
   it("issues one consent default per page across manager instances", async () => {
     // Regression: the sent flag lived on the instance, so a remounted app issued a second
     // consent default on the same page.
@@ -1051,20 +1084,28 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
   it("follows a refusal another tab saved after this page's grant", async () => {
     // Regression: the grant kept for this page took precedence over the shared cookie, so a
-    // withdrawal made in another tab did not stop this tab's tracking calls.
-    const thisTab = euManager();
-    await thisTab.init();
-    await thisTab.acceptAll();
+    // withdrawal made in another tab did not stop this tab's tracking calls. The clock is pinned
+    // so the two clicks are a millisecond apart, as a visitor's two clicks always are.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const thisTab = euManager();
+      await thisTab.init();
+      await thisTab.acceptAll();
 
-    const otherTab = euManager();
-    await otherTab.init();
-    await otherTab.rejectAll();
+      vi.setSystemTime(1_000_001);
+      const otherTab = euManager();
+      await otherTab.init();
+      await otherTab.rejectAll();
 
-    const events = count("event");
-    thisTab.trackEvent("sign_up");
-    thisTab.trackPageView("/after-withdrawal");
-    expect(count("event")).toBe(events);
-    expect(thisTab.getConsent()?.categories.analytics).toBe(false);
+      const events = count("event");
+      thisTab.trackEvent("sign_up");
+      thisTab.trackPageView("/after-withdrawal");
+      expect(count("event")).toBe(events);
+      expect(thisTab.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps a refusal that could not be stored over a grant from the same millisecond", async () => {

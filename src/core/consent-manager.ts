@@ -455,7 +455,13 @@ export class ConsentManager {
 
     if (this.remoteStorage) {
       const version = this.config.version ?? DEFAULT_CONFIG.version;
-      const consent: StoredConsent = { categories, timestamp: Date.now(), version };
+      // Its own copy: the write runs later, after the consent callbacks got `categories` and
+      // could edit it.
+      const consent: StoredConsent = {
+        categories: { ...categories },
+        timestamp: Date.now(),
+        version,
+      };
       const epoch = this.consentEpoch;
       const identity = this.identityGeneration;
       const storage = this.remoteStorage;
