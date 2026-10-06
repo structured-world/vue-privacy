@@ -390,3 +390,5 @@ Dark mode is automatically supported via `prefers-color-scheme`.
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE)
+
+Contributions are accepted under the [Structured World Contributor License Agreement](https://sw.foundation/cla); see [CONTRIBUTING.md](CONTRIBUTING.md).

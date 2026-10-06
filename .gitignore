@@ -44,4 +44,3 @@ docs/.vitepress/cache
 tmp/
 temp/
 *.tmp
-CLAUDE.md
