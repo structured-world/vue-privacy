@@ -61,7 +61,7 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie; a choice saved later in another tab replaces it.
+Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie; a choice saved later in another tab replaces it, and a reset in another tab makes the visitor undecided again. With `consentMode: 'basic'`, a CCPA visitor or one outside consent jurisdictions who has not chosen gets the state the jurisdiction implies (analytics off, the other categories on), so the preference centre shows what is in effect; it is not stored and `hasConsent()` stays `false`.
 
 ```typescript
 const consent = manager.getConsent();

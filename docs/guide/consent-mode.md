@@ -67,7 +67,7 @@ gtag('consent', 'update', {
 
 The steps above are Google's **advanced** mode, the default: gtag.js loads for every visitor, and before any choice or after a refusal Google receives cookieless pings (no cookies, but the visitor's IP address and browser data), which lets it model conversions.
 
-With `consentMode: 'basic'` nothing reaches Google (no script, no `dataLayer` entry, no request) until the visitor allows analytics. Then the single `consent default` carries the granted signals, gtag.js loads and `js` and `config` follow; later changes are updates as above. Withdrawing analytics sends `consent update` with `analytics_storage: 'denied'`, sets `window['ga-disable-<ID>']` so a tag already on the page stops measuring (a denied tag would otherwise keep sending cookieless pings), deletes the `_ga` and `_ga_<ID>` cookies, and never loads or retries gtag.js. `trackPageView()` and `trackEvent()` drop events until analytics is allowed; the tag also follows a choice made in another tab, loading after a grant there and stopping after a withdrawal, on the next tracking call and whenever the tab is shown again or regains focus.
+With `consentMode: 'basic'` nothing reaches Google (no script, no `dataLayer` entry, no request) until the visitor allows analytics. Then the single `consent default` carries the granted signals, gtag.js loads and `js` and `config` follow; later changes are updates as above. Withdrawing analytics sends `consent update` with `analytics_storage: 'denied'`, sets `window['ga-disable-<ID>']` so a tag already on the page stops measuring (a denied tag would otherwise keep sending cookieless pings), deletes the `_ga` and `_ga_<ID>` cookies (also under a `cookie_prefix` or `cookie_path`), and never loads or retries gtag.js. `trackPageView()` and `trackEvent()` drop events until analytics is allowed; the tag also follows a choice made in another tab, loading after a grant there and stopping after a withdrawal, on the next tracking call and whenever the tab is shown again or regains focus.
 
 ```typescript
 createConsentPlugin({
@@ -76,7 +76,7 @@ createConsentPlugin({
 });
 ```
 
-A withdrawal on the same page stops Google Analytics at once, but a script already running cannot be unloaded: products linked to the same Google tag in Google's tag settings (Google Ads, Floodlight) ignore `ga-disable` and keep sending cookieless pings until the page reloads. A site that links them and promises nothing is sent after a refusal sets `reloadOnWithdrawal: true`: when the visitor withdraws analytics or marketing after the tag loaded, the choice is saved and the page reloads. It is off by default because the reload drops in-page state (a half-filled form, SPA state).
+A withdrawal on the same page stops Google Analytics at once, but a script already running cannot be unloaded: products linked to the same Google tag in Google's tag settings (Google Ads, Floodlight) ignore `ga-disable` and keep sending cookieless pings until the page reloads. A site that links them and promises nothing is sent after a refusal sets `reloadOnWithdrawal: true`: when the visitor withdraws analytics after the tag loaded, the choice is saved and the page reloads. It is off by default because the reload drops in-page state (a half-filled form, SPA state). While analytics stays allowed the tag loads, and linked advertising products follow the ad signals: with marketing refused they send cookieless pings. Keep them in a separate tag if refusing marketing must stop them entirely.
 
 ```typescript
 createConsentPlugin({

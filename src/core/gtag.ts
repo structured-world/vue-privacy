@@ -77,7 +77,7 @@ export function isGoogleTagLoaded(): boolean {
  * key of `window.google_tag_manager`; the object itself is page-wide and also exists for an
  * unrelated Tag Manager container, so its presence alone says nothing about this ID.
  */
-function isTagLoadedFor(gaId: string): boolean {
+export function isTagLoadedFor(gaId: string): boolean {
   if (typeof window === "undefined") return false;
   const tags = window.google_tag_manager;
   return typeof tags === "object" && tags !== null && gaId in tags;
@@ -296,20 +296,42 @@ export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
 
 /**
  * Delete the cookies gtag.js sets for a GA4 measurement ID: `_ga` (client ID) and
- * `_ga_<ID without "G-">` (session state). gtag.js writes them on the highest domain the
- * browser accepts (its `cookie_domain: 'auto'`), which is not known here, so the deletion is
- * issued for the host itself and for every parent domain; the ones that do not match are no-ops.
+ * `_ga_<ID without "G-">` (session state), also under a `cookie_prefix` (`<prefix>_ga`,
+ * `<prefix>_ga_<ID>`). Where gtag.js wrote them is not known here (`cookie_domain: 'auto'` picks
+ * the highest domain the browser accepts, `cookie_path` may narrow the path), so the deletion is
+ * issued for the host and every parent domain, on "/" and every path prefix of this page; the
+ * combinations that do not match are no-ops.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
 export function clearAnalyticsCookies(gaId: string): void {
   if (typeof document === "undefined") return;
-  const names = ["_ga", `_ga_${gaId.replace(/^G-/, "")}`];
+  const session = `_ga_${gaId.replace(/^G-/, "")}`;
+  const names = new Set(["_ga", session]);
+  let jar = "";
+  try {
+    jar = document.cookie;
+  } catch {
+    // A sandboxed document has no readable cookies; the default names are still deleted.
+  }
+  for (const entry of jar.split(";")) {
+    const name = entry.split("=")[0].trim();
+    if (name.endsWith("_ga") || name.endsWith(session)) names.add(name);
+  }
+
   const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
+  const domains: (string | undefined)[] = [undefined];
+  for (let i = 0; i < labels.length - 1; i++) domains.push(labels.slice(i).join("."));
+  const paths = ["/"];
+  const segments = typeof location === "undefined" ? [] : location.pathname.split("/");
+  for (let i = 2; i <= segments.length; i++) {
+    const path = segments.slice(0, i).join("/");
+    if (path !== "" && path !== "/") paths.push(path);
+  }
+
   for (const name of names) {
-    deleteCookie(name);
-    for (let i = 0; i < labels.length - 1; i++) {
-      deleteCookie(name, "/", labels.slice(i).join("."));
+    for (const path of paths) {
+      for (const domain of domains) deleteCookie(name, path, domain);
     }
   }
 }

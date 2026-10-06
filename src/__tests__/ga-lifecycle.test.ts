@@ -1287,21 +1287,35 @@ describe("initGoogleAnalytics defaults", () => {
 // until the visitor explicitly allows analytics. A grant implied by the jurisdiction (CCPA,
 // outside consent jurisdictions) is not that consent.
 describe("basic consent mode", () => {
+  // Basic-mode managers listen for focus on the shared window; every one a test creates is
+  // destroyed after it, so a later test's focus event reaches only its own manager.
+  const created: ConsentManager[] = [];
+  afterEach(() => {
+    for (const manager of created.splice(0)) manager.destroy();
+  });
+
+  function tracked(manager: ConsentManager): ConsentManager {
+    created.push(manager);
+    return manager;
+  }
+
   function basicManager(config: ConsentConfig = {}): ConsentManager {
-    return euManager({ consentMode: "basic", ...config });
+    return tracked(euManager({ consentMode: "basic", ...config }));
   }
 
   function ccpaManager(): ConsentManager {
-    return new ConsentManager({
-      gaId: GA_ID,
-      consentMode: "basic",
-      ccpaEnabled: true,
-      geoDetector: {
-        detect: vi
-          .fn()
-          .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
-      },
-    });
+    return tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        ccpaEnabled: true,
+        geoDetector: {
+          detect: vi
+            .fn()
+            .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+        },
+      })
+    );
   }
 
   /** Nothing reached Google: no gtag.js element and no dataLayer entry. */
@@ -1334,11 +1348,13 @@ describe("basic consent mode", () => {
   });
 
   it("sends nothing to Google outside consent jurisdictions without a choice", async () => {
-    const manager = new ConsentManager({
-      gaId: GA_ID,
-      consentMode: "basic",
-      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
-    });
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+      })
+    );
     await manager.init();
 
     expectNothingSentToGoogle();
@@ -1551,7 +1567,9 @@ describe("basic consent mode", () => {
       manager.destroy();
     });
 
-    it("reloads when only marketing is withdrawn from a loaded tag", async () => {
+    it("does not reload when only marketing is withdrawn", async () => {
+      // With analytics still allowed the next page loads the same tag again, so a reload buys
+      // nothing: the denied ad signals already reach the running tag as an update.
       const manager = basicManager({ reloadOnWithdrawal: true });
       await manager.init();
       await manager.acceptAll();
@@ -1560,8 +1578,35 @@ describe("basic consent mode", () => {
       await manager.savePreferences({ analytics: true, marketing: false });
       await settle();
 
-      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(reloadPage).not.toHaveBeenCalled();
+      expect(consentCalls("update").at(-1)).toEqual(ANALYTICS_ONLY);
       manager.destroy();
+    });
+
+    it("reloads and denies for a tag an earlier manager loaded", async () => {
+      // Regression: a remounted manager had sent nothing itself, so its refusal neither told
+      // the running tag nor reloaded, and products linked to that tag kept sending.
+      const first = basicManager();
+      await first.init();
+      await first.acceptAll();
+      await settle();
+      first.destroy();
+      cookieStore = "";
+
+      let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+      const second = basicManager({
+        reloadOnWithdrawal: true,
+        geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+      });
+      const initDone = second.init();
+      second.resetConsent();
+      resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+      await initDone;
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      second.destroy();
     });
 
     it("reloads once for a resetConsent after a grant", async () => {
@@ -1627,6 +1672,106 @@ describe("basic consent mode", () => {
 
       expect(reloadPage).not.toHaveBeenCalled();
     });
+  });
+
+  it("stops the tag when another tab resets consent after this tab's grant", async () => {
+    // Regression: the removed cookie fell back to this page's grant, so a reset made in
+    // another tab never stopped the tag here.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    cookieStore = "";
+    window.dispatchEvent(new Event("focus"));
+
+    expect(analyticsDisabled()).toBe(true);
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    manager.destroy();
+  });
+
+  it("keeps this page's grant when the consent cookie cannot be written", async () => {
+    // A blocked cookie is not a reset made elsewhere: the page's own choice stands.
+    Object.defineProperty(document, "cookie", {
+      get: () => "",
+      set: () => {},
+      configurable: true,
+    });
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+    expect(analyticsDisabled()).toBe(false);
+    manager.destroy();
+  });
+
+  it("does not start the tag before the roaming check confirms a stored grant", async () => {
+    // Regression: focus and tracking calls synced with the stored non-EU grant while the
+    // location check was pending, loading the tag for a visitor who needed fresh EU consent.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    window.dispatchEvent(new Event("focus"));
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    expectNothingSentToGoogle();
+    manager.destroy();
+  });
+
+  it("sends the landing page view on the first grant when page views are tracked manually", async () => {
+    // Regression: SPA integrations track page views themselves (sendPageView: false), and the
+    // landing page tracked before the grant was dropped and never measured.
+    const manager = basicManager({ sendPageView: false });
+    await manager.init();
+    manager.trackPageView("/landing", "Landing");
+    expectNothingSentToGoogle();
+
+    await manager.acceptAll();
+
+    const views = commands().filter((c) => c[0] === "event" && c[1] === "page_view");
+    expect(views).toHaveLength(1);
+    expect((views[0][2] as Record<string, unknown>).page_path).toBe("/landing");
+    expect(order().indexOf("config")).toBeLessThan(order().indexOf("event"));
+    manager.destroy();
+  });
+
+  it("does not repeat the landing page view when config sends it", async () => {
+    const manager = basicManager({ sendPageView: true });
+    await manager.init();
+    manager.trackPageView("/landing");
+
+    await manager.acceptAll();
+
+    expect(commands().filter((c) => c[0] === "event")).toHaveLength(0);
+    manager.destroy();
+  });
+
+  it("reports the jurisdiction's marketing grant to the preference centre", async () => {
+    // Regression: nothing was stored for the implied CCPA grant, so the preference centre
+    // showed marketing off while marketing scripts already ran.
+    const manager = ccpaManager();
+    await manager.init();
+
+    expect(manager.getConsent()?.categories).toEqual({
+      analytics: false,
+      marketing: true,
+      functional: true,
+    });
+    expect(cookieStore).not.toContain("consent_preferences");
+    expectNothingSentToGoogle();
+    manager.destroy();
   });
 
   it("stops the tag when the tab regains focus after a withdrawal in another tab", async () => {
@@ -1707,12 +1852,14 @@ describe("basic consent mode", () => {
     // blocked analytics script ran before the visitor allowed analytics.
     const received: boolean[] = [];
     const listened: boolean[] = [];
-    const manager = new ConsentManager({
-      gaId: GA_ID,
-      consentMode: "basic",
-      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
-      onConsentChange: (consent) => received.push(consent.categories.analytics),
-    });
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+        onConsentChange: (consent) => received.push(consent.categories.analytics),
+      })
+    );
     manager.onConsentChange((categories) => listened.push(categories.analytics));
 
     await manager.init();

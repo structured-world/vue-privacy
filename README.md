@@ -153,8 +153,8 @@ interface ConsentConfig {
   // 'basic': nothing reaches Google until the visitor allows analytics.
   consentMode?: 'advanced' | 'basic';
 
-  // Basic mode: reload the page when analytics or marketing is withdrawn after the Google tag
-  // loaded, so products linked to that tag (Google Ads, Floodlight) stop too. Default: false
+  // Basic mode: reload the page when analytics is withdrawn after the Google tag loaded, so
+  // products linked to that tag (Google Ads, Floodlight) stop too. Default: false
   reloadOnWithdrawal?: boolean;
 
   // Locale for UI text (auto-detected if not set)

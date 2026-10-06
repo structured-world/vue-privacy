@@ -30,6 +30,7 @@ import {
   loadGtagScript,
   clearAnalyticsCookies,
   setAnalyticsDisabled,
+  isTagLoadedFor,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -111,6 +112,17 @@ export class ConsentManager {
   private googleMarketing = false;
   /** A reload for a withdrawal (reloadOnWithdrawal) is scheduled. */
   private reloadScheduled = false;
+  /**
+   * init() decided the consent state, or the visitor chose or reset: until then a stored grant
+   * may still fail the roaming check, so basic mode does not act on the cookie by itself.
+   */
+  private consentSettled = false;
+  /** This page's choice reached the consent cookie, so a missing cookie means another tab reset. */
+  private cookieConfirmed = false;
+  /** Basic mode: the jurisdiction's grant (analytics off), for the UI; not stored, not a choice. */
+  private impliedChoice: StoredConsent | null = null;
+  /** Basic mode: the page view tracked while analytics was off, measured once it is allowed. */
+  private pendingPageView: { path: string; title?: string } | null = null;
   /** A gtag.js load attempt is in flight. */
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
@@ -238,7 +250,14 @@ export class ConsentManager {
   async init(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
+    try {
+      await this.decideInitialConsent();
+    } finally {
+      this.consentSettled = true;
+    }
+  }
 
+  private async decideInitialConsent(): Promise<void> {
     const epoch = this.consentEpoch;
     const superseded = (): boolean => {
       if (this.consentEpoch === epoch) return false;
@@ -480,6 +499,9 @@ export class ConsentManager {
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     storeConsent(this.choiceRecord(categories), this.config);
+    // Read back: a cookie that took tells a later missing one (another tab's reset) apart from a
+    // blocked one (sandboxed frame, disabled cookies), where this page's choice has to stand.
+    this.cookieConfirmed = getStoredConsent(this.config) !== null;
     if (!hasNonNecessary) {
       // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
       // an earlier remote grant, should the remote write of this refusal fail.
@@ -651,24 +673,25 @@ export class ConsentManager {
     const gaId = this.config.gaId;
     const basicDenied =
       gaId !== undefined && this.basicMode && signals.analytics_storage === "denied";
+    const firstSetup = !this.gaDefaultsSent;
+    let startsMeasuring = false;
     if (gaId && this.basicMode) {
-      // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
-      // sending cookieless pings; only a reload stops a tag already running on the page.
-      const withdrawn =
-        this.googleMeasuring &&
-        (basicDenied || (this.googleMarketing && signals.ad_storage === "denied"));
-      if (withdrawn && (this.gaLoading || this.gaLoaded) && this.config.reloadOnWithdrawal) {
-        this.scheduleReload();
-      }
+      // The tag may already run on the page whatever this instance has sent (an earlier manager
+      // instance loaded it before a remount), so it is told about a refusal all the same.
+      const tagRunning = this.gaLoading || this.gaLoaded || isTagLoadedFor(gaId);
       if (basicDenied) {
+        // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
+        // sending cookieless pings; only a reload stops a running tag. A marketing-only
+        // withdrawal needs none: with analytics allowed the next page loads the same tag, and
+        // the denied ad signals reach the running one as an update already.
+        if (tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
         clearAnalyticsCookies(gaId);
-        // The tag may already run on the page (loaded by an earlier manager instance, a
-        // remount) whatever this instance has sent: it measures nothing once analytics is off.
         setAnalyticsDisabled(gaId, true);
         this.googleMeasuring = false;
-        if (!this.gaDefaultsSent) return;
+        if (firstSetup && !tagRunning) return;
       } else {
         setAnalyticsDisabled(gaId, false);
+        startsMeasuring = !this.googleMeasuring;
         this.googleMeasuring = true;
         this.googleMarketing = signals.ad_storage === "granted";
       }
@@ -686,6 +709,7 @@ export class ConsentManager {
       queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
     if (!gaId) return;
+    if (startsMeasuring) this.sendPendingPageView(firstSetup);
     if (basicDenied) {
       // A refusal itself must not cause a request to Google: no load now and no retry later.
       this.gaRetryOnFailure = false;
@@ -698,6 +722,18 @@ export class ConsentManager {
       return;
     }
     if (!this.gaLoaded) this.loadGtag(gaId);
+  }
+
+  /**
+   * Basic mode: measure the page in view, tracked while analytics was off, now that it is
+   * allowed. On the first setup `config` sends the page view itself unless the site tracks page
+   * views manually (sendPageView: false, as the SPA integrations do).
+   */
+  private sendPendingPageView(firstSetup: boolean): void {
+    const pending = this.pendingPageView;
+    this.pendingPageView = null;
+    if (!pending || (firstSetup && (this.config.sendPageView ?? true))) return;
+    gtagTrackPageView(pending.path, pending.title);
   }
 
   /**
@@ -750,6 +786,9 @@ export class ConsentManager {
     // Basic mode allows analytics only on the visitor's own choice: a jurisdiction's grant leaves
     // it off for Google, for the consent callbacks and for the script blocker alike.
     const categories = implied && this.basicMode ? { ...granted, analytics: false } : granted;
+    // Not stored (a stored grant counts as the visitor's choice in basic mode), but the
+    // preference centre still has to show what is in effect, marketing included.
+    if (implied && this.basicMode) this.impliedChoice = this.choiceRecord(categories);
     this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
     const epoch = this.consentEpoch;
 
@@ -813,6 +852,8 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
+    this.consentSettled = true;
+    this.impliedChoice = null;
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
@@ -832,13 +873,14 @@ export class ConsentManager {
 
   /**
    * Get the visitor's choice (a grant or a refusal): the stored one, or the one made on this page
-   * while the cookie lacks it (blocked, or older); null while the visitor is undecided
+   * while the cookie lacks it (blocked, or older); in basic mode, before any choice, the state
+   * the jurisdiction implies (analytics off); otherwise null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
-    const consent = this.choiceInEffect();
+    const consent = this.choiceInEffect() ?? this.impliedChoice;
     // A copy, like the snapshot parsed from the cookie: editing the result must not change the
     // consent in effect before the visitor saves it.
-    if (consent !== null && consent === this.pageChoice) {
+    if (consent !== null && (consent === this.pageChoice || consent === this.impliedChoice)) {
       return { ...consent, categories: { ...consent.categories } };
     }
     return consent;
@@ -850,13 +892,15 @@ export class ConsentManager {
    * elsewhere (a withdrawal in another tab), and it wins. Within the same millisecond only a
    * cookie holding this very decision counts: a timestamp tie cannot tell a stale grant whose
    * overwrite failed from the write of this choice. The page's own choice stands while the
-   * cookie is missing, older, or cannot be read.
+   * cookie is older or cannot be read; a missing cookie this page did write was removed by a
+   * reset in another tab, and the visitor is undecided again.
    */
   private choiceInEffect(): StoredConsent | null {
     const stored = getStoredConsent(this.config);
     const own = this.pageChoice;
     if (own === null) return stored;
-    if (stored === null || stored.timestamp < own.timestamp) return own;
+    if (stored === null) return this.cookieConfirmed ? null : own;
+    if (stored.timestamp < own.timestamp) return own;
     if (stored.timestamp > own.timestamp) return stored;
     const a = stored.categories;
     const b = own.categories;
@@ -883,6 +927,8 @@ export class ConsentManager {
     this.userId = null;
     this.identityGeneration++;
     this.pageChoice = null;
+    this.impliedChoice = null;
+    this.consentSettled = true;
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
@@ -919,6 +965,9 @@ export class ConsentManager {
    * have changed through the shared cookie. Returns whether that choice allows analytics.
    */
   private syncBasicTag(consent: StoredConsent | null = this.choiceInEffect()): boolean {
+    // Until init() settled, a stored grant may still fail the roaming check (a visitor now in
+    // the EU needs a fresh choice): nothing starts on the cookie's word alone.
+    if (!this.consentSettled) return false;
     const allowed = consent !== null && consent.categories.analytics;
     const stale =
       allowed !== this.googleMeasuring ||
@@ -935,7 +984,11 @@ export class ConsentManager {
    * Before user makes a choice, page views are sent under Consent Mode defaults (cookieless pings).
    */
   trackPageView(path: string, title?: string): void {
-    if (this.analyticsSuppressed()) return;
+    if (this.analyticsSuppressed()) {
+      // Basic mode: the page in view is measured once the visitor allows analytics.
+      if (this.basicMode) this.pendingPageView = { path, title };
+      return;
+    }
     gtagTrackPageView(path, title);
   }
 

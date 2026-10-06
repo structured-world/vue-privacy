@@ -54,9 +54,9 @@ interface ConsentConfig {
   consentMode?: "advanced" | "basic";
 
   /**
-   * Basic mode: reload the page when analytics or marketing is withdrawn
-   * after the Google tag loaded, so products linked to that tag
-   * (Google Ads, Floodlight) stop too; the choice is saved first.
+   * Basic mode: reload the page when analytics is withdrawn after the
+   * Google tag loaded, so products linked to that tag (Google Ads,
+   * Floodlight) stop too; the choice is saved first.
    * @default false
    */
   reloadOnWithdrawal?: boolean;

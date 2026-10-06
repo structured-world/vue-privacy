@@ -391,11 +391,13 @@ export interface ConsentConfig {
   consentMode?: "advanced" | "basic";
 
   /**
-   * Basic mode only: reload the page when the visitor withdraws analytics or marketing after the
-   * Google tag has loaded on it. A withdrawal stops Google Analytics on the spot, but other
-   * products linked to the same Google tag (Google Ads, Floodlight) keep sending cookieless
-   * pings until the page reloads, and a running script cannot be unloaded. The choice is saved
-   * first; the reload drops in-page state, so enable it deliberately.
+   * Basic mode only: reload the page when the visitor withdraws analytics after the Google tag
+   * has loaded on it. A withdrawal stops Google Analytics on the spot, but other products linked
+   * to the same Google tag (Google Ads, Floodlight) keep sending cookieless pings until the page
+   * reloads, and a running script cannot be unloaded. The choice is saved first; the reload
+   * drops in-page state, so enable it deliberately. While analytics stays allowed the tag loads,
+   * and linked advertising products follow the ad signals (cookieless pings when marketing is
+   * refused); keep them in a separate tag if refusing marketing must stop them entirely.
    * @default false
    */
   reloadOnWithdrawal?: boolean;
