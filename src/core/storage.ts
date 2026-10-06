@@ -14,11 +14,26 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 const MAX_RETRY_DELAY_MS = 30_000; // 30 seconds
 
 /**
- * Sleep for a given number of milliseconds.
+ * Sleep for a given number of milliseconds; an abort ends the wait early.
  * @internal
  */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    // An abort that already happened (from the onRateLimited callback) fires no event.
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true }
+    );
+  });
 }
 
 /**
@@ -80,9 +95,10 @@ async function fetchWithRetry(
       // Callback errors are ignored - retry continues regardless
     }
 
-    // Don't wait after the last attempt
+    // Don't wait after the last attempt. An aborted request stops waiting; its next fetch then
+    // rejects at once with the abort.
     if (attempt < effectiveMaxRetries) {
-      await sleep(delayMs);
+      await sleep(delayMs, options.signal ?? undefined);
     }
   }
 
@@ -97,7 +113,15 @@ async function fetchWithRetry(
 export function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
 
-  const cookies = document.cookie.split(";");
+  // document.cookie throws a SecurityError in a sandboxed (opaque-origin) document; there is
+  // nothing stored to read then.
+  let jar: string;
+  try {
+    jar = document.cookie;
+  } catch {
+    return null;
+  }
+  const cookies = jar.split(";");
   for (const cookie of cookies) {
     const [key, value] = cookie.trim().split("=");
     if (key === name) {
@@ -144,7 +168,19 @@ export function setCookie(
     cookieString += "; Secure";
   }
 
-  document.cookie = cookieString;
+  writeCookie(cookieString);
+}
+
+/**
+ * Cookie storage is best-effort: in a sandboxed (opaque-origin) document the write throws a
+ * SecurityError, and a visitor's choice must still take effect on the page without it.
+ */
+function writeCookie(cookie: string): void {
+  try {
+    document.cookie = cookie;
+  } catch {
+    // Nothing to persist into; the consent manager keeps this page's choice in memory.
+  }
 }
 
 /**
@@ -154,7 +190,7 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
   if (typeof document === "undefined") return;
   let cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path}`;
   if (domain) cookie += `; domain=${domain}`;
-  document.cookie = cookie;
+  writeCookie(cookie);
 }
 
 /**
@@ -287,12 +323,14 @@ export async function fetchRemoteConsent(
  * @param uid - User ID (null for new users - worker will generate)
  * @param consent - Consent data to store
  * @param retryOptions - Optional retry configuration for rate limiting
+ * @param signal - Aborts the request (and its rate-limit retries); the result is then null
  */
 export async function pushRemoteConsent(
   storageUrl: string,
   uid: string | null,
   consent: StoredConsent,
-  retryOptions?: RetryOptions
+  retryOptions?: RetryOptions,
+  signal?: AbortSignal
 ): Promise<string | null> {
   try {
     // Only send categories and version — timestamp is generated server-side by the worker
@@ -306,6 +344,7 @@ export async function pushRemoteConsent(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      ...(signal && { signal }),
     };
 
     const res = retryOptions
@@ -356,6 +395,6 @@ export function createKVStorage(url: string, options?: KVStorageOptions): Consen
 
   return {
     get: (uid, version) => fetchRemoteConsent(url, uid, version, retryOptions),
-    set: (uid, consent) => pushRemoteConsent(url, uid, consent, retryOptions),
+    set: (uid, consent, signal) => pushRemoteConsent(url, uid, consent, retryOptions, signal),
   };
 }

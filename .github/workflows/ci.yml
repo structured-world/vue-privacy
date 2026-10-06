@@ -12,7 +12,8 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
+        # The dev toolchain (vitest 5, jsdom 30, semantic-release plugins) needs Node 22.12+.
+        node-version: [22.x, 24.x]
 
     steps:
       - uses: actions/checkout@v7
@@ -37,8 +38,31 @@ jobs:
       - name: Build
         run: yarn build
 
+      # Every file package.json exports must be built, so a dependency update that silently
+      # drops one fails here instead of in a published release.
+      - name: Verify dist
+        run: |
+          test -f dist/index.js
+          test -f dist/vue/index.js
+          test -f dist/vitepress/index.js
+          test -f dist/quasar/index.js
+          test -f dist/vanilla/index.js
+          test -f dist/vue-privacy.umd.cjs
+          test -f dist/vue-privacy-banner.css
+          test -f dist/vue-privacy-modal.css
+          test -f dist/index.d.ts
+          test -f dist/vue/index.d.ts
+          test -f dist/vitepress/index.d.ts
+          test -f dist/quasar/index.d.ts
+          test -f dist/vanilla/index.d.ts
+
       - name: Test
         run: yarn test --coverage
+
+      # The docs site has its own toolchain (vitepress on vite 5); building it here keeps a
+      # dependency update that breaks it from merging.
+      - name: Docs build
+        run: yarn docs:build
 
       - name: Upload coverage
         uses: codecov/codecov-action@v7
@@ -181,7 +205,9 @@ jobs:
               exit 1
             fi
           done
-          if [ "$PAGE_COUNT" -ge "$MAX_PAGES" ]; then
+          # Incomplete only when the last page still reported another one; a hundredth page with
+          # hasNextPage=false finished the scan.
+          if [ "$PAGE_COUNT" -ge "$MAX_PAGES" ] && [ "$HAS_NEXT" = "true" ]; then
             echo "Review thread scan incomplete; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
             echo "::error::Pagination limit reached while scanning review threads."
             exit 1

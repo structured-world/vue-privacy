@@ -4,6 +4,8 @@ declare global {
   interface Window {
     dataLayer: unknown[];
     gtag: (...args: unknown[]) => void;
+    /** Created by gtag.js and Google Tag Manager when they run. */
+    google_tag_manager?: unknown;
   }
 }
 
@@ -43,7 +45,8 @@ export function categoriesToGoogleSignals(
  * Set default consent state (should be called BEFORE loading gtag.js)
  *
  * @param signals - Consent signals to set as defaults
- * @param waitForUpdate - Milliseconds to wait for consent update (for async CMPs)
+ * @param waitForUpdate - Milliseconds tags hold their first hits for a consent update (for
+ *   async CMPs); `0` omits `wait_for_update` when the defaults are already final
  */
 export function setConsentDefaults(
   signals: Partial<GoogleConsentSignals>,
@@ -53,10 +56,111 @@ export function setConsentDefaults(
 
   if (typeof window === "undefined") return;
 
-  window.gtag("consent", "default", {
-    ...signals,
-    wait_for_update: waitForUpdate,
-  });
+  window.gtag(
+    "consent",
+    "default",
+    waitForUpdate > 0 ? { ...signals, wait_for_update: waitForUpdate } : { ...signals }
+  );
+}
+
+/**
+ * Whether a Google tag (gtag.js or Google Tag Manager) has already run on the page. A script
+ * element alone is not enough: one still downloading has not processed any command yet.
+ */
+export function isGoogleTagLoaded(): boolean {
+  return typeof window !== "undefined" && window.google_tag_manager !== undefined;
+}
+
+/**
+ * Whether gtag.js ran for this measurement ID. The Google tag records every ID it loaded as a
+ * key of `window.google_tag_manager`; the object itself is page-wide and also exists for an
+ * unrelated Tag Manager container, so its presence alone says nothing about this ID.
+ */
+function isTagLoadedFor(gaId: string): boolean {
+  if (typeof window === "undefined") return false;
+  const tags = window.google_tag_manager;
+  return typeof tags === "object" && tags !== null && gaId in tags;
+}
+
+/**
+ * How long a gtag.js element, another integration's or the library's own, may take to run
+ * before it counts as failed: long enough for a slow network, short enough that a lost load
+ * (neither load nor error ever fires) is retried on this page.
+ */
+const TAG_LOAD_TIMEOUT_MS = 10_000;
+
+/**
+ * gtag.js elements that did not run in time, and other integrations' elements that failed.
+ * They stay on the page (a request still in flight may yet run, and another integration's
+ * element is not ours to remove); a later attempt loads a new element instead of waiting on
+ * them again.
+ */
+const stalledTags = new WeakSet<HTMLScriptElement>();
+
+/** Commands that produce or configure hits; consent must be settled before them. */
+const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
+
+/**
+ * The gtag() command a dataLayer entry holds, or null for a plain object pushed directly. gtag()
+ * pushes its Arguments object (some snippets push arrays); an event object may carry any
+ * parameter, `length` included, so having one does not make it a command.
+ */
+function commandOf(entry: unknown): ArrayLike<unknown> | null {
+  if (Array.isArray(entry)) return entry;
+  return Object.prototype.toString.call(entry) === "[object Arguments]"
+    ? (entry as ArrayLike<unknown>)
+    : null;
+}
+
+function isConsentDefault(entry: unknown): boolean {
+  const command = commandOf(entry);
+  return command !== null && command[0] === "consent" && command[1] === "default";
+}
+
+/**
+ * Whether the page already holds a `consent default`, issued by another manager instance (two
+ * app roots, a remount) or by the site itself. Consent Mode takes one default per page; every
+ * later change has to be an update.
+ */
+export function hasConsentDefault(): boolean {
+  if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return false;
+  return window.dataLayer.some(isConsentDefault);
+}
+
+function isMeasurement(entry: unknown): boolean {
+  const command = commandOf(entry);
+  if (command !== null) return MEASUREMENT_COMMANDS.has(String(command[0]));
+  // Google Tag Manager's snippet and `dataLayer.push({ event })` queue plain objects, and their
+  // event (the snippet's `gtm.js`) fires the container's tags just like a gtag() event.
+  return typeof entry === "object" && entry !== null && "event" in entry;
+}
+
+/**
+ * Until the Google tag runs the dataLayer is only a queue. Moves the consent command gtag()
+ * just pushed ahead of the first measurement command queued at or after `from`, so hits queued
+ * earlier (by the site's own snippet, or before the choice) are processed under it. Moving the
+ * entry gtag() created keeps it the Arguments object gtag.js expects.
+ */
+function moveAheadOfMeasurement(from: number): void {
+  const queue = window.dataLayer;
+  const at = queue.findIndex((entry, i) => i >= from && isMeasurement(entry));
+  if (at >= 0) queue.splice(at, 0, queue.pop());
+}
+
+/**
+ * Issue the page's consent defaults. Consent Mode applies defaults only before the Google tag
+ * runs: when it already has, the same signals follow as an update; when it has not, the default
+ * goes ahead of any measurement command already queued.
+ *
+ * @param signals - Initial consent signals
+ * @param waitForUpdate - See {@link setConsentDefaults}
+ */
+export function sendInitialConsent(signals: GoogleConsentSignals, waitForUpdate = 500): void {
+  const tagLoaded = isGoogleTagLoaded();
+  setConsentDefaults(signals, waitForUpdate);
+  if (typeof window === "undefined") return;
+  if (tagLoaded) updateConsent(signals);
+  else moveAheadOfMeasurement(0);
 }
 
 /**
@@ -73,7 +177,44 @@ export function updateConsent(signals: Partial<GoogleConsentSignals>): void {
 }
 
 /**
+ * Consent update from the consent manager. Until the Google tag runs, an update pushed now
+ * would be processed after the queued `config` and its page view; it goes ahead of the
+ * measurement commands queued after the last consent default instead, so those hits follow the
+ * latest choice and the default cannot override it.
+ *
+ * @param signals - Consent signals to update
+ */
+export function queueConsentUpdate(signals: GoogleConsentSignals): void {
+  updateConsent(signals);
+  if (typeof window === "undefined" || isGoogleTagLoaded()) return;
+  const queue = window.dataLayer;
+  let lastDefault = -1;
+  queue.forEach((entry, i) => {
+    if (isConsentDefault(entry)) lastDefault = i;
+  });
+  moveAheadOfMeasurement(lastDefault + 1);
+}
+
+/**
+ * A gtag.js element fired load. gtag.js registers its measurement ID while it runs, before that
+ * event; a load without it (a blocker's stand-in script) is not the tag, so the deadline stays
+ * and checks once more when it expires.
+ */
+function settleOnLoad(
+  timer: ReturnType<typeof setTimeout>,
+  resolve: () => void,
+  gaId: string
+): void {
+  if (!isTagLoadedFor(gaId)) return;
+  clearTimeout(timer);
+  resolve();
+}
+
+/**
  * Load Google Analytics gtag.js script
+ *
+ * An element for this ID that is already on the page counts only once the Google tag ran for
+ * this ID; while it is still downloading, this settles with it.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
@@ -84,17 +225,55 @@ export function loadGtagScript(gaId: string): Promise<void> {
       return;
     }
 
-    // Check if already loaded
-    if (document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`)) {
+    const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
+    const matching = Array.from(
+      document.querySelectorAll<HTMLScriptElement>(
+        `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+      )
+    );
+    // Any element for this ID, one given up on as stalled included, may since have run: then
+    // the tag is up and another element would only load it twice.
+    if (matching.length > 0 && isTagLoadedFor(gaId)) {
       resolve();
+      return;
+    }
+    const existing = matching.find((element) => !stalledTags.has(element));
+    if (existing) {
+      // Its load or error event may already have fired before this call, and a settled script
+      // does not fire again; past the timeout it counts as failed, and a retry loads its own.
+      const fail = () => {
+        clearTimeout(timer);
+        stalledTags.add(existing);
+        reject(failure());
+      };
+      const timer = setTimeout(
+        () => (isTagLoadedFor(gaId) ? resolve() : fail()),
+        TAG_LOAD_TIMEOUT_MS
+      );
+      existing.addEventListener("load", () => settleOnLoad(timer, resolve, gaId), { once: true });
+      existing.addEventListener("error", fail, { once: true });
       return;
     }
 
     const script = document.createElement("script");
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load gtag.js for ${gaId}`));
+    // A request that neither loads nor fails would otherwise hold every later attempt forever.
+    const timer = setTimeout(() => {
+      if (isTagLoadedFor(gaId)) {
+        resolve();
+        return;
+      }
+      stalledTags.add(script);
+      reject(failure());
+    }, TAG_LOAD_TIMEOUT_MS);
+    script.onload = () => settleOnLoad(timer, resolve, gaId);
+    script.onerror = () => {
+      clearTimeout(timer);
+      // A failed element would make the next attempt wait on it instead of retrying.
+      script.remove();
+      reject(failure());
+    };
 
     document.head.appendChild(script);
   });
@@ -151,44 +330,64 @@ export function trackEvent(eventName: string, params?: Record<string, unknown>):
 }
 
 /**
- * Initialize Google Analytics with consent defaults
+ * Initialize Google Analytics: consent defaults, `js` and `config` queued, then the script load.
+ * Call it once per page; later consent changes go through {@link updateConsent}. A second call
+ * issues another `consent default`, which changes nothing once the tag has run; `js` and
+ * `config` are queued only once per measurement ID, so retrying after a failed load is safe.
  *
  * @param gaId - Google Analytics measurement ID
- * @param defaultDenied - Whether to default to denied consent (for EU users)
+ * @param defaults - Default consent signals, or `true` to deny all / `false` to grant all
  * @param sendPageView - Whether to send automatic page_view (false for SPA)
+ * @param waitForUpdate - See {@link setConsentDefaults}; pass `0` when the defaults are final
  */
 export async function initGoogleAnalytics(
   gaId: string,
-  defaultDenied = true,
-  sendPageView = true
+  defaults: boolean | GoogleConsentSignals = true,
+  sendPageView = true,
+  waitForUpdate = 500
 ): Promise<void> {
   initGtag();
 
   // Set defaults BEFORE loading script
-  if (defaultDenied) {
-    setConsentDefaults({
-      analytics_storage: "denied",
-      ad_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-    });
+  if (typeof defaults === "boolean") {
+    const value = defaults ? "denied" : "granted";
+    sendInitialConsent(
+      {
+        analytics_storage: value,
+        ad_storage: value,
+        ad_user_data: value,
+        ad_personalization: value,
+      },
+      waitForUpdate
+    );
   } else {
-    setConsentDefaults({
-      analytics_storage: "granted",
-      ad_storage: "granted",
-      ad_user_data: "granted",
-      ad_personalization: "granted",
-    });
+    sendInitialConsent(defaults, waitForUpdate);
   }
 
-  // Load the script
+  queueGoogleAnalyticsConfig(gaId, sendPageView);
   await loadGtagScript(gaId);
+}
 
-  // Initialize GA
-  if (typeof window !== "undefined") {
-    window.gtag("js", new Date());
-    window.gtag("config", gaId, {
-      send_page_view: sendPageView,
-    });
-  }
+/**
+ * Queue `js` and `config` right after the consent defaults, as Google's own snippet does: the
+ * dataLayer is processed in order once gtag.js runs, so every later event follows `config`
+ * whether the script is still loading, failed and is retried, or already ran.
+ *
+ * @param gaId - Google Analytics measurement ID
+ * @param sendPageView - Whether `config` sends the automatic page_view
+ */
+export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean): void {
+  if (typeof window === "undefined") return;
+  initGtag();
+  // Once per page: a retried initialisation would otherwise queue a second `config`, and
+  // both are processed (two page views) once the tag loads.
+  const queued = window.dataLayer.some((entry) => {
+    const command = commandOf(entry);
+    return command !== null && command[0] === "config" && command[1] === gaId;
+  });
+  if (queued) return;
+  window.gtag("js", new Date());
+  window.gtag("config", gaId, {
+    send_page_view: sendPageView,
+  });
 }
