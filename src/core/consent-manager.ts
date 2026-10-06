@@ -24,6 +24,7 @@ import {
 } from "./storage";
 import {
   sendInitialConsent,
+  hasConsentDefault,
   queueGoogleAnalyticsConfig,
   queueConsentUpdate,
   loadGtagScript,
@@ -77,7 +78,7 @@ export class ConsentManager {
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
   private routerCleanup: (() => void) | null = null;
-  /** The page's `consent default` was issued; every later push is an update. */
+  /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
   /** A gtag.js load attempt is in flight. */
   private gaLoading = false;
@@ -87,6 +88,8 @@ export class ConsentManager {
   private gaRetryOnFailure = false;
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
   private destroyed = false;
+  /** Tail of the remote consent writes, which run one after another. */
+  private remoteWrite: Promise<void> = Promise.resolve();
   /**
    * The choice made on this page. It takes precedence over the cookie, which may be blocked or
    * fail to write, so tracking and the script blocker follow the visitor's latest decision.
@@ -429,11 +432,14 @@ export class ConsentManager {
       const epoch = this.consentEpoch;
       const storage = this.remoteStorage;
 
-      // Started inside a promise so that a set() throwing synchronously is caught like a
-      // rejection instead of aborting the visitor's choice.
-      Promise.resolve()
-        .then(() => storage.set(this.userId, consent))
-        .then((id) => {
+      // Writes of the one remote record run one at a time, so an older write cannot finish
+      // after a newer one and overwrite it. A write still queued when a newer decision arrives
+      // is dropped: that decision writes for itself. Running inside the chain also turns a set()
+      // that throws synchronously into a rejection instead of aborting the visitor's choice.
+      this.remoteWrite = this.remoteWrite
+        .then(async () => {
+          if (this.consentEpoch !== epoch) return;
+          const id = await storage.set(this.userId, consent);
           // A remote identifier is kept only for a grant, and only while it is still the latest
           // decision: a withdrawal or reset made meanwhile must not get the grant's id back.
           if (id && hasNonNecessary && this.consentEpoch === epoch) {
@@ -566,7 +572,10 @@ export class ConsentManager {
       queueConsentUpdate(signals);
     } else {
       this.gaDefaultsSent = true;
-      sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
+      // The page's single default may already exist (another manager instance, a remount, the
+      // site's own snippet); this manager's first push is then an update.
+      if (hasConsentDefault()) queueConsentUpdate(signals);
+      else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
       queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
     if (!gaId) return;

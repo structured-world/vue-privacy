@@ -97,11 +97,31 @@ function commandOf(entry: unknown): ArrayLike<unknown> {
  * earlier (by the site's own snippet, or before the choice) are processed under it. Moving the
  * entry gtag() created keeps it the Arguments object gtag.js expects.
  */
+/**
+ * Whether the page already holds a `consent default`, issued by another manager instance (two
+ * app roots, a remount) or by the site itself. Consent Mode takes one default per page; every
+ * later change has to be an update.
+ */
+export function hasConsentDefault(): boolean {
+  if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return false;
+  return window.dataLayer.some((entry) => {
+    if (typeof entry !== "object" || entry === null || !("length" in entry)) return false;
+    const command = commandOf(entry);
+    return command[0] === "consent" && command[1] === "default";
+  });
+}
+
+function isMeasurement(entry: unknown): boolean {
+  if (typeof entry !== "object" || entry === null) return false;
+  // Google Tag Manager's snippet and `dataLayer.push({ event })` queue plain objects, and their
+  // event (the snippet's `gtm.js`) fires the container's tags just like a gtag() event.
+  if (!("length" in entry) && "event" in entry) return true;
+  return MEASUREMENT_COMMANDS.has(String(commandOf(entry)[0]));
+}
+
 function moveAheadOfMeasurement(from: number): void {
   const queue = window.dataLayer;
-  const at = queue.findIndex(
-    (entry, i) => i >= from && MEASUREMENT_COMMANDS.has(String(commandOf(entry)[0]))
-  );
+  const at = queue.findIndex((entry, i) => i >= from && isMeasurement(entry));
   if (at >= 0) queue.splice(at, 0, queue.pop());
 }
 

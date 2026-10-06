@@ -596,6 +596,61 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(hide).toHaveBeenCalledTimes(1);
   });
 
+  it("writes remote consent in order when choices follow each other quickly", async () => {
+    // Regression: two writes of the same remote record ran at once, so the older one could
+    // finish last and bring back a category the visitor had just turned off.
+    const pending: Array<() => void> = [];
+    const set = vi.fn<ConsentStorage["set"]>(
+      () => new Promise<string | null>((resolve) => pending.push(() => resolve("uid-1")))
+    );
+    const storage: ConsentStorage = { get: async () => null, set };
+    const manager = euManager({ storage });
+    await manager.init();
+
+    await manager.acceptAll();
+    await manager.savePreferences({ analytics: true, marketing: false });
+    await settle();
+    expect(set).toHaveBeenCalledTimes(1);
+
+    pending[0]();
+    await settle();
+    expect(set).toHaveBeenCalledTimes(2);
+    expect(set.mock.calls[1]?.[1].categories).toEqual({
+      analytics: true,
+      marketing: false,
+      functional: true,
+    });
+  });
+
+  it("puts the consent default ahead of a queued GTM bootstrap event", async () => {
+    // Regression: the GTM snippet's object entry was not a measurement boundary, so the
+    // container could run its tags before the denied defaults applied.
+    const gtmBootstrap = { "gtm.start": Date.now(), event: "gtm.js" };
+    window.dataLayer.push(gtmBootstrap);
+    const manager = euManager();
+    await manager.init();
+
+    const defaultIndex = window.dataLayer.findIndex((entry) => {
+      const command = Array.from(entry as ArrayLike<unknown>);
+      return command[0] === "consent" && command[1] === "default";
+    });
+    expect(defaultIndex).toBeGreaterThanOrEqual(0);
+    expect(defaultIndex).toBeLessThan(window.dataLayer.indexOf(gtmBootstrap));
+  });
+
+  it("issues one consent default per page across manager instances", async () => {
+    // Regression: the sent flag lived on the instance, so a remounted app issued a second
+    // consent default on the same page.
+    const first = euManager();
+    await first.init();
+    first.destroy();
+
+    const second = euManager();
+    await second.init();
+    expect(consentCalls("default")).toHaveLength(1);
+    expect(count("config")).toBe(1);
+  });
+
   it("does not retry the tag load when the error callback destroys the manager", async () => {
     // Regression: the destroy check ran before onGoogleAnalyticsError, so a callback that
     // unmounted the app still let the pending retry append a script after teardown.
