@@ -1524,6 +1524,30 @@ describe("basic consent mode", () => {
     }
   });
 
+  it("follows a marketing-only withdrawal made in another tab", async () => {
+    // Regression: the sync compared analytics alone, so with analytics still allowed the ad
+    // signals stayed granted after another tab withdrew marketing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      manager.trackEvent("sign_up");
+
+      expect(consentCalls("update").at(-1)).toEqual(ANALYTICS_ONLY);
+      expect(order().lastIndexOf("consent:update")).toBeLessThan(order().lastIndexOf("event"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("switches off a tag an earlier manager loaded when a fresh manager gets a refusal", async () => {
     // Regression: the new instance had pushed nothing yet, so its refusal returned before the
     // disable switch, and the tag the previous instance loaded kept measuring.

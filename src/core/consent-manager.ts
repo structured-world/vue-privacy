@@ -104,6 +104,8 @@ export class ConsentManager {
   private gaDefaultsSent = false;
   /** Basic mode: the Google tag is set up and measuring, by the visitor's grant of analytics. */
   private googleMeasuring = false;
+  /** Basic mode: the ad signals last sent to the measuring tag were granted. */
+  private googleMarketing = false;
   /** A gtag.js load attempt is in flight. */
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
@@ -637,6 +639,7 @@ export class ConsentManager {
       } else {
         setAnalyticsDisabled(gaId, false);
         this.googleMeasuring = true;
+        this.googleMarketing = signals.ad_storage === "granted";
       }
     }
     if (!gaId) {
@@ -859,13 +862,17 @@ export class ConsentManager {
    *
    * In basic mode the choice may have changed in another tab since this page last pushed
    * consent (the cookie is shared): the Google tag is brought in line with it first, so a grant
-   * made elsewhere loads the tag here and a withdrawal made elsewhere stops it.
+   * made elsewhere loads the tag here, a withdrawal made elsewhere stops it, and a change of
+   * marketing alone updates the ad signals (the four signals follow analytics and marketing).
    */
   private analyticsSuppressed(): boolean {
     const consent = this.choiceInEffect();
     if (!this.basicMode) return consent !== null && !consent.categories.analytics;
     const allowed = consent !== null && consent.categories.analytics;
-    if (this.config.gaId && allowed !== this.googleMeasuring) {
+    const stale =
+      allowed !== this.googleMeasuring ||
+      (allowed && consent.categories.marketing !== this.googleMarketing);
+    if (this.config.gaId && stale) {
       this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
     }
     return !allowed;
