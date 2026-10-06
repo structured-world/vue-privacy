@@ -1524,6 +1524,31 @@ describe("basic consent mode", () => {
     }
   });
 
+  it("stops the tag when the tab regains focus after a withdrawal in another tab", async () => {
+    // Regression: the sync ran only on a tracking call, so the loaded tag kept sending its
+    // automatic events (scrolls, outbound clicks) after the visitor came back to this tab.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      manager.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows a marketing-only withdrawal made in another tab", async () => {
     // Regression: the sync compared analytics alone, so with analytics still allowed the ad
     // signals stayed granted after another tab withdrew marketing.

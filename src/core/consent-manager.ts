@@ -99,6 +99,8 @@ export class ConsentManager {
   private showPreferenceCenterCallback: (() => void) | null = null;
   private hidePreferenceCenterCallback: (() => void) | null = null;
   private scriptBlockerCleanup: (() => void) | null = null;
+  /** Removes the basic-mode listeners that follow choices made in other tabs. */
+  private tabWatchCleanup: (() => void) | null = null;
   private routerCleanup: (() => void) | null = null;
   /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
@@ -246,6 +248,7 @@ export class ConsentManager {
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
       this.scriptBlockerCleanup = initScriptBlocker(this);
+      if (this.basicMode && this.config.gaId) this.watchOtherTabs();
     }
 
     // Fast-path: check consent_preferences cookie
@@ -417,6 +420,23 @@ export class ConsentManager {
 
       this.applyConsent(grantedCategories, true);
     }
+  }
+
+  /**
+   * Basic mode: a choice made in another tab changes the shared cookie but fires nothing here.
+   * The loaded tag's automatic events (scrolls, outbound clicks) need the visitor on this tab,
+   * so the tag is brought in line whenever the tab is shown again or regains focus.
+   */
+  private watchOtherTabs(): void {
+    const sync = (): void => {
+      if (document.visibilityState !== "hidden") this.syncBasicTag();
+    };
+    window.addEventListener("focus", sync);
+    document.addEventListener("visibilitychange", sync);
+    this.tabWatchCleanup = () => {
+      window.removeEventListener("focus", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }
 
   /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
@@ -868,6 +888,14 @@ export class ConsentManager {
   private analyticsSuppressed(): boolean {
     const consent = this.choiceInEffect();
     if (!this.basicMode) return consent !== null && !consent.categories.analytics;
+    return !this.syncBasicTag(consent);
+  }
+
+  /**
+   * Basic mode: bring the Google tag in line with the choice in effect, which another tab may
+   * have changed through the shared cookie. Returns whether that choice allows analytics.
+   */
+  private syncBasicTag(consent: StoredConsent | null = this.choiceInEffect()): boolean {
     const allowed = consent !== null && consent.categories.analytics;
     const stale =
       allowed !== this.googleMeasuring ||
@@ -875,7 +903,7 @@ export class ConsentManager {
     if (this.config.gaId && stale) {
       this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
     }
-    return !allowed;
+    return allowed;
   }
 
   /**
@@ -1075,6 +1103,8 @@ export class ConsentManager {
     this.destroyed = true;
     this.scriptBlockerCleanup?.();
     this.scriptBlockerCleanup = null;
+    this.tabWatchCleanup?.();
+    this.tabWatchCleanup = null;
 
     this.routerCleanup?.();
     this.routerCleanup = null;
