@@ -9,11 +9,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability, please report it by:
-
-1. **Do not** open a public GitHub issue
-2. Email security concerns to the maintainers
-3. Or use [GitHub's private vulnerability reporting](https://github.com/structured-world/vue-privacy/security/advisories/new)
+Do not open a public GitHub issue. Report it privately through [GitHub's private vulnerability reporting](https://github.com/structured-world/vue-privacy/security/advisories/new); only the maintainers see the report.
 
 We will respond within 48 hours and work with you to understand and address the issue.
 
