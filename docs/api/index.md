@@ -94,7 +94,7 @@ if (manager.isEUUser()) {
 
 Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
 
-While the visitor has not chosen, the event is sent under the Consent Mode defaults (analytics denied), so Google receives it as a cookieless ping and stores no identifiers. Once the visitor's choice leaves analytics off, the manager sends nothing.
+While the visitor has not chosen, the event is sent under the Consent Mode defaults (analytics denied), so Google receives it as a cookieless ping and stores no identifiers. Once the visitor's choice leaves analytics off, the manager sends nothing. With `consentMode: 'basic'` the event is dropped until the visitor allows analytics.
 
 ```typescript
 manager.trackPageView("/docs/guide");

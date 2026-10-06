@@ -377,6 +377,19 @@ export interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * How the Google tag for `gaId` relates to consent (Google Consent Mode):
+   * - `'advanced'` (default): gtag.js loads for every visitor with denied defaults, and Google
+   *   receives cookieless pings (page views, events) before any choice and after a refusal.
+   * - `'basic'`: nothing reaches Google (no script, no dataLayer entry, no request) until the
+   *   visitor explicitly allows analytics; a grant implied by the jurisdiction (CCPA, outside
+   *   consent jurisdictions) does not count. Withdrawing analytics deletes the `_ga` cookies.
+   *   Choose it when the site promises "Google Analytics only with consent"; Google then
+   *   models no conversions for visitors who did not consent.
+   * @default 'advanced'
+   */
+  consentMode?: "advanced" | "basic";
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error). The consent flow is
    * not affected: the banner still shows and choices are saved; the next consent change
    * retries the load.

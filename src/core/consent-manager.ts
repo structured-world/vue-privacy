@@ -28,6 +28,7 @@ import {
   queueGoogleAnalyticsConfig,
   queueConsentUpdate,
   loadGtagScript,
+  clearAnalyticsCookies,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -83,6 +84,8 @@ function settledWithin(write: Promise<void>, ms: number): Promise<void> {
  */
 export class ConsentManager {
   private config: ConsentConfig;
+  /** Basic Consent Mode: Google gets nothing until the visitor explicitly allows analytics. */
+  private readonly basicMode: boolean;
   private locale: SupportedLocale;
   private initialized = false;
   private isEU: boolean | null = null;
@@ -141,6 +144,7 @@ export class ConsentManager {
       banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
+    this.basicMode = config.consentMode === "basic";
 
     if (config.storage) {
       this.remoteStorage = config.storage;
@@ -391,9 +395,10 @@ export class ConsentManager {
       };
 
       // Persisted before it is applied, so geo-detection is not repeated on the next visit and
-      // an opt-out a consent callback makes in response is the last choice written.
-      this.saveConsentWithRemote(grantedCategories);
-      this.applyConsent(grantedCategories);
+      // an opt-out a consent callback makes in response is the last choice written. Basic mode
+      // keeps it unstored: a stored grant is the visitor's consent there, and this one is not.
+      if (!this.basicMode) this.saveConsentWithRemote(grantedCategories);
+      this.applyConsent(grantedCategories, true);
       this.config.onCCPAUser?.();
     } else {
       // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
@@ -405,7 +410,7 @@ export class ConsentManager {
         functional: true,
       };
 
-      this.applyConsent(grantedCategories);
+      this.applyConsent(grantedCategories, true);
     }
   }
 
@@ -605,11 +610,22 @@ export class ConsentManager {
    * later follows them; every later push is a `consent update`. Without `gaId` the site loads
    * gtag itself, so every push is an update.
    *
+   * In basic mode Google gets nothing until a push carries the visitor's own grant of analytics:
+   * until then pushes are dropped, and from then on they go out as in advanced mode. A push
+   * that leaves analytics denied also deletes the `_ga` cookies there.
+   *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
+   * @param implied - The signals come from the jurisdiction (CCPA, outside consent
+   *   jurisdictions), not from the visitor's choice
    */
-  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
+  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean, implied = false): void {
     const gaId = this.config.gaId;
+    if (gaId && this.basicMode) {
+      const analyticsDenied = signals.analytics_storage === "denied";
+      if (analyticsDenied) clearAnalyticsCookies(gaId);
+      if (!this.gaDefaultsSent && (analyticsDenied || implied)) return;
+    }
     if (!gaId) {
       updateGoogleConsent(signals);
     } else if (this.gaDefaultsSent) {
@@ -663,9 +679,11 @@ export class ConsentManager {
 
   /**
    * Apply consent settings
+   *
+   * @param implied - Granted by the jurisdiction, not chosen by the visitor
    */
-  private applyConsent(categories: Omit<ConsentCategories, "necessary">): void {
-    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
+  private applyConsent(categories: Omit<ConsentCategories, "necessary">, implied = false): void {
+    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true, implied);
     const epoch = this.consentEpoch;
 
     // Notify config callback
@@ -813,11 +831,14 @@ export class ConsentManager {
   }
 
   /**
-   * Whether tracking calls are suppressed: the stored choice leaves analytics off. Before any
-   * choice, events are sent under the Consent Mode defaults (cookieless pings).
+   * Whether tracking calls are suppressed: the visitor's choice leaves analytics off. Before any
+   * choice, advanced mode sends events under the Consent Mode defaults (cookieless pings);
+   * basic mode sends nothing until the visitor allows analytics (a grant implied by the
+   * jurisdiction is never stored there, so it is no choice).
    */
   private analyticsSuppressed(): boolean {
     const consent = this.choiceInEffect();
+    if (this.basicMode) return consent === null || !consent.categories.analytics;
     return consent !== null && !consent.categories.analytics;
   }
 

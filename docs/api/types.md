@@ -44,6 +44,16 @@ interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * 'advanced': gtag.js loads for every visitor with denied defaults;
+   * Google receives cookieless pings before any choice and after a refusal.
+   * 'basic': nothing reaches Google until the visitor allows analytics;
+   * a grant implied by the jurisdiction does not count, and withdrawing
+   * analytics deletes the _ga cookies.
+   * @default 'advanced'
+   */
+  consentMode?: "advanced" | "basic";
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error).
    * The banner still shows and choices are still saved; the next consent
    * change retries the load.

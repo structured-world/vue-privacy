@@ -1277,3 +1277,164 @@ describe("initGoogleAnalytics defaults", () => {
     expect(count("config")).toBe(1);
   });
 });
+
+// Basic consent mode: Google receives nothing (no script, no dataLayer entry, no request)
+// until the visitor explicitly allows analytics. A grant implied by the jurisdiction (CCPA,
+// outside consent jurisdictions) is not that consent.
+describe("basic consent mode", () => {
+  function basicManager(config: ConsentConfig = {}): ConsentManager {
+    return euManager({ consentMode: "basic", ...config });
+  }
+
+  function ccpaManager(): ConsentManager {
+    return new ConsentManager({
+      gaId: GA_ID,
+      consentMode: "basic",
+      ccpaEnabled: true,
+      geoDetector: {
+        detect: vi
+          .fn()
+          .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+      },
+    });
+  }
+
+  /** Nothing reached Google: no gtag.js element and no dataLayer entry. */
+  function expectNothingSentToGoogle(): void {
+    expect(document.querySelectorAll('script[src*="googletagmanager"]')).toHaveLength(0);
+    expect(window.dataLayer).toEqual([]);
+  }
+
+  /** Cookies gtag.js sets for GA_ID once analytics is granted. */
+  function setAnalyticsCookies(): void {
+    document.cookie = "_ga=GA1.1.123.456; path=/";
+    document.cookie = "_ga_TEST123=GS1.1.789; path=/";
+  }
+
+  it("sends nothing to Google for an undecided EU visitor", async () => {
+    await basicManager().init();
+
+    expectNothingSentToGoogle();
+  });
+
+  it("sends nothing to Google for a CCPA visitor granted by jurisdiction", async () => {
+    // The CCPA flow grants silently, but that is not the visitor's consent, and it is not
+    // stored either, so the next page does not take it for one.
+    const manager = ccpaManager();
+    await manager.init();
+
+    expectNothingSentToGoogle();
+    expect(cookieStore).not.toContain("consent_preferences");
+    expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("sends nothing to Google outside consent jurisdictions without a choice", async () => {
+    const manager = new ConsentManager({
+      gaId: GA_ID,
+      consentMode: "basic",
+      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+    });
+    await manager.init();
+
+    expectNothingSentToGoogle();
+  });
+
+  it("sends nothing to Google after a refusal", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    await manager.rejectAll();
+    await manager.savePreferences({ analytics: false, marketing: true });
+
+    expectNothingSentToGoogle();
+  });
+
+  it("loads the tag once with granted defaults when analytics is allowed", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    await manager.acceptAll();
+    await manager.savePreferences({ analytics: true, marketing: false });
+    await settle();
+
+    expect(consentCalls("default")).toEqual([GRANTED]);
+    expect(consentCalls("update")).toEqual([ANALYTICS_ONLY]);
+    expect(order().slice(0, 3)).toEqual(["consent:default", "js", "config"]);
+    expect(count("config")).toBe(1);
+    expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("loads the tag on the next page from the stored grant", async () => {
+    storeConsent(
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        isEU: true,
+        countryCode: "DE",
+      },
+      {}
+    );
+
+    await basicManager().init();
+    await settle();
+
+    expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
+    expect(count("config")).toBe(1);
+    expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("denies and removes the analytics cookies when analytics is withdrawn", async () => {
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    setAnalyticsCookies();
+
+    await manager.rejectAll();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(cookieStore).not.toMatch(/(^|; )_ga=/);
+    expect(cookieStore).not.toContain("_ga_TEST123=");
+  });
+
+  it("denies and removes the analytics cookies on resetConsent", async () => {
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    setAnalyticsCookies();
+
+    manager.resetConsent();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(cookieStore).not.toMatch(/(^|; )_ga=/);
+    expect(cookieStore).not.toContain("_ga_TEST123=");
+  });
+
+  it("drops tracking calls until analytics is allowed", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    manager.trackPageView("/before-choice");
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+
+    await manager.acceptAll();
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+  });
+
+  it("drops tracking calls for a CCPA visitor granted by jurisdiction", async () => {
+    const manager = ccpaManager();
+    await manager.init();
+
+    manager.trackPageView("/ccpa");
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+  });
+
+  it("keeps the advanced mode as the default", async () => {
+    // Without the option an undecided EU visitor still gets the denied default and the tag.
+    await euManager().init();
+
+    expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(gtagScripts()).toHaveLength(1);
+  });
+});

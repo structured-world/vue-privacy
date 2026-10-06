@@ -148,6 +148,11 @@ interface ConsentConfig {
   // Google Analytics measurement ID
   gaId?: string;
 
+  // 'advanced' (default): gtag.js loads for every visitor with denied defaults and Google
+  //   receives cookieless pings before any choice and after a refusal.
+  // 'basic': nothing reaches Google until the visitor allows analytics.
+  consentMode?: 'advanced' | 'basic';
+
   // Locale for UI text (auto-detected if not set)
   // Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
   locale?: SupportedLocale;
@@ -209,6 +214,20 @@ interface ConsentConfig {
   onPreferenceCenterHide?: () => void;
 }
 ```
+
+### Basic or advanced Consent Mode
+
+| | `'advanced'` (default) | `'basic'` |
+|---|---|---|
+| gtag.js before a choice | loaded, all signals denied | not loaded |
+| Page views and events before a choice | sent as cookieless pings | dropped |
+| After a refusal | cookieless pings continue | nothing is sent; `_ga` cookies are deleted |
+| After analytics is allowed | full measurement | gtag.js loads, full measurement |
+| Google's conversion modelling | available | not available for visitors who did not consent |
+
+Cookieless pings still carry the visitor's IP address and browser data to Google, and several European regulators treat loading the tag and sending them as processing that needs consent. A site that promises "Google Analytics only with consent" needs `consentMode: 'basic'`.
+
+In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) loads no Google tag and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
 
 ## Composables
 

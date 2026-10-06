@@ -1,4 +1,5 @@
 import type { GoogleConsentSignals, ConsentCategories } from "./types";
+import { deleteCookie } from "./storage";
 
 declare global {
   interface Window {
@@ -277,6 +278,26 @@ export function loadGtagScript(gaId: string): Promise<void> {
 
     document.head.appendChild(script);
   });
+}
+
+/**
+ * Delete the cookies gtag.js sets for a GA4 measurement ID: `_ga` (client ID) and
+ * `_ga_<ID without "G-">` (session state). gtag.js writes them on the highest domain the
+ * browser accepts (its `cookie_domain: 'auto'`), which is not known here, so the deletion is
+ * issued for the host itself and for every parent domain; the ones that do not match are no-ops.
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function clearAnalyticsCookies(gaId: string): void {
+  if (typeof document === "undefined") return;
+  const names = ["_ga", `_ga_${gaId.replace(/^G-/, "")}`];
+  const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
+  for (const name of names) {
+    deleteCookie(name);
+    for (let i = 0; i < labels.length - 1; i++) {
+      deleteCookie(name, "/", labels.slice(i).join("."));
+    }
+  }
 }
 
 /**

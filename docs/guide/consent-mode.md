@@ -63,6 +63,21 @@ gtag('consent', 'update', {
 });
 ```
 
+## Basic and Advanced Mode
+
+The steps above are Google's **advanced** mode, the default: gtag.js loads for every visitor, and before any choice or after a refusal Google receives cookieless pings (no cookies, but the visitor's IP address and browser data), which lets it model conversions.
+
+With `consentMode: 'basic'` nothing reaches Google (no script, no `dataLayer` entry, no request) until the visitor allows analytics. Then the single `consent default` carries the granted signals, gtag.js loads and `js` and `config` follow; later changes are updates as above. Withdrawing analytics sends `consent update` with `analytics_storage: 'denied'` and deletes the `_ga` and `_ga_<ID>` cookies. `trackPageView()` and `trackEvent()` drop events until analytics is allowed.
+
+```typescript
+createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  consentMode: 'basic',
+});
+```
+
+Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) loads no Google tag. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
+
 ## Category Mapping
 
 The library maps user-friendly categories to Google signals:
