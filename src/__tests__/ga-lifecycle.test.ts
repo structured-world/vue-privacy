@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
 import { initGoogleAnalytics, initGtag } from "../core/gtag";
 import { storeConsent } from "../core/storage";
+import { reloadPage } from "../core/page";
+
+// jsdom cannot navigate; the reload a withdrawal may trigger is recorded instead.
+vi.mock("../core/page", () => ({ reloadPage: vi.fn() }));
 import type {
   ConsentConfig,
   ConsentStorage,
@@ -1522,6 +1526,107 @@ describe("basic consent mode", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("reloadOnWithdrawal", () => {
+    // Products linked to the same Google tag ignore ga-disable, so a site that needs nothing
+    // sent after a withdrawal opts into a reload, which is the only way to stop a running tag.
+    beforeEach(() => {
+      vi.mocked(reloadPage).mockClear();
+    });
+
+    it("reloads after the choice is saved when analytics is withdrawn from a loaded tag", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      expect(reloadPage).not.toHaveBeenCalled();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+      expect(cookieStore).toContain("consent_preferences=");
+      manager.destroy();
+    });
+
+    it("reloads when only marketing is withdrawn from a loaded tag", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.savePreferences({ analytics: true, marketing: false });
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      manager.destroy();
+    });
+
+    it("reloads once for a resetConsent after a grant", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      manager.resetConsent();
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      manager.destroy();
+    });
+
+    it("does not reload a refusal made before any tag loaded", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("does not reload without the option", async () => {
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("does not reload in advanced mode", async () => {
+      const manager = euManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("does not reload a manager destroyed before the reload fires", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      manager.destroy();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
   });
 
   it("stops the tag when the tab regains focus after a withdrawal in another tab", async () => {

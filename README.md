@@ -153,6 +153,10 @@ interface ConsentConfig {
   // 'basic': nothing reaches Google until the visitor allows analytics.
   consentMode?: 'advanced' | 'basic';
 
+  // Basic mode: reload the page when analytics or marketing is withdrawn after the Google tag
+  // loaded, so products linked to that tag (Google Ads, Floodlight) stop too. Default: false
+  reloadOnWithdrawal?: boolean;
+
   // Locale for UI text (auto-detected if not set)
   // Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
   locale?: SupportedLocale;
@@ -221,7 +225,7 @@ interface ConsentConfig {
 |---|---|---|
 | gtag.js before a choice | loaded, all signals denied | not loaded |
 | Page views and events before a choice | sent as cookieless pings | dropped |
-| After a refusal | cookieless pings continue | nothing is sent: a loaded tag is switched off (`ga-disable-<ID>`), `_ga` cookies are deleted |
+| After a refusal | cookieless pings continue | nothing is sent: a loaded tag is switched off (`ga-disable-<ID>`), `_ga` cookies are deleted; products linked to the same tag (Google Ads, Floodlight) stop only on reload, see `reloadOnWithdrawal` |
 | After analytics is allowed | full measurement | gtag.js loads, full measurement |
 | Google's conversion modelling | available | not available for visitors who did not consent |
 

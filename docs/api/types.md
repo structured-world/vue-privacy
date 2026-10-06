@@ -54,6 +54,14 @@ interface ConsentConfig {
   consentMode?: "advanced" | "basic";
 
   /**
+   * Basic mode: reload the page when analytics or marketing is withdrawn
+   * after the Google tag loaded, so products linked to that tag
+   * (Google Ads, Floodlight) stop too; the choice is saved first.
+   * @default false
+   */
+  reloadOnWithdrawal?: boolean;
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error).
    * The banner still shows and choices are still saved; the next consent
    * change retries the load.

@@ -391,6 +391,16 @@ export interface ConsentConfig {
   consentMode?: "advanced" | "basic";
 
   /**
+   * Basic mode only: reload the page when the visitor withdraws analytics or marketing after the
+   * Google tag has loaded on it. A withdrawal stops Google Analytics on the spot, but other
+   * products linked to the same Google tag (Google Ads, Floodlight) keep sending cookieless
+   * pings until the page reloads, and a running script cannot be unloaded. The choice is saved
+   * first; the reload drops in-page state, so enable it deliberately.
+   * @default false
+   */
+  reloadOnWithdrawal?: boolean;
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error). The consent flow is
    * not affected: the banner still shows and choices are saved; the next consent change
    * retries the load.

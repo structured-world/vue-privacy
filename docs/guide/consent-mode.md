@@ -76,6 +76,16 @@ createConsentPlugin({
 });
 ```
 
+A withdrawal on the same page stops Google Analytics at once, but a script already running cannot be unloaded: products linked to the same Google tag in Google's tag settings (Google Ads, Floodlight) ignore `ga-disable` and keep sending cookieless pings until the page reloads. A site that links them and promises nothing is sent after a refusal sets `reloadOnWithdrawal: true`: when the visitor withdraws analytics or marketing after the tag loaded, the choice is saved and the page reloads. It is off by default because the reload drops in-page state (a half-filled form, SPA state).
+
+```typescript
+createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  consentMode: 'basic',
+  reloadOnWithdrawal: true,
+});
+```
+
 Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off, so it loads no Google tag and unblocks no `data-consent-category="analytics"` script. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
 
 ## Category Mapping

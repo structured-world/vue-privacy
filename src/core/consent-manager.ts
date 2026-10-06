@@ -36,6 +36,7 @@ import {
   trackEvent as gtagTrackEvent,
 } from "./gtag";
 import { createGeoDetector } from "../geo/index";
+import { reloadPage } from "./page";
 
 /**
  * US states with comprehensive consumer privacy laws (CCPA-like).
@@ -108,6 +109,8 @@ export class ConsentManager {
   private googleMeasuring = false;
   /** Basic mode: the ad signals last sent to the measuring tag were granted. */
   private googleMarketing = false;
+  /** A reload for a withdrawal (reloadOnWithdrawal) is scheduled. */
+  private reloadScheduled = false;
   /** A gtag.js load attempt is in flight. */
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
@@ -649,6 +652,14 @@ export class ConsentManager {
     const basicDenied =
       gaId !== undefined && this.basicMode && signals.analytics_storage === "denied";
     if (gaId && this.basicMode) {
+      // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
+      // sending cookieless pings; only a reload stops a tag already running on the page.
+      const withdrawn =
+        this.googleMeasuring &&
+        (basicDenied || (this.googleMarketing && signals.ad_storage === "denied"));
+      if (withdrawn && (this.gaLoading || this.gaLoaded) && this.config.reloadOnWithdrawal) {
+        this.scheduleReload();
+      }
       if (basicDenied) {
         clearAnalyticsCookies(gaId);
         // The tag may already run on the page (loaded by an earlier manager instance, a
@@ -687,6 +698,18 @@ export class ConsentManager {
       return;
     }
     if (!this.gaLoaded) this.loadGtag(gaId);
+  }
+
+  /**
+   * Reload once the current flow is done: the choice is already stored and the consent
+   * callbacks of this decision run first, so the reloaded page starts from it.
+   */
+  private scheduleReload(): void {
+    if (this.reloadScheduled) return;
+    this.reloadScheduled = true;
+    setTimeout(() => {
+      if (!this.destroyed) reloadPage();
+    }, 0);
   }
 
   /**
