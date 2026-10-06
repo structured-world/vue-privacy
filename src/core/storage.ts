@@ -19,6 +19,11 @@ const MAX_RETRY_DELAY_MS = 30_000; // 30 seconds
  */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
+    // An abort that already happened (from the onRateLimited callback) fires no event.
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
     const timer = setTimeout(resolve, ms);
     signal?.addEventListener(
       "abort",

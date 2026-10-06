@@ -1067,6 +1067,33 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(thisTab.getConsent()?.categories.analytics).toBe(false);
   });
 
+  it("keeps a refusal that could not be stored over a grant from the same millisecond", async () => {
+    // Regression: an equal timestamp counted as proof the cookie was current, so the grant still
+    // readable from it overrode the refusal made right after, and tracking calls went out.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = euManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      const grantCookie = cookieStore;
+      Object.defineProperty(document, "cookie", {
+        get: () => grantCookie,
+        set: () => {},
+        configurable: true,
+      });
+      await manager.rejectAll();
+
+      const events = count("event");
+      manager.trackEvent("sign_up");
+      expect(count("event")).toBe(events);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts a pending remote write when a newer choice is made", async () => {
     // Regression: remote writes ran one after another, so a write that never settled held
     // every later choice back from the remote record for the rest of the page.

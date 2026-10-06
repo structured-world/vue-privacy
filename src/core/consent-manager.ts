@@ -755,15 +755,25 @@ export class ConsentManager {
 
   /**
    * The choice in effect, read without the copy getConsent() hands out (internal reads only).
-   * The cookie is shared by every tab: one written no earlier than this page's choice is this
-   * choice or a later one made elsewhere (a withdrawal in another tab), and it wins. The page's
-   * own choice stands while the cookie is missing, older, or cannot be read.
+   * The cookie is shared by every tab: one written after this page's choice is a later one made
+   * elsewhere (a withdrawal in another tab), and it wins. Within the same millisecond only a
+   * cookie holding this very decision counts: a timestamp tie cannot tell a stale grant whose
+   * overwrite failed from the write of this choice. The page's own choice stands while the
+   * cookie is missing, older, or cannot be read.
    */
   private choiceInEffect(): StoredConsent | null {
     const stored = getStoredConsent(this.config);
     const own = this.pageChoice;
     if (own === null) return stored;
-    return stored !== null && stored.timestamp >= own.timestamp ? stored : own;
+    if (stored === null || stored.timestamp < own.timestamp) return own;
+    if (stored.timestamp > own.timestamp) return stored;
+    const a = stored.categories;
+    const b = own.categories;
+    return a.analytics === b.analytics &&
+      a.marketing === b.marketing &&
+      a.functional === b.functional
+      ? stored
+      : own;
   }
 
   /**
