@@ -630,6 +630,30 @@ describe("createKVStorage rate limiting", () => {
     expect(onRateLimited).toHaveBeenCalledWith(null, 1);
   });
 
+  it("stops a rate-limited write as soon as it is aborted", async () => {
+    // A write superseded by a newer choice must not sit out its backoff: the consent manager
+    // waits for it before the newer write starts.
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      return new Response(null, { status: 429 });
+    });
+    const controller = new AbortController();
+    const storage = createKVStorage("/api/consent");
+    const consent = {
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+
+    const setPromise = storage.set(null, consent, controller.signal);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort();
+
+    expect(await setPromise).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal);
+  });
+
   it("gracefully handles callback errors without aborting retry loop", async () => {
     // Callback throws on every 429 but should NOT abort retry loop (errors are caught locally)
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 429 }));

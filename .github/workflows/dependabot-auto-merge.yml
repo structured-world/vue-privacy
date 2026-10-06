@@ -172,11 +172,16 @@ jobs:
       # the full pipeline before it can merge.
       - name: Bring armed Dependabot pull requests up to date with main
         run: |
-          gh pr list --author "app/dependabot" --state open --limit 1000 \
+          gh pr list --app dependabot --state open --limit 1000 \
             --json number,headRefOid,autoMergeRequest \
             --jq '.[] | select(.autoMergeRequest != null) | "\(.number) \(.headRefOid)"' |
           while read -r number head; do
-            behind=$(gh api "repos/${GH_REPO}/compare/${MAIN_SHA}...${head}" --jq .behind_by)
+            # One pull request that cannot be compared (a head pushed meanwhile, an API error)
+            # must not stop the others from being brought up to date.
+            if ! behind=$(gh api "repos/${GH_REPO}/compare/${MAIN_SHA}...${head}" --jq .behind_by); then
+              echo "::warning::#$number could not be compared with main"
+              continue
+            fi
             if [ "$behind" -gt 0 ]; then
               if gh pr update-branch "$number"; then
                 echo "#$number: merged main ($behind commits behind)"

@@ -61,6 +61,24 @@ export const CCPA_REGIONS = new Set([
 const DEFAULT_WAIT_FOR_UPDATE_MS = 500;
 
 /**
+ * How long a newer remote write waits for the superseded one to settle after aborting it. A
+ * storage that honours the abort settles at once; one that ignores it must not hold every later
+ * write for the rest of the page.
+ */
+const SUPERSEDED_WRITE_GRACE_MS = 10_000;
+
+/** Settles when `write` does, or after `ms`, whichever comes first. `write` never rejects. */
+function settledWithin(write: Promise<void>, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    void write.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+/**
  * Consent Manager - orchestrates consent flow
  */
 export class ConsentManager {
@@ -90,11 +108,16 @@ export class ConsentManager {
   private destroyed = false;
   /** Tail of the remote consent writes, which run one after another. */
   private remoteWrite: Promise<void> = Promise.resolve();
+  /** Aborts the latest remote write once a newer decision supersedes it. */
+  private remoteWriteAbort: AbortController | null = null;
+  /** Remote writes started so far; tells a write whether a newer one began while it ran. */
+  private remoteWritesStarted = 0;
   /** Advanced by resetConsent(): a remote id returned for an earlier identity is not kept. */
   private identityGeneration = 0;
   /**
-   * The choice made on this page. It takes precedence over the cookie, which may be blocked or
-   * fail to write, so tracking and the script blocker follow the visitor's latest decision.
+   * The choice made on this page. It stands in for the cookie, which may be blocked or fail to
+   * write, so tracking and the script blocker follow the visitor's latest decision; a cookie
+   * written since (another tab) supersedes it.
    */
   private pageChoice: StoredConsent | null = null;
   /**
@@ -400,7 +423,9 @@ export class ConsentManager {
    */
   private choiceRecord(categories: Omit<ConsentCategories, "necessary">): StoredConsent {
     return {
-      categories,
+      // Its own copy: the object passed in also goes to the consent callbacks, and an edit they
+      // make to it must not change the choice kept for this page.
+      categories: { ...categories },
       timestamp: Date.now(),
       version: this.config.version ?? DEFAULT_CONFIG.version,
       isEU: this.isEU ?? undefined,
@@ -437,13 +462,21 @@ export class ConsentManager {
 
       // Writes of the one remote record run one at a time, so an older write cannot finish
       // after a newer one and overwrite it. A write still queued when a newer decision arrives
-      // is dropped: that decision writes for itself. Running inside the chain also turns a set()
-      // that throws synchronously into a rejection instead of aborting the visitor's choice.
-      this.remoteWrite = this.remoteWrite
+      // is dropped: that decision writes for itself; one in flight is aborted and waited for at
+      // most SUPERSEDED_WRITE_GRACE_MS. Running inside the chain also turns a set() that throws
+      // synchronously into a rejection instead of aborting the visitor's choice.
+      this.remoteWriteAbort?.abort();
+      const controller = new AbortController();
+      this.remoteWriteAbort = controller;
+      this.remoteWrite = settledWithin(this.remoteWrite, SUPERSEDED_WRITE_GRACE_MS)
         .then(async () => {
           if (this.consentEpoch !== epoch) return;
-          const id = await storage.set(this.userId, consent);
-          if (!id || this.identityGeneration !== identity) return;
+          const started = ++this.remoteWritesStarted;
+          const id = await storage.set(this.userId, consent, controller.signal);
+          // A write that settled past the grace period is behind a newer one already running,
+          // which keeps its own id; an id that arrived in time is still carried forward.
+          if (!id || this.remoteWritesStarted !== started) return;
+          if (this.identityGeneration !== identity) return;
           // The record this write created is the visitor's: a newer write queued behind it
           // updates the same record instead of creating a second one. A reset since then started
           // a new identity, so the id is dropped.
@@ -707,21 +740,30 @@ export class ConsentManager {
   }
 
   /**
-   * Get the visitor's choice (a grant or a refusal): the one made on this page, else the stored
-   * one, or null while the visitor is undecided
+   * Get the visitor's choice (a grant or a refusal): the stored one, or the one made on this page
+   * while the cookie lacks it (blocked, or older); null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
+    const consent = this.choiceInEffect();
     // A copy, like the snapshot parsed from the cookie: editing the result must not change the
     // consent in effect before the visitor saves it.
-    if (this.pageChoice) {
-      return { ...this.pageChoice, categories: { ...this.pageChoice.categories } };
+    if (consent !== null && consent === this.pageChoice) {
+      return { ...consent, categories: { ...consent.categories } };
     }
-    return getStoredConsent(this.config);
+    return consent;
   }
 
-  /** The choice in effect, read without the copy getConsent() hands out (internal reads only). */
+  /**
+   * The choice in effect, read without the copy getConsent() hands out (internal reads only).
+   * The cookie is shared by every tab: one written no earlier than this page's choice is this
+   * choice or a later one made elsewhere (a withdrawal in another tab), and it wins. The page's
+   * own choice stands while the cookie is missing, older, or cannot be read.
+   */
   private choiceInEffect(): StoredConsent | null {
-    return this.pageChoice ?? getStoredConsent(this.config);
+    const stored = getStoredConsent(this.config);
+    const own = this.pageChoice;
+    if (own === null) return stored;
+    return stored !== null && stored.timestamp >= own.timestamp ? stored : own;
   }
 
   /**

@@ -57,8 +57,14 @@ export interface StoredConsent {
 export interface ConsentStorage {
   /** Fetch stored consent by user ID. Return null if not found or version mismatch. */
   get(uid: string, version: string): Promise<StoredConsent | null>;
-  /** Save consent. Return user ID (may generate a new one if uid is null). */
-  set(uid: string | null, consent: StoredConsent): Promise<string | null>;
+  /**
+   * Save consent. Return user ID (may generate a new one if uid is null).
+   *
+   * `signal` aborts when a newer choice supersedes this write; stop the request then (pass it
+   * to `fetch`). A write that ignores it is waited for at most 10 seconds before the newer
+   * write starts, and may then still land after it.
+   */
+  set(uid: string | null, consent: StoredConsent, signal?: AbortSignal): Promise<string | null>;
 }
 
 /**

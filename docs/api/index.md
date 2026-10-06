@@ -61,7 +61,7 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie.
+Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie; a choice saved later in another tab replaces it.
 
 ```typescript
 const consent = manager.getConsent();
@@ -194,7 +194,7 @@ await initGoogleAnalytics(
 Set `sendPageView` to `false` for SPA apps where you track navigation manually.
 `waitForUpdate` (default `500`) is how long tags hold their first hits for a consent update; `0` omits `wait_for_update`. If gtag.js is already on the page, the defaults come too late to apply, so the same signals follow as an update.
 
-Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default` after the tag has loaded (Consent Mode expects defaults only before it loads) and another `config`, which counts another page view. `ConsentManager` does this for you.
+Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default`, and Consent Mode applies defaults only before the tag loads, so once it has loaded that default changes nothing. `js` and `config` are queued once per measurement ID, so calling it again after a failed load retries the script without a second page view. `ConsentManager` does this for you.
 
 ## Storage Functions
 

@@ -94,9 +94,14 @@ async function initWithPendingTag(
   return { manager, initDone };
 }
 
-/** Settles the one gtag.js on the page the way a browser would. */
-function settlePendingTag(outcome: "load" | "error"): void {
-  gtagScripts()[0].dispatchEvent(new Event(outcome));
+/**
+ * Settles the gtag.js element the way a browser would: a script that loads runs, and gtag.js
+ * registers its measurement ID while running, before the load event. `index` picks the element
+ * when an earlier one was given up on and stays on the page.
+ */
+function settlePendingTag(outcome: "load" | "error", index = 0): void {
+  if (outcome === "load") markTagRan();
+  gtagScripts()[index].dispatchEvent(new Event(outcome));
 }
 
 /** One consent default, one `js`, one `config`, and exactly these updates. */
@@ -151,6 +156,7 @@ beforeEach(() => {
           node.src === GTAG_SRC &&
           scriptOutcome !== "manual"
         ) {
+          if (scriptOutcome === "load") markTagRan();
           node.dispatchEvent(new Event(scriptOutcome));
         }
       }
@@ -253,6 +259,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   it("keeps the update wait when another gtag.js is still downloading", async () => {
     // A script element alone does not mean the tag ran: the undecided visitor's default is
     // still on time and must keep holding the first hits for the banner's answer.
+    scriptOutcome = "manual";
     preloadGtagScript(false);
 
     await euManager().init();
@@ -455,8 +462,8 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   });
 
   it("sends no events after the visitor rejects on this page", async () => {
-    // A refusal is not stored, but on the page where it was made tracking calls stay
-    // suppressed; a later grant on the same page lets them through again.
+    // The refusal is stored and tracking calls stay suppressed on the page where it was made;
+    // a later grant on the same page lets them through again.
     const manager = euManager();
     await manager.init();
 
@@ -602,6 +609,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await manager.init();
 
     await manager.acceptAll();
+    await settle();
     await manager.savePreferences({ analytics: true, marketing: false });
     await settle();
     pending[0]?.();
@@ -720,6 +728,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await manager.init();
 
     await manager.acceptAll();
+    await settle();
     await manager.savePreferences({ analytics: true, marketing: false });
     await settle();
     expect(set).toHaveBeenCalledTimes(1);
@@ -890,7 +899,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     await manager.acceptAll();
     expect(gtagScripts()).toHaveLength(2);
     expect(gtagScripts()[0]).toBe(host);
-    settlePendingTag("load");
+    settlePendingTag("load", 1);
     await settle();
     expect(count("config")).toBe(1);
   });
@@ -1017,6 +1026,147 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(consentCalls("default")).toEqual([DENIED]);
     expect(consentCalls("update")).toEqual([]);
+  });
+
+  it("keeps the choice when a consent callback edits the categories it received", async () => {
+    // Regression: the page's choice kept the object handed to the callbacks, so an edit to it
+    // changed the consent in effect without saving it or updating Google's signals.
+    Object.defineProperty(document, "cookie", {
+      get: () => "",
+      set: () => {},
+      configurable: true,
+    });
+    const received: Array<{ analytics: boolean }> = [];
+    const manager = euManager({ onConsentChange: (consent) => received.push(consent.categories) });
+    manager.onConsentChange((categories) => received.push(categories));
+    await manager.init();
+    await manager.rejectAll();
+
+    for (const categories of received) categories.analytics = true;
+    const events = count("event");
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(events);
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("follows a refusal another tab saved after this page's grant", async () => {
+    // Regression: the grant kept for this page took precedence over the shared cookie, so a
+    // withdrawal made in another tab did not stop this tab's tracking calls.
+    const thisTab = euManager();
+    await thisTab.init();
+    await thisTab.acceptAll();
+
+    const otherTab = euManager();
+    await otherTab.init();
+    await otherTab.rejectAll();
+
+    const events = count("event");
+    thisTab.trackEvent("sign_up");
+    thisTab.trackPageView("/after-withdrawal");
+    expect(count("event")).toBe(events);
+    expect(thisTab.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("aborts a pending remote write when a newer choice is made", async () => {
+    // Regression: remote writes ran one after another, so a write that never settled held
+    // every later choice back from the remote record for the rest of the page.
+    const set = vi.fn<ConsentStorage["set"]>(
+      (_uid, _consent, signal) =>
+        new Promise<string | null>((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(signal.reason))
+        )
+    );
+    const manager = euManager({ storage: { get: async () => null, set } });
+    await manager.init();
+
+    await manager.acceptAll();
+    await settle();
+    await manager.rejectAll();
+    await settle();
+
+    expect(set.mock.calls[0]?.[2]?.aborted).toBe(true);
+    expect(set).toHaveBeenCalledTimes(2);
+    expect(set.mock.calls[1]?.[1].categories.analytics).toBe(false);
+  });
+
+  it("stops waiting for a superseded remote write that ignores the abort", async () => {
+    // A custom storage may not take the signal; its write still must not hold later choices.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const set = vi.fn<ConsentStorage["set"]>(() => new Promise<string | null>(() => {}));
+      const manager = euManager({ storage: { get: async () => null, set } });
+      await manager.init();
+
+      await manager.acceptAll();
+      await vi.advanceTimersByTimeAsync(0);
+      await manager.rejectAll();
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(set).toHaveBeenCalledTimes(2);
+      expect(set.mock.calls[1]?.[1].categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not count its own gtag.js load that did not register the measurement ID", async () => {
+    // Regression: a script that fired load without running the tag (a blocker's stand-in)
+    // counted as loaded, so the failure was neither reported nor retried.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      scriptOutcome = "manual";
+      const onGoogleAnalyticsError = vi.fn();
+      const manager = euManager({ onGoogleAnalyticsError });
+      await manager.init();
+
+      gtagScripts()[0].dispatchEvent(new Event("load"));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
+
+      await manager.acceptAll();
+      expect(gtagScripts()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not count another integration's gtag.js load that did not register the ID", async () => {
+    // Same as above for an element the site added itself.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      scriptOutcome = "manual";
+      preloadGtagScript(false);
+      const onGoogleAnalyticsError = vi.fn();
+      const manager = euManager({ onGoogleAnalyticsError });
+      await manager.init();
+
+      gtagScripts()[0].dispatchEvent(new Event("load"));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts a load whose tag registers the measurement ID only after the load event", async () => {
+    // The deadline, not the load event, is the last word: a tag that is up by then has loaded.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      scriptOutcome = "manual";
+      const onGoogleAnalyticsError = vi.fn();
+      const manager = euManager({ onGoogleAnalyticsError });
+      await manager.init();
+
+      gtagScripts()[0].dispatchEvent(new Event("load"));
+      markTagRan();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(onGoogleAnalyticsError).not.toHaveBeenCalled();
+
+      await manager.acceptAll();
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
