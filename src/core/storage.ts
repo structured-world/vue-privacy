@@ -97,7 +97,15 @@ async function fetchWithRetry(
 export function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
 
-  const cookies = document.cookie.split(";");
+  // document.cookie throws a SecurityError in a sandboxed (opaque-origin) document; there is
+  // nothing stored to read then.
+  let jar: string;
+  try {
+    jar = document.cookie;
+  } catch {
+    return null;
+  }
+  const cookies = jar.split(";");
   for (const cookie of cookies) {
     const [key, value] = cookie.trim().split("=");
     if (key === name) {
@@ -144,7 +152,19 @@ export function setCookie(
     cookieString += "; Secure";
   }
 
-  document.cookie = cookieString;
+  writeCookie(cookieString);
+}
+
+/**
+ * Cookie storage is best-effort: in a sandboxed (opaque-origin) document the write throws a
+ * SecurityError, and a visitor's choice must still take effect on the page without it.
+ */
+function writeCookie(cookie: string): void {
+  try {
+    document.cookie = cookie;
+  } catch {
+    // Nothing to persist into; the consent manager keeps this page's choice in memory.
+  }
 }
 
 /**
@@ -154,7 +174,7 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
   if (typeof document === "undefined") return;
   let cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=${path}`;
   if (domain) cookie += `; domain=${domain}`;
-  document.cookie = cookie;
+  writeCookie(cookie);
 }
 
 /**

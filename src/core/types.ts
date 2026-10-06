@@ -371,6 +371,13 @@ export interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * Called when gtag.js fails to load (an ad blocker, a network error). The consent flow is
+   * not affected: the banner still shows and choices are saved; the next consent change
+   * retries the load.
+   */
+  onGoogleAnalyticsError?: (error: unknown) => void;
+
+  /**
    * Remote consent storage implementation.
    * When set, consent is persisted remotely and cookie is used
    * only for re-identification. No cookies are set before consent.

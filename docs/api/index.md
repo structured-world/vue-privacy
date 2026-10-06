@@ -11,11 +11,11 @@ The core API is framework-agnostic and can be used without Vue.
 Creates a consent manager instance.
 
 ```typescript
-import { createConsentManager } from '@structured-world/vue-privacy';
+import { createConsentManager } from "@structured-world/vue-privacy";
 
 const manager = createConsentManager({
-  gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  gaId: "G-XXXXXXXXXX",
+  euDetection: "auto",
 });
 ```
 
@@ -39,15 +39,17 @@ await manager.acceptAll();
 
 #### `rejectAll(): Promise<void>`
 
-Reject all non-essential categories.
+Reject all non-essential categories. The refusal is stored like a grant, for the consent cookie's lifetime (`cookie.expiry`, 365 days by default), and replaces an earlier grant; the banner does not ask again on every page.
 
 ```typescript
 await manager.rejectAll();
 ```
 
+The consent signals, the stored choice and the closed banner take effect at once, as for `acceptAll()` and `savePreferences()`. `config` is queued together with the first consent default, so events tracked at any later point follow it, even while gtag.js is still loading.
+
 #### `savePreferences(categories): Promise<void>`
 
-Save specific category preferences.
+Save specific category preferences. Every choice is stored, a refusal included.
 
 ```typescript
 await manager.savePreferences({
@@ -59,22 +61,22 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get current stored consent.
+Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie.
 
 ```typescript
 const consent = manager.getConsent();
 if (consent) {
-  console.log('Analytics:', consent.categories.analytics);
+  console.log("Analytics:", consent.categories.analytics);
 }
 ```
 
 #### `hasConsent(): boolean`
 
-Check if user has given consent.
+Check if the visitor has chosen: `true` after a grant and after a refusal, whenever `getConsent()` returns a choice. Use `getConsent()` to see which categories it allows.
 
 ```typescript
 if (manager.hasConsent()) {
-  // User has made a choice
+  // The visitor has chosen
 }
 ```
 
@@ -92,11 +94,11 @@ if (manager.isEUUser()) {
 
 Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
 
-Events are always sent to Google Analytics. When analytics consent is denied, Google Consent Mode prevents the data from being stored. If a user has explicitly denied analytics consent (stored in cookie), the event is not sent at all.
+While the visitor has not chosen, the event is sent under the Consent Mode defaults (analytics denied), so Google receives it as a cookieless ping and stores no identifiers. Once the visitor's choice leaves analytics off, the manager sends nothing.
 
 ```typescript
-manager.trackPageView('/docs/guide');
-manager.trackPageView('/docs/api', 'API Reference');
+manager.trackPageView("/docs/guide");
+manager.trackPageView("/docs/api", "API Reference");
 ```
 
 ::: tip
@@ -115,7 +117,7 @@ if (manager.isInitialized()) {
 
 #### `resetConsent(): void`
 
-Clear stored consent and show banner again.
+Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
 
 ```typescript
 manager.resetConsent();
@@ -128,13 +130,13 @@ manager.resetConsent();
 Set initial consent state before loading gtag.js.
 
 ```typescript
-import { setConsentDefaults } from '@structured-world/vue-privacy';
+import { setConsentDefaults } from "@structured-world/vue-privacy";
 
 setConsentDefaults({
-  analytics_storage: 'denied',
-  ad_storage: 'denied',
-  ad_user_data: 'denied',
-  ad_personalization: 'denied',
+  analytics_storage: "denied",
+  ad_storage: "denied",
+  ad_user_data: "denied",
+  ad_personalization: "denied",
 });
 ```
 
@@ -143,10 +145,10 @@ setConsentDefaults({
 Update consent signals after user choice.
 
 ```typescript
-import { updateConsent } from '@structured-world/vue-privacy';
+import { updateConsent } from "@structured-world/vue-privacy";
 
 updateConsent({
-  analytics_storage: 'granted',
+  analytics_storage: "granted",
 });
 ```
 
@@ -155,24 +157,44 @@ updateConsent({
 Low-level function that always sends a `page_view` event to Google Analytics without checking consent state. Google Consent Mode controls whether data is stored. For consent-aware tracking that skips sending events when analytics is denied, use `ConsentManager.trackPageView()` or the `useConsent()` composable instead.
 
 ```typescript
-import { trackPageView } from '@structured-world/vue-privacy';
+import { trackPageView } from "@structured-world/vue-privacy";
 
-trackPageView('/new-page');
-trackPageView('/new-page', 'Custom Title');
+trackPageView("/new-page");
+trackPageView("/new-page", "Custom Title");
 ```
 
 ### initGoogleAnalytics
 
-Initialize Google Analytics with Consent Mode.
+Initialize Google Analytics with Consent Mode: `consent default`, `js` and `config` are queued, then gtag.js loads and processes them.
 
 ```typescript
-import { initGoogleAnalytics } from '@structured-world/vue-privacy';
+import { initGoogleAnalytics } from "@structured-world/vue-privacy";
 
-// Args: gaId, defaultDenied, sendPageView
-await initGoogleAnalytics('G-XXXXXXXXXX', true, false);
+// Args: gaId, defaults, sendPageView, waitForUpdate
+await initGoogleAnalytics("G-XXXXXXXXXX", true, false);
 ```
 
+Or, instead of the call above, per-signal defaults, e.g. for a returning visitor who allowed analytics only. The choice is already final, so `waitForUpdate` is `0`:
+
+```typescript
+await initGoogleAnalytics(
+  "G-XXXXXXXXXX",
+  {
+    analytics_storage: "granted",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
+  },
+  false,
+  0
+);
+```
+
+`defaults` is `true` (deny every signal), `false` (grant every signal) or the signals themselves.
 Set `sendPageView` to `false` for SPA apps where you track navigation manually.
+`waitForUpdate` (default `500`) is how long tags hold their first hits for a consent update; `0` omits `wait_for_update`. If gtag.js is already on the page, the defaults come too late to apply, so the same signals follow as an update.
+
+Call it once per page. Every later change goes through `updateConsent()`: a second call issues another `consent default` after the tag has loaded (Consent Mode expects defaults only before it loads) and another `config`, which counts another page view. `ConsentManager` does this for you.
 
 ## Storage Functions
 
@@ -181,9 +203,9 @@ Set `sendPageView` to `false` for SPA apps where you track navigation manually.
 Read consent from cookie.
 
 ```typescript
-import { getStoredConsent } from '@structured-world/vue-privacy';
+import { getStoredConsent } from "@structured-world/vue-privacy";
 
-const consent = getStoredConsent({ cookie: { name: 'my_consent' } });
+const consent = getStoredConsent({ cookie: { name: "my_consent" } });
 ```
 
 ### storeConsent
@@ -191,7 +213,7 @@ const consent = getStoredConsent({ cookie: { name: 'my_consent' } });
 Write consent to cookie.
 
 ```typescript
-import { storeConsent } from '@structured-world/vue-privacy';
+import { storeConsent } from "@structured-world/vue-privacy";
 
 storeConsent({
   categories: { analytics: true, marketing: false, functional: true },
@@ -203,7 +225,7 @@ storeConsent({
 Delete consent cookie.
 
 ```typescript
-import { clearConsent } from '@structured-world/vue-privacy';
+import { clearConsent } from "@structured-world/vue-privacy";
 
 clearConsent();
 ```
@@ -213,29 +235,29 @@ clearConsent();
 Create a remote consent storage backed by a Cloudflare KV Worker (vue-privacy-worker compatible API).
 
 ```typescript
-import { createConsentManager, createKVStorage } from '@structured-world/vue-privacy';
+import { createConsentManager, createKVStorage } from "@structured-world/vue-privacy";
 
 // Basic usage
 const manager = createConsentManager({
-  gaId: 'G-XXXXXXXXXX',
-  storage: createKVStorage('/api/consent'),
+  gaId: "G-XXXXXXXXXX",
+  storage: createKVStorage("/api/consent"),
 });
 
 // With rate limiting options
-const storage = createKVStorage('/api/consent', {
+const storage = createKVStorage("/api/consent", {
   maxRetries: 5,
   onRateLimited: (retryAfter, attempt) => {
-    console.log(`Rate limited (attempt ${attempt}). Retry in ${retryAfter ?? 'exponential'}s`);
+    console.log(`Rate limited (attempt ${attempt}). Retry in ${retryAfter ?? "exponential"}s`);
   },
 });
 ```
 
 #### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `maxRetries` | `number` | `3` | Total fetch attempts on 429 (1 initial + N-1 retries) |
-| `onRateLimited` | `function` | - | Callback invoked on each 429 response |
+| Option          | Type       | Default | Description                                           |
+| --------------- | ---------- | ------- | ----------------------------------------------------- |
+| `maxRetries`    | `number`   | `3`     | Total fetch attempts on 429 (1 initial + N-1 retries) |
+| `onRateLimited` | `function` | -       | Callback invoked on each 429 response                 |
 
 #### Rate Limiting Behavior
 
@@ -246,5 +268,6 @@ When the server returns a 429 (Too Many Requests) response:
 3. **Graceful fallback**: After max retries, returns `null` (consent stored locally via cookie only)
 
 The `onRateLimited` callback receives:
+
 - `retryAfter` - Delay from server's Retry-After header (in seconds), or `null` if not provided
 - `attempt` - Current attempt number (1-based)

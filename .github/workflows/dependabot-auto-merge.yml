@@ -1,0 +1,191 @@
+name: Dependabot Auto-Merge
+
+# Arms GitHub auto-merge on every Dependabot pull request. The merge itself happens only once
+# the required status checks on main (the whole CI pipeline: lint, type check, build, dist
+# verification, tests, docs build, review threads) pass on a head that is up to date with
+# main; a failing pipeline leaves it open.
+#
+# `pull_request_target`, not `pull_request`, because of how Dependabot runs are isolated: a
+# workflow triggered by Dependabot on `pull_request` receives Dependabot secrets rather than
+# Actions secrets, so the organisation's RELEASER_APP_* secrets resolve to empty strings and
+# the App token step fails before it does anything. `pull_request_target` runs in the base
+# branch's context, where those secrets are available.
+#
+# That context carries write-capable credentials, so this workflow must never execute code
+# from the pull request. It does not: there is no checkout, and every step either reads PR
+# metadata through the API or drives `gh`. Do not add a checkout here; if one ever becomes
+# necessary, it must not use the head ref.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  # main requires pull requests to be up to date before merging, and Dependabot rebases only
+  # on conflicts: after each merge the remaining armed pull requests are brought up to date.
+  push:
+    branches: [main]
+
+# One run per pull request (or per push to main), and a new event cancels the run it
+# superseded rather than leaving it racing toward a head that no longer exists.
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Approving, disarming and merging are done with the App token below.
+    permissions: {}
+    # Only the author here. Who triggered the run decides what the job does, not whether it
+    # runs at all: a push by anyone else is the case that has to be handled.
+    if: >-
+      github.event_name == 'pull_request_target'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+
+    steps:
+      # Pinned to a commit SHA, not a tag, because `pull_request_target` puts the App's private
+      # key within reach of whatever it resolves to.
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASER_APP_ID }}
+          private-key: ${{ secrets.RELEASER_APP_PRIVATE_KEY }}
+          # `pull-requests` to approve, to read whether auto-merge is armed and to disarm it;
+          # `contents` because merging writes to the branch.
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Auto-merge, once enabled, outlives the head it was enabled for: a maintainer adding
+      # commits to an open Dependabot pull request would otherwise have them merged. A run
+      # caused by anyone other than Dependabot or the release bot (which only merges main into
+      # the branch, below) therefore disarms it. `github.actor` is who caused the event and a
+      # rerun keeps it, so this holds on every attempt. A reopen moves no head: it is handled by
+      # the approval step below, whose commit check decides whether to arm.
+      - name: Disarm auto-merge when someone else moved the head
+        if: >-
+          github.event.action != 'reopened'
+          && github.actor != 'dependabot[bot]' && github.actor != 'sw-release-bot[bot]'
+        # The head is checked because disarming has no precondition of its own; without it a
+        # slow run from one push could disable what a later Dependabot run armed. Every value
+        # arrives through the environment, never interpolated into the script.
+        run: |
+          state=$(gh pr view "$PR_NUMBER" --json autoMergeRequest,headRefOid \
+            --jq '"\(.autoMergeRequest != null) \(.headRefOid)"')
+          armed=${state%% *}
+          current=${state##* }
+          if [ "$current" != "$HEAD_SHA" ]; then
+            echo "head is now $current, not the $HEAD_SHA this run saw; leaving it to the later run"
+          elif [ "$armed" = "true" ]; then
+            gh pr merge --disable-auto "$PR_NUMBER"
+            echo "auto-merge disarmed: the head moved under a push by $PUSHER"
+            # The head check and the disarm are not atomic: a Dependabot update landing in
+            # between may already have been armed by its own run, which this just undid. Read
+            # the head again; arm it again only when every commit it adds over the base passes
+            # the same author check as the approval step (the newest commit alone may sit on
+            # top of the commit that caused this run).
+            new_head=$(gh pr view "$PR_NUMBER" --json headRefOid --jq .headRefOid)
+            if [ "$new_head" != "$HEAD_SHA" ]; then
+              foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${new_head}" \
+                --jq 'if .total_commits != (.commits | length) then error("comparison is incomplete")
+                      else [.commits[].author.login // "unknown"
+                            | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length
+                      end')
+              if [ "$foreign" = "0" ]; then
+                gh pr merge --auto --squash --match-head-commit "$new_head" "$PR_NUMBER"
+                echo "re-armed for $new_head, a Dependabot update that landed meanwhile"
+              fi
+            fi
+          else
+            echo "auto-merge was not armed; nothing to disarm"
+          fi
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PUSHER: ${{ github.triggering_actor }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+
+      # Every update type, majors included: the required checks are the gate. Both operations
+      # name the head this run inspected: the approval is recorded against that commit, and
+      # the merge refuses outright if the head has moved. A head the release bot produced by
+      # merging main into the branch is re-armed the same way, but only when every commit the
+      # head adds over the base is Dependabot's or the bot's merge: a merge can carry a
+      # maintainer's commit pushed just before it, whose own disarm run then sees a moved head.
+      # Author attribution is the check, not proof of origin: only someone with write access can
+      # push here, and they can merge a pull request themselves, so a forged author gains nothing.
+      # A comparison longer than one response fails the step rather than skipping commits.
+      # Unresolved review threads block the merge itself: the ruleset on main requires
+      # conversation resolution, which GitHub evaluates at merge time, so a thread opened after
+      # the CI gate passed still holds an armed auto-merge. Closing a pull request drops its
+      # auto-merge, so a reopen by anyone arms it again here, through the same commit check.
+      - name: Approve and enable auto-merge
+        if: >-
+          github.event.action == 'reopened'
+          || github.actor == 'dependabot[bot]' || github.actor == 'sw-release-bot[bot]'
+        run: |
+          foreign=$(gh api "repos/${GH_REPO}/compare/${BASE_REF}...${HEAD_SHA}" \
+            --jq 'if .total_commits != (.commits | length) then error("comparison is incomplete")
+                  else [.commits[].author.login // "unknown"
+                        | select(. != "dependabot[bot]" and . != "sw-release-bot[bot]")] | length
+                  end')
+          if [ "$foreign" != "0" ]; then
+            # The maintainer's own run may have skipped disarming because this head had already
+            # replaced theirs, so auto-merge armed for an earlier head can still be on.
+            current=$(gh pr view "$PR_NUMBER" --json autoMergeRequest,headRefOid \
+              --jq '"\(.autoMergeRequest != null) \(.headRefOid)"')
+            if [ "${current##* }" = "$HEAD_SHA" ] && [ "${current%% *}" = "true" ]; then
+              gh pr merge --disable-auto "$PR_NUMBER"
+            fi
+            echo "$HEAD_SHA carries $foreign commit(s) by someone else; auto-merge stays off"
+            exit 0
+          fi
+          gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}/reviews" \
+            -f event=APPROVE -f commit_id="$HEAD_SHA" --silent
+          gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_NUMBER"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+
+  update-behind:
+    runs-on: ubuntu-latest
+    # Listing and updating branches are done with the App token below.
+    permissions: {}
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASER_APP_ID }}
+          private-key: ${{ secrets.RELEASER_APP_PRIVATE_KEY }}
+          # `contents` to merge main into the pull request branch, `pull-requests` to list them.
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Merges main into every open Dependabot pull request that has auto-merge armed and is
+      # behind main (a merge, not a rebase: no history is rewritten). The push comes from the
+      # release bot, which the job above treats as trusted and re-arms; the new head then runs
+      # the full pipeline before it can merge.
+      - name: Bring armed Dependabot pull requests up to date with main
+        run: |
+          gh pr list --author "app/dependabot" --state open --limit 1000 \
+            --json number,headRefOid,autoMergeRequest \
+            --jq '.[] | select(.autoMergeRequest != null) | "\(.number) \(.headRefOid)"' |
+          while read -r number head; do
+            behind=$(gh api "repos/${GH_REPO}/compare/${MAIN_SHA}...${head}" --jq .behind_by)
+            if [ "$behind" -gt 0 ]; then
+              if gh pr update-branch "$number"; then
+                echo "#$number: merged main ($behind commits behind)"
+              else
+                echo "::warning::#$number could not be brought up to date with main"
+              fi
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          MAIN_SHA: ${{ github.sha }}
