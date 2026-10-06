@@ -144,6 +144,7 @@ beforeEach(() => {
   // earlier test's dataLayer array.
   delete (window as Partial<Window>).gtag;
   delete window.google_tag_manager;
+  delete (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
   vi.restoreAllMocks();
 
   // jsdom does not fetch scripts; settle each appended gtag.js the way the test asks.
@@ -1428,6 +1429,99 @@ describe("basic consent mode", () => {
     manager.trackPageView("/ccpa");
     manager.trackEvent("sign_up");
     expectNothingSentToGoogle();
+  });
+
+  /** The documented GA switch that stops a loaded tag from measuring for GA_ID. */
+  function analyticsDisabled(): unknown {
+    return (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
+  }
+
+  it("stops a loaded tag from measuring after analytics is withdrawn", async () => {
+    // Regression: the withdrawal only queued a denied update, so the loaded tag kept sending
+    // cookieless pings (enhanced measurement included) for the rest of the page.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    await manager.rejectAll();
+    expect(analyticsDisabled()).toBe(true);
+
+    await manager.acceptAll();
+    expect(analyticsDisabled()).toBe(false);
+  });
+
+  it("does not reload gtag.js on a refusal after a failed load", async () => {
+    // Regression: the grant had sent the defaults, so the refusal went on to load the tag,
+    // and the refusal itself caused a request to Google.
+    scriptOutcome = "error";
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    scriptOutcome = "manual";
+    await manager.rejectAll();
+    manager.resetConsent();
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("does not retry gtag.js for a refusal made while the load is pending", async () => {
+    // Regression: the refusal found the load in flight and scheduled a retry, which loaded the
+    // tag once the first attempt failed.
+    scriptOutcome = "manual";
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    expect(gtagScripts()).toHaveLength(1);
+
+    await manager.rejectAll();
+    settlePendingTag("error");
+    await settle();
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("loads the tag when another tab granted analytics", async () => {
+    // Regression: this tab never loaded the tag, so after the grant in another tab its tracking
+    // calls passed the consent check and were then lost (no gtag on the page).
+    const manager = basicManager();
+    await manager.init();
+    expectNothingSentToGoogle();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackEvent("sign_up");
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(1);
+    expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
+    expect(order().indexOf("config")).toBeLessThan(order().indexOf("event"));
+  });
+
+  it("stops the loaded tag when another tab withdrew analytics", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const events = count("event");
+      manager.trackEvent("sign_up");
+
+      expect(count("event")).toBe(events);
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the advanced mode as the default", async () => {

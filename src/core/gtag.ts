@@ -281,6 +281,20 @@ export function loadGtagScript(gaId: string): Promise<void> {
 }
 
 /**
+ * Switch Google Analytics measurement for one ID off or back on. A loaded tag under denied
+ * consent still sends cookieless pings (enhanced measurement included); the `ga-disable-<ID>`
+ * window property is Google's documented switch that stops the tag from sending anything for
+ * that ID (developers.google.com/analytics/devguides/collection/ga4/disable-analytics).
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param disabled - Whether measurement for `gaId` is off
+ */
+export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
+  if (typeof window === "undefined") return;
+  (window as unknown as Record<string, unknown>)[`ga-disable-${gaId}`] = disabled;
+}
+
+/**
  * Delete the cookies gtag.js sets for a GA4 measurement ID: `_ga` (client ID) and
  * `_ga_<ID without "G-">` (session state). gtag.js writes them on the highest domain the
  * browser accepts (its `cookie_domain: 'auto'`), which is not known here, so the deletion is

@@ -29,6 +29,7 @@ import {
   queueConsentUpdate,
   loadGtagScript,
   clearAnalyticsCookies,
+  setAnalyticsDisabled,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -101,6 +102,8 @@ export class ConsentManager {
   private routerCleanup: (() => void) | null = null;
   /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
+  /** Basic mode: the Google tag is set up and measuring, by the visitor's grant of analytics. */
+  private googleMeasuring = false;
   /** A gtag.js load attempt is in flight. */
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
@@ -612,7 +615,8 @@ export class ConsentManager {
    *
    * In basic mode Google gets nothing until a push carries the visitor's own grant of analytics:
    * until then pushes are dropped, and from then on they go out as in advanced mode. A push
-   * that leaves analytics denied also deletes the `_ga` cookies there.
+   * that leaves analytics denied also deletes the `_ga` cookies, switches the loaded tag's
+   * measurement off, and never starts or schedules a load of the tag.
    *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
@@ -621,10 +625,14 @@ export class ConsentManager {
    */
   private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean, implied = false): void {
     const gaId = this.config.gaId;
+    const basicDenied =
+      gaId !== undefined && this.basicMode && signals.analytics_storage === "denied";
     if (gaId && this.basicMode) {
-      const analyticsDenied = signals.analytics_storage === "denied";
-      if (analyticsDenied) clearAnalyticsCookies(gaId);
-      if (!this.gaDefaultsSent && (analyticsDenied || implied)) return;
+      if (basicDenied) clearAnalyticsCookies(gaId);
+      if (!this.gaDefaultsSent && (basicDenied || implied)) return;
+      // A tag that loaded, or is still loading, measures nothing once analytics is withdrawn.
+      setAnalyticsDisabled(gaId, basicDenied);
+      this.googleMeasuring = !basicDenied;
     }
     if (!gaId) {
       updateGoogleConsent(signals);
@@ -639,6 +647,11 @@ export class ConsentManager {
       queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
     if (!gaId) return;
+    if (basicDenied) {
+      // A refusal itself must not cause a request to Google: no load now and no retry later.
+      this.gaRetryOnFailure = false;
+      return;
+    }
 
     if (this.gaLoading) {
       // Should the attempt in flight fail, this push still gets its retry.
@@ -835,11 +848,19 @@ export class ConsentManager {
    * choice, advanced mode sends events under the Consent Mode defaults (cookieless pings);
    * basic mode sends nothing until the visitor allows analytics (a grant implied by the
    * jurisdiction is never stored there, so it is no choice).
+   *
+   * In basic mode the choice may have changed in another tab since this page last pushed
+   * consent (the cookie is shared): the Google tag is brought in line with it first, so a grant
+   * made elsewhere loads the tag here and a withdrawal made elsewhere stops it.
    */
   private analyticsSuppressed(): boolean {
     const consent = this.choiceInEffect();
-    if (this.basicMode) return consent === null || !consent.categories.analytics;
-    return consent !== null && !consent.categories.analytics;
+    if (!this.basicMode) return consent !== null && !consent.categories.analytics;
+    const allowed = consent !== null && consent.categories.analytics;
+    if (this.config.gaId && allowed !== this.googleMeasuring) {
+      this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
+    }
+    return !allowed;
   }
 
   /**

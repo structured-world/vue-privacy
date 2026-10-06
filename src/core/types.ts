@@ -382,7 +382,8 @@ export interface ConsentConfig {
    *   receives cookieless pings (page views, events) before any choice and after a refusal.
    * - `'basic'`: nothing reaches Google (no script, no dataLayer entry, no request) until the
    *   visitor explicitly allows analytics; a grant implied by the jurisdiction (CCPA, outside
-   *   consent jurisdictions) does not count. Withdrawing analytics deletes the `_ga` cookies.
+   *   consent jurisdictions) does not count. Withdrawing analytics switches a loaded tag off
+   *   (`ga-disable-<ID>`) and deletes the `_ga` cookies.
    *   Choose it when the site promises "Google Analytics only with consent"; Google then
    *   models no conversions for visitors who did not consent.
    * @default 'advanced'

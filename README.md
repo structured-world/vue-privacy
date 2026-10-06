@@ -221,7 +221,7 @@ interface ConsentConfig {
 |---|---|---|
 | gtag.js before a choice | loaded, all signals denied | not loaded |
 | Page views and events before a choice | sent as cookieless pings | dropped |
-| After a refusal | cookieless pings continue | nothing is sent; `_ga` cookies are deleted |
+| After a refusal | cookieless pings continue | nothing is sent: a loaded tag is switched off (`ga-disable-<ID>`), `_ga` cookies are deleted |
 | After analytics is allowed | full measurement | gtag.js loads, full measurement |
 | Google's conversion modelling | available | not available for visitors who did not consent |
 

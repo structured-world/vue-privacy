@@ -48,7 +48,7 @@ interface ConsentConfig {
    * Google receives cookieless pings before any choice and after a refusal.
    * 'basic': nothing reaches Google until the visitor allows analytics;
    * a grant implied by the jurisdiction does not count, and withdrawing
-   * analytics deletes the _ga cookies.
+   * analytics switches a loaded tag off and deletes the _ga cookies.
    * @default 'advanced'
    */
   consentMode?: "advanced" | "basic";
