@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/structured-world/vue-privacy/compare/v1.10.0...v1.10.1) (2026-10-06)
+
+### Bug Fixes
+
+* initialise Google Analytics once and upgrade dependencies ([#214](https://github.com/structured-world/vue-privacy/issues/214)) ([dc62b54](https://github.com/structured-world/vue-privacy/commit/dc62b54add9dc2cba6c8b33ef4a78d8acae6a1f6)), closes [#197](https://github.com/structured-world/vue-privacy/issues/197)
+* **release:** pin the changelog preset to a version semantic-release renders ([#220](https://github.com/structured-world/vue-privacy/issues/220)) ([8e4fee4](https://github.com/structured-world/vue-privacy/commit/8e4fee483324a857103c4f32fee7560c401996e6)), closes [#152](https://github.com/structured-world/vue-privacy/issues/152) [#219](https://github.com/structured-world/vue-privacy/issues/219)
+
 ## [1.10.0](https://github.com/structured-world/vue-privacy/compare/v1.9.0...v1.10.0) (2026-02-05)
 
 ### Features
