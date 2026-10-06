@@ -205,7 +205,9 @@ jobs:
               exit 1
             fi
           done
-          if [ "$PAGE_COUNT" -ge "$MAX_PAGES" ]; then
+          # Incomplete only when the last page still reported another one; a hundredth page with
+          # hasNextPage=false finished the scan.
+          if [ "$PAGE_COUNT" -ge "$MAX_PAGES" ] && [ "$HAS_NEXT" = "true" ]; then
             echo "Review thread scan incomplete; blocking for safety (fail-closed)." >> "$GITHUB_STEP_SUMMARY"
             echo "::error::Pagination limit reached while scanning review threads."
             exit 1

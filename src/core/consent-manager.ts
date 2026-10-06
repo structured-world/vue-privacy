@@ -601,8 +601,9 @@ export class ConsentManager {
           // A throwing callback must not break the consent flow.
         }
         // A consent change during this attempt found it in flight and started nothing, and no
-        // later change may come; retry for it now. Otherwise the next push retries.
-        if (this.gaRetryOnFailure) this.loadGtag(gaId);
+        // later change may come; retry for it now. Otherwise the next push retries. The error
+        // callback above may have destroyed the manager, so that is checked again here.
+        if (this.gaRetryOnFailure && !this.destroyed) this.loadGtag(gaId);
       }
     );
   }

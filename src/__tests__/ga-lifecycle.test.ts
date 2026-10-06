@@ -596,6 +596,22 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(hide).toHaveBeenCalledTimes(1);
   });
 
+  it("does not retry the tag load when the error callback destroys the manager", async () => {
+    // Regression: the destroy check ran before onGoogleAnalyticsError, so a callback that
+    // unmounted the app still let the pending retry append a script after teardown.
+    let current: ConsentManager | null = null;
+    const { manager, initDone } = await initWithPendingTag({
+      onGoogleAnalyticsError: () => current?.destroy(),
+    });
+    current = manager;
+    await initDone;
+    await manager.acceptAll();
+
+    settlePendingTag("error");
+    await settle();
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
   it("stops loading gtag.js once the manager is destroyed", async () => {
     // Regression: a load that failed after destroy() still reported the error and retried,
     // appending a new script for an app that had unmounted.
