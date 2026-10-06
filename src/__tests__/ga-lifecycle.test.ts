@@ -1524,6 +1524,49 @@ describe("basic consent mode", () => {
     }
   });
 
+  it("switches off a tag an earlier manager loaded when a fresh manager gets a refusal", async () => {
+    // Regression: the new instance had pushed nothing yet, so its refusal returned before the
+    // disable switch, and the tag the previous instance loaded kept measuring.
+    const first = basicManager();
+    await first.init();
+    await first.acceptAll();
+    first.destroy();
+    // The stored grant is gone (cleared in another tab), so the remounted manager has nothing to
+    // push before the refusal reaches it.
+    cookieStore = "";
+
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const second = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = second.init();
+    second.resetConsent();
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("keeps analytics scripts blocked for a grant implied by the jurisdiction", async () => {
+    // Regression: the implied grant reached the consent listeners (the script blocker among
+    // them, which unblocks exactly the categories it receives) with analytics allowed, so a
+    // blocked analytics script ran before the visitor allowed analytics.
+    const received: boolean[] = [];
+    const listened: boolean[] = [];
+    const manager = new ConsentManager({
+      gaId: GA_ID,
+      consentMode: "basic",
+      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+      onConsentChange: (consent) => received.push(consent.categories.analytics),
+    });
+    manager.onConsentChange((categories) => listened.push(categories.analytics));
+
+    await manager.init();
+
+    expect(received).toEqual([false]);
+    expect(listened).toEqual([false]);
+  });
+
   it("keeps the advanced mode as the default", async () => {
     // Without the option an undecided EU visitor still gets the denied default and the tag.
     await euManager().init();

@@ -613,26 +613,31 @@ export class ConsentManager {
    * later follows them; every later push is a `consent update`. Without `gaId` the site loads
    * gtag itself, so every push is an update.
    *
-   * In basic mode Google gets nothing until a push carries the visitor's own grant of analytics:
-   * until then pushes are dropped, and from then on they go out as in advanced mode. A push
-   * that leaves analytics denied also deletes the `_ga` cookies, switches the loaded tag's
-   * measurement off, and never starts or schedules a load of the tag.
+   * In basic mode Google gets nothing until a push allows analytics, which only the visitor's
+   * own choice does (applyConsent() turns a jurisdiction's grant into analytics denied): until
+   * then pushes are dropped, and from then on they go out as in advanced mode. A push that
+   * leaves analytics denied also deletes the `_ga` cookies, switches a tag already on the page
+   * off, and never starts or schedules a load of the tag.
    *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
-   * @param implied - The signals come from the jurisdiction (CCPA, outside consent
-   *   jurisdictions), not from the visitor's choice
    */
-  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean, implied = false): void {
+  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
     const gaId = this.config.gaId;
     const basicDenied =
       gaId !== undefined && this.basicMode && signals.analytics_storage === "denied";
     if (gaId && this.basicMode) {
-      if (basicDenied) clearAnalyticsCookies(gaId);
-      if (!this.gaDefaultsSent && (basicDenied || implied)) return;
-      // A tag that loaded, or is still loading, measures nothing once analytics is withdrawn.
-      setAnalyticsDisabled(gaId, basicDenied);
-      this.googleMeasuring = !basicDenied;
+      if (basicDenied) {
+        clearAnalyticsCookies(gaId);
+        // The tag may already run on the page (loaded by an earlier manager instance, a
+        // remount) whatever this instance has sent: it measures nothing once analytics is off.
+        setAnalyticsDisabled(gaId, true);
+        this.googleMeasuring = false;
+        if (!this.gaDefaultsSent) return;
+      } else {
+        setAnalyticsDisabled(gaId, false);
+        this.googleMeasuring = true;
+      }
     }
     if (!gaId) {
       updateGoogleConsent(signals);
@@ -695,8 +700,11 @@ export class ConsentManager {
    *
    * @param implied - Granted by the jurisdiction, not chosen by the visitor
    */
-  private applyConsent(categories: Omit<ConsentCategories, "necessary">, implied = false): void {
-    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true, implied);
+  private applyConsent(granted: Omit<ConsentCategories, "necessary">, implied = false): void {
+    // Basic mode allows analytics only on the visitor's own choice: a jurisdiction's grant leaves
+    // it off for Google, for the consent callbacks and for the script blocker alike.
+    const categories = implied && this.basicMode ? { ...granted, analytics: false } : granted;
+    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
     const epoch = this.consentEpoch;
 
     // Notify config callback

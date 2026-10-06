@@ -227,7 +227,7 @@ interface ConsentConfig {
 
 Cookieless pings still carry the visitor's IP address and browser data to Google, and several European regulators treat loading the tag and sending them as processing that needs consent. A site that promises "Google Analytics only with consent" needs `consentMode: 'basic'`.
 
-In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) loads no Google tag and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
+In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off (no Google tag, no `data-consent-category="analytics"` scripts unblocked, `analytics: false` in `onConsentChange`) and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
 
 ## Composables
 

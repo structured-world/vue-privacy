@@ -76,7 +76,7 @@ createConsentPlugin({
 });
 ```
 
-Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) loads no Google tag. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
+Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off, so it loads no Google tag and unblocks no `data-consent-category="analytics"` script. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
 
 ## Category Mapping
 
