@@ -371,11 +371,15 @@ export function clearAnalyticsCookies(gaId: string): void {
   const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
   const domains: (string | undefined)[] = [undefined, ...configured.domains];
   for (let i = 0; i < labels.length - 1; i++) domains.push(labels.slice(i).join("."));
-  const paths = ["/", ...configured.paths];
+  const paths = new Set(["/", ...configured.paths]);
   const segments = typeof location === "undefined" ? [] : location.pathname.split("/");
   for (let i = 2; i <= segments.length; i++) {
     const path = segments.slice(0, i).join("/");
-    if (path !== "" && path !== "/") paths.push(path);
+    if (path === "" || path === "/") continue;
+    paths.add(path);
+    // A cookie_path set outside the dataLayer may carry a trailing slash ("/shop/"); it
+    // covers this page only when it is an ancestor, so the page's own path gets none.
+    if (i < segments.length) paths.add(`${path}/`);
   }
 
   for (const name of names) {

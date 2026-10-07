@@ -53,6 +53,22 @@ describe("clearAnalyticsCookies", () => {
     expect(writes.some((w) => w.startsWith("site_ga=;") && w.includes("path=/page"))).toBe(true);
   });
 
+  it("deletes on the trailing-slash form of every ancestor path", () => {
+    // Regression: a cookie_path of "/shop/" set outside the dataLayer (a tag manager) was not
+    // among "/", "/shop" and "/shop/checkout", so the identifiers survived a withdrawal there.
+    window.history.replaceState(null, "", "/shop/checkout");
+    jar = "_ga=GA1.1.1";
+
+    clearAnalyticsCookies("G-TEST123");
+
+    const onPath = (path: string): boolean =>
+      writes.some((w) => w.startsWith("_ga=;") && w.includes(`path=${path};`));
+    expect(onPath("/shop/")).toBe(true);
+    expect(onPath("/shop")).toBe(true);
+    expect(onPath("/shop/checkout")).toBe(true);
+    window.history.replaceState(null, "", "/page");
+  });
+
   it("deletes on the cookie_path, cookie_prefix and cookie_domain the tag was configured with", () => {
     // Regression: a cookie_path outside the current route hides the cookies from
     // document.cookie, so they survived; the tag's own configuration names them.

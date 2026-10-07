@@ -1837,6 +1837,24 @@ describe("basic consent mode", () => {
     manager.destroy();
   });
 
+  it("sends only the current page view when a navigation finds a grant from another tab", async () => {
+    // Regression: the view held for a page the visitor had already left was sent before the
+    // current one, adding a page view the visitor never saw with analytics allowed.
+    const manager = basicManager({ sendPageView: false });
+    await manager.init();
+    manager.trackPageView("/landing");
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackPageView("/checkout");
+    await settle();
+
+    const views = commands().filter((c) => c[0] === "event" && c[1] === "page_view");
+    expect(views.map((v) => (v[2] as Record<string, unknown>).page_path)).toEqual(["/checkout"]);
+  });
+
   it("does not repeat the landing page view when config sends it", async () => {
     const manager = basicManager({ sendPageView: true });
     await manager.init();

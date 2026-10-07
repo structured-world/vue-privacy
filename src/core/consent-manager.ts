@@ -1009,9 +1009,14 @@ export class ConsentManager {
    * Before user makes a choice, page views are sent under Consent Mode defaults (cookieless pings).
    */
   trackPageView(path: string, title?: string): void {
-    if (this.analyticsSuppressed()) {
-      // Basic mode: the page in view is measured once the visitor allows analytics.
-      if (this.basicMode) this.pendingPageView = { path, title };
+    if (this.basicMode) {
+      // The page in view is measured once the visitor allows analytics. It replaces a view held
+      // for a page already left, and a grant found by the check below sends it (or the tag's
+      // first page view covers it), so it is not sent a second time here.
+      this.pendingPageView = { path, title };
+      if (this.analyticsSuppressed() || this.pendingPageView === null) return;
+      this.pendingPageView = null;
+    } else if (this.analyticsSuppressed()) {
       return;
     }
     gtagTrackPageView(path, title);
