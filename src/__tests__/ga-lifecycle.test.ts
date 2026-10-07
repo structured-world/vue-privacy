@@ -1808,6 +1808,41 @@ describe("basic consent mode", () => {
       expect(analyticsDisabled()).toBe(true);
     });
 
+    it("does not reload for a restored refusal while the site's own gtag.js runs", async () => {
+      // The site's own element comes back with every load, so a reload for it would never end.
+      preloadGtagScript(true);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("reloads once for a restored refusal while a previous manager's tag runs", async () => {
+      // Regression: a remounted manager restored the refusal another tab saved, but never
+      // reloaded for the tag the destroyed manager had loaded, so linked Ads/Floodlight
+      // destinations kept sending.
+      const first = basicManager();
+      await first.init();
+      await first.acceptAll();
+      await settle();
+      first.destroy();
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+
+      const second = basicManager({ reloadOnWithdrawal: true });
+      await second.init();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+    });
+
     it("gives the withdrawal's remote write its own grace period", async () => {
       // Regression: the reload's wait began before the withdrawal's write, behind a superseded
       // write that ignored its abort; the grace period ran out as the withdrawal write started,

@@ -31,6 +31,7 @@ import {
   clearAnalyticsCookies,
   setAnalyticsDisabled,
   isTagLiveFor,
+  isLibraryTagLiveFor,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -806,7 +807,7 @@ export class ConsentManager {
   private pushGoogleConsent(
     signals: GoogleConsentSignals,
     final: boolean,
-    mayReload: boolean
+    restoring: boolean
   ): void {
     const gaId = this.config.gaId;
     const previous = this.sentSignals;
@@ -816,7 +817,7 @@ export class ConsentManager {
     if (gaId && this.basicMode) {
       if (signals.analytics_storage === "granted") {
         startsMeasuring = this.switchAnalyticsOn(gaId, previous);
-      } else if (!this.switchAnalyticsOff(gaId, previous, mayReload) && firstSetup) {
+      } else if (!this.switchAnalyticsOff(gaId, previous, restoring) && firstSetup) {
         // A refusal before anything was sent, with no tag on the page: Google gets nothing.
         return;
       }
@@ -832,7 +833,7 @@ export class ConsentManager {
   private switchAnalyticsOff(
     gaId: string,
     previous: GoogleConsentSignals | null,
-    mayReload: boolean
+    restoring: boolean
   ): boolean {
     // The tag may already run on the page whatever this instance has sent (an earlier manager
     // instance loaded it before a remount), so it is told about a refusal all the same.
@@ -842,9 +843,12 @@ export class ConsentManager {
     // sending cookieless pings; only a reload stops a running tag. A marketing-only
     // withdrawal needs none: with analytics allowed the next page loads the same tag, and
     // the denied ad signals reach the running one as an update already. Analytics refused
-    // before was already withdrawn, so a repeated refusal reloads nothing.
-    const withdrawn = mayReload && previous?.analytics_storage !== "denied";
-    if (withdrawn && tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
+    // before was already withdrawn, so a repeated refusal reloads nothing. For the state init()
+    // found, only a tag this library loaded (a previous manager's, before a remount) counts:
+    // the site's own tag comes back with every load, and a reload for it would never end.
+    const withdrawn = previous?.analytics_storage !== "denied";
+    const stoppable = restoring ? isLibraryTagLiveFor(gaId) : tagRunning;
+    if (withdrawn && stoppable && this.config.reloadOnWithdrawal) this.scheduleReload();
     clearAnalyticsCookies(gaId);
     setAnalyticsDisabled(gaId, true);
     // A refusal itself must not cause a request to Google: no retry of a failed load either.
@@ -988,11 +992,10 @@ export class ConsentManager {
    * choice, init(), another tab, a tracking call). Returns whether analytics is allowed.
    *
    * @param final - The state is a decision, so tags need not hold their first hits for an update
-   * @param mayReload - A refusal may count as a withdrawal and reload (reloadOnWithdrawal). Not
-   *   for the state init() finds: a tag on a freshly loaded page is the site's own, comes back
-   *   with every load, and a reload for it would never end.
+   * @param restoring - The state init() found: a refusal in it reloads (reloadOnWithdrawal) only
+   *   for a tag this library loaded, never for the site's own, which comes back with every load.
    */
-  private reconcile(final = true, mayReload = true): boolean {
+  private reconcile(final = true, restoring = false): boolean {
     this.consentSettled = true;
     const epoch = this.consentEpoch;
     const { choice, categories, signals } = this.consentInEffect();
@@ -1009,7 +1012,7 @@ export class ConsentManager {
     this.actedOnRecord = choice?.timestamp ?? null;
     const googleChanged = this.sentSignals === null || !sameSignals(signals, this.sentSignals);
     const decided = googleChanged || newRecord;
-    if (decided) this.pushGoogleConsent(signals, final, mayReload);
+    if (decided) this.pushGoogleConsent(signals, final, restoring);
 
     if (categories === null) {
       // Undecided (a reset): the same grant made again later reaches the listeners as new.
@@ -1061,9 +1064,9 @@ export class ConsentManager {
     this.config.onBannerHide?.();
   }
 
-  /** Apply the consent init() found; see reconcile()'s `mayReload`. */
+  /** Apply the consent init() found; see reconcile()'s `restoring`. */
   private restore(final = true): void {
-    this.reconcile(final, false);
+    this.reconcile(final, true);
   }
 
   /** Load gtag.js for the consent just sent, unless it refuses analytics in basic mode. */

@@ -101,6 +101,12 @@ const stalledTags = new WeakSet<HTMLScriptElement>();
 /** gtag.js elements that fired error: they cannot run any more, timed out or not. */
 const failedTags = new WeakSet<HTMLScriptElement>();
 
+/**
+ * gtag.js elements this library appended on this page (any manager instance). Unlike a tag the
+ * site loads itself, one of these does not come back after a reload.
+ */
+const libraryTags = new WeakSet<HTMLScriptElement>();
+
 /** The JavaScript MIME type essences (HTML Living Standard, "JavaScript MIME type"). */
 const JAVASCRIPT_MIME_TYPES = new Set([
   "application/ecmascript",
@@ -153,6 +159,19 @@ export function isTagLiveFor(gaId: string): boolean {
   if (isTagLoadedFor(gaId)) return true;
   if (typeof document === "undefined") return false;
   return tagElementsFor(gaId).some((element) => !failedTags.has(element));
+}
+
+/**
+ * Whether a gtag.js element this library appended for this ID is on the page and has not
+ * failed: the tag may run, and a reload removes it for good.
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function isLibraryTagLiveFor(gaId: string): boolean {
+  if (typeof document === "undefined") return false;
+  return tagElementsFor(gaId).some(
+    (element) => libraryTags.has(element) && !failedTags.has(element)
+  );
 }
 
 /** Commands that produce or configure hits; consent must be settled before them. */
@@ -320,6 +339,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
     const script = document.createElement("script");
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
+    libraryTags.add(script);
     // A request that neither loads nor fails would otherwise hold every later attempt forever.
     const timer = setTimeout(() => {
       if (isTagLoadedFor(gaId)) {
