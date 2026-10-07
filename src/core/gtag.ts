@@ -1,4 +1,5 @@
 import type { GoogleConsentSignals, ConsentCategories } from "./types";
+import { deleteCookie } from "./storage";
 
 declare global {
   interface Window {
@@ -76,7 +77,7 @@ export function isGoogleTagLoaded(): boolean {
  * key of `window.google_tag_manager`; the object itself is page-wide and also exists for an
  * unrelated Tag Manager container, so its presence alone says nothing about this ID.
  */
-function isTagLoadedFor(gaId: string): boolean {
+export function isTagLoadedFor(gaId: string): boolean {
   if (typeof window === "undefined") return false;
   const tags = window.google_tag_manager;
   return typeof tags === "object" && tags !== null && gaId in tags;
@@ -96,6 +97,30 @@ const TAG_LOAD_TIMEOUT_MS = 10_000;
  * them again.
  */
 const stalledTags = new WeakSet<HTMLScriptElement>();
+
+/** gtag.js elements that fired error: they cannot run any more, timed out or not. */
+const failedTags = new WeakSet<HTMLScriptElement>();
+
+function tagElementsFor(gaId: string): HTMLScriptElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLScriptElement>(
+      `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+    )
+  );
+}
+
+/**
+ * Whether the Google tag for this ID runs on the page or still may: it ran, or an element for
+ * it is on the page and has not failed (a request in flight, or one past its timeout that can
+ * still arrive and run).
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function isTagLiveFor(gaId: string): boolean {
+  if (isTagLoadedFor(gaId)) return true;
+  if (typeof document === "undefined") return false;
+  return tagElementsFor(gaId).some((element) => !failedTags.has(element));
+}
 
 /** Commands that produce or configure hits; consent must be settled before them. */
 const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
@@ -226,11 +251,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
     }
 
     const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
-    const matching = Array.from(
-      document.querySelectorAll<HTMLScriptElement>(
-        `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
-      )
-    );
+    const matching = tagElementsFor(gaId);
     // Any element for this ID, one given up on as stalled included, may since have run: then
     // the tag is up and another element would only load it twice.
     if (matching.length > 0 && isTagLoadedFor(gaId)) {
@@ -251,7 +272,15 @@ export function loadGtagScript(gaId: string): Promise<void> {
         TAG_LOAD_TIMEOUT_MS
       );
       existing.addEventListener("load", () => settleOnLoad(timer, resolve, gaId), { once: true });
-      existing.addEventListener("error", fail, { once: true });
+      // Also after the timeout: the element then stops counting as a tag that may still run.
+      existing.addEventListener(
+        "error",
+        () => {
+          failedTags.add(existing);
+          fail();
+        },
+        { once: true }
+      );
       return;
     }
 
@@ -268,6 +297,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
       reject(failure());
     }, TAG_LOAD_TIMEOUT_MS);
     script.onload = () => settleOnLoad(timer, resolve, gaId);
+    // Also after the timeout, when the promise has settled: the element goes either way.
     script.onerror = () => {
       clearTimeout(timer);
       // A failed element would make the next attempt wait on it instead of retrying.
@@ -277,6 +307,130 @@ export function loadGtagScript(gaId: string): Promise<void> {
 
     document.head.appendChild(script);
   });
+}
+
+/** IDs whose `ga-disable-<ID>` switch this library turned on (any manager instance). */
+const disabledHere = new Set<string>();
+
+/**
+ * Switch Google Analytics measurement for one ID off or back on. A loaded tag under denied
+ * consent still sends cookieless pings (enhanced measurement included); the `ga-disable-<ID>`
+ * window property is Google's documented switch that stops the tag from sending anything for
+ * that ID (developers.google.com/analytics/devguides/collection/ga4/disable-analytics).
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param disabled - Whether measurement for `gaId` is off
+ */
+export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
+  if (typeof window === "undefined") return;
+  const flags = window as unknown as Record<string, unknown>;
+  const key = `ga-disable-${gaId}`;
+  if (disabled) {
+    if (flags[key] === true) return;
+    flags[key] = true;
+    disabledHere.add(gaId);
+    return;
+  }
+  // Only a switch this library set is lifted: one the site set itself is its own opt-out.
+  if (disabledHere.delete(gaId)) flags[key] = false;
+}
+
+/** Values gtag.js stores: `GA1.<n>.<id>.<time>` in `_ga`, `GS1.`/`GS2.` session state in `_ga_<ID>`. */
+const GA_COOKIE_VALUE = /^G[AS]\d\./;
+
+/** cookie_prefix / cookie_path / cookie_domain this page passed to the Google tag for an ID. */
+function configuredCookieSettings(gaId: string): {
+  prefixes: Set<string>;
+  paths: Set<string>;
+  domains: Set<string>;
+} {
+  const settings = {
+    prefixes: new Set([""]),
+    paths: new Set<string>(),
+    domains: new Set<string>(),
+  };
+  if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return settings;
+  for (const entry of window.dataLayer) {
+    const command = commandOf(entry);
+    if (command === null) continue;
+    // `set` applies to every tag on the page, `config` only to the ID it names. `set` also takes
+    // one setting as `gtag('set', 'cookie_path', '/path')`.
+    const params =
+      command[0] === "set"
+        ? typeof command[1] === "string"
+          ? { [command[1]]: command[2] }
+          : command[1]
+        : command[0] === "config" && command[1] === gaId
+          ? command[2]
+          : null;
+    if (typeof params !== "object" || params === null) continue;
+    const { cookie_prefix, cookie_path, cookie_domain } = params as Record<string, unknown>;
+    if (typeof cookie_prefix === "string") settings.prefixes.add(cookie_prefix);
+    if (typeof cookie_path === "string") settings.paths.add(cookie_path);
+    if (typeof cookie_domain === "string" && cookie_domain !== "auto" && cookie_domain !== "none") {
+      settings.domains.add(cookie_domain);
+    }
+  }
+  return settings;
+}
+
+/**
+ * Delete the cookies gtag.js sets for a GA4 measurement ID: `_ga` (client ID) and
+ * `_ga_<ID without "G-">` (session state), also under a `cookie_prefix` (`<prefix>_ga`,
+ * `<prefix>_ga_<ID>`). The prefix, path and domain the page configured the tag with are read
+ * from its `set` and `config` commands; beyond them, cookies visible here whose names end that
+ * way are deleted only when their value has GA's format, so a site cookie that merely shares the
+ * suffix (the consent cookie included) is kept. With the default `cookie_domain: 'auto'` the
+ * cookies sit on the highest domain the browser accepts, so the deletion is issued for the host
+ * and every parent domain, on "/" and every path prefix of this page; the combinations that do
+ * not match are no-ops.
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function clearAnalyticsCookies(gaId: string): void {
+  if (typeof document === "undefined") return;
+  const session = `_ga_${gaId.replace(/^G-/, "")}`;
+  const configured = configuredCookieSettings(gaId);
+  const names = new Set<string>();
+  for (const prefix of configured.prefixes) {
+    names.add(`${prefix}_ga`);
+    names.add(`${prefix}${session}`);
+  }
+  let jar = "";
+  try {
+    jar = document.cookie;
+  } catch {
+    // A sandboxed document has no readable cookies; the configured names are still deleted.
+  }
+  for (const entry of jar.split(";")) {
+    const separator = entry.indexOf("=");
+    if (separator < 0) continue;
+    const name = entry.slice(0, separator).trim();
+    const value = entry.slice(separator + 1).trim();
+    if ((name.endsWith("_ga") || name.endsWith(session)) && GA_COOKIE_VALUE.test(value)) {
+      names.add(name);
+    }
+  }
+
+  const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
+  const domains: (string | undefined)[] = [undefined, ...configured.domains];
+  for (let i = 0; i < labels.length - 1; i++) domains.push(labels.slice(i).join("."));
+  const paths = new Set(["/", ...configured.paths]);
+  const segments = typeof location === "undefined" ? [] : location.pathname.split("/");
+  for (let i = 2; i <= segments.length; i++) {
+    const path = segments.slice(0, i).join("/");
+    if (path === "" || path === "/") continue;
+    paths.add(path);
+    // A cookie_path set outside the dataLayer may carry a trailing slash ("/shop/"); it
+    // covers this page only when it is an ancestor, so the page's own path gets none.
+    if (i < segments.length) paths.add(`${path}/`);
+  }
+
+  for (const name of names) {
+    for (const path of paths) {
+      for (const domain of domains) deleteCookie(name, path, domain);
+    }
+  }
 }
 
 /**

@@ -44,6 +44,25 @@ interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * 'advanced': gtag.js loads for every visitor with denied defaults;
+   * Google receives cookieless pings before any choice and after a refusal.
+   * 'basic': nothing reaches Google until the visitor allows analytics;
+   * a grant implied by the jurisdiction does not count, and withdrawing
+   * analytics switches a loaded tag off and deletes the _ga cookies.
+   * Requires gaId: the manager loads the tag (the constructor throws without it).
+   * @default 'advanced'
+   */
+  consentMode?: "advanced" | "basic";
+
+  /**
+   * Basic mode: reload the page when analytics is withdrawn after the
+   * Google tag loaded, so products linked to that tag (Google Ads,
+   * Floodlight) stop too; the choice is saved first.
+   * @default false
+   */
+  reloadOnWithdrawal?: boolean;
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error).
    * The banner still shows and choices are still saved; the next consent
    * change retries the load.

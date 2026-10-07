@@ -23,7 +23,8 @@ beforeEach(() => {
     set: (value: string) => {
       const [nameValue] = value.split(";");
       const [name] = nameValue.split("=");
-      if (value.includes("1970")) {
+      // A deletion is an expiry in the past; the value itself may contain "1970" (a timestamp).
+      if (/;\s*expires=Thu, 01 Jan 1970/i.test(value)) {
         const cookies = cookieStore
           .split(";")
           .map((c) => c.trim())

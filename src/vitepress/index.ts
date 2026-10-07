@@ -74,10 +74,16 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
       // SSR-safe browser check — avoid importing inBrowser from vitepress
       // which is not available as a named export during SSR bundle compilation
       if (typeof window !== "undefined") {
+        // Navigations before init() resolves are not tracked on their own: the page view sent
+        // after init() counts the page in view, and counting it from the watcher too would
+        // report it twice.
+        let initialized = false;
+
         // Initialize consent manager
         manager
           .init()
           .then(() => {
+            initialized = true;
             // Track initial page view after init completes.
             // Before user choice: sent under Consent Mode defaults (cookieless).
             // After explicit denial (analytics: false): events are NOT sent.
@@ -94,6 +100,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
             });
           })
           .catch((err) => {
+            initialized = true;
             console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
           });
 
@@ -102,6 +109,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           watch(
             () => ctx.router.route.path,
             (path: string) => {
+              if (!initialized) return;
               // Capture frontmatter BEFORE nextTick to avoid race condition
               // (user might navigate again before nextTick fires)
               const frontmatter = ctx.router.route.data.frontmatter as

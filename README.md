@@ -148,6 +148,15 @@ interface ConsentConfig {
   // Google Analytics measurement ID
   gaId?: string;
 
+  // 'advanced' (default): gtag.js loads for every visitor with denied defaults and Google
+  //   receives cookieless pings before any choice and after a refusal.
+  // 'basic': nothing reaches Google until the visitor allows analytics. Requires gaId.
+  consentMode?: 'advanced' | 'basic';
+
+  // Basic mode: reload the page when analytics is withdrawn after the Google tag loaded, so
+  // products linked to that tag (Google Ads, Floodlight) stop too. Default: false
+  reloadOnWithdrawal?: boolean;
+
   // Locale for UI text (auto-detected if not set)
   // Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
   locale?: SupportedLocale;
@@ -209,6 +218,20 @@ interface ConsentConfig {
   onPreferenceCenterHide?: () => void;
 }
 ```
+
+### Basic or advanced Consent Mode
+
+| | `'advanced'` (default) | `'basic'` |
+|---|---|---|
+| gtag.js before a choice | loaded, all signals denied | not loaded |
+| Page views and events before a choice | sent as cookieless pings | not sent; events are dropped, the page view tracked last is sent once analytics is allowed (with `sendPageView: false`; otherwise the tag's own page view covers it) |
+| After a refusal | cookieless pings continue | nothing is sent: a loaded tag is switched off (`ga-disable-<ID>`), `_ga` cookies are deleted; products linked to the same tag (Google Ads, Floodlight) stop only on reload, see `reloadOnWithdrawal` |
+| After analytics is allowed | full measurement | gtag.js loads, full measurement |
+| Google's conversion modelling | available | not available for visitors who did not consent |
+
+Cookieless pings still carry the visitor's IP address and browser data to Google, and several European regulators treat loading the tag and sending them as processing that needs consent. A site that promises "Google Analytics only with consent" needs `consentMode: 'basic'`.
+
+In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off (no Google tag, no `data-consent-category="analytics"` scripts unblocked, `analytics: false` in `onConsentChange`) and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
 
 ## Composables
 
