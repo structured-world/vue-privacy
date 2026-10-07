@@ -353,10 +353,13 @@ function configuredCookieSettings(gaId: string): {
   for (const entry of window.dataLayer) {
     const command = commandOf(entry);
     if (command === null) continue;
-    // `set` applies to every tag on the page, `config` only to the ID it names.
+    // `set` applies to every tag on the page, `config` only to the ID it names. `set` also takes
+    // one setting as `gtag('set', 'cookie_path', '/path')`.
     const params =
       command[0] === "set"
-        ? command[1]
+        ? typeof command[1] === "string"
+          ? { [command[1]]: command[2] }
+          : command[1]
         : command[0] === "config" && command[1] === gaId
           ? command[2]
           : null;

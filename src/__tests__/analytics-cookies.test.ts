@@ -93,6 +93,24 @@ describe("clearAnalyticsCookies", () => {
     window.dataLayer = [];
   });
 
+  it("reads cookie settings given as gtag('set', name, value)", () => {
+    // Regression: only the object form of `set` was read, so a cookie_path set the other
+    // documented way, outside the current route, kept its identifiers after a withdrawal.
+    window.dataLayer = [
+      ["set", "cookie_path", "/analytics/"],
+      ["set", "cookie_prefix", "site"],
+    ];
+
+    clearAnalyticsCookies("G-TEST123");
+
+    expect(
+      writes.some(
+        (w) => w.startsWith("site_ga=;") && w.includes("path=/analytics/") && EXPIRED.test(w)
+      )
+    ).toBe(true);
+    window.dataLayer = [];
+  });
+
   it("leaves cookies whose names end like GA's but whose values are not GA's", () => {
     // Regression: any name ending in _ga was deleted, including a site cookie (or a consent
     // cookie) that merely shares the suffix.

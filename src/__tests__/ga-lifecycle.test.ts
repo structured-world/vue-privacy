@@ -1728,7 +1728,9 @@ describe("basic consent mode", () => {
       manager.destroy();
     });
 
-    it("does not reload a manager destroyed before the reload fires", async () => {
+    it("still reloads when the manager is destroyed before the reload fires", async () => {
+      // Regression: a consent callback that unmounted the app (destroying the manager) cancelled
+      // the reload, yet the page-wide tag and its linked destinations kept running.
       const manager = basicManager({ reloadOnWithdrawal: true });
       await manager.init();
       await manager.acceptAll();
@@ -1738,7 +1740,7 @@ describe("basic consent mode", () => {
       manager.destroy();
       await settle();
 
-      expect(reloadPage).not.toHaveBeenCalled();
+      expect(reloadPage).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -2029,6 +2031,89 @@ describe("basic consent mode", () => {
     window.dispatchEvent(new Event("focus"));
 
     expect(blocked.isConnected).toBe(false);
+  });
+
+  it("keeps the tag off when a listener refuses a grant another tab made", async () => {
+    // Regression: a listener that answered the cross-tab grant with a refusal was overridden
+    // by the stale grant: the sync then loaded the tag and let the tracking call through.
+    const manager = basicManager();
+    await manager.init();
+    manager.onConsentChange((categories) => {
+      if (categories.analytics) void manager.rejectAll();
+    });
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackEvent("sign_up");
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(0);
+    expect(commands().filter((c) => c[0] === "event")).toHaveLength(0);
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("follows a marketing withdrawal from another tab while analytics stays refused", async () => {
+    // Regression: with analytics already refused the sync compared nothing else, so the tag
+    // still on the page kept its ad signals granted after another tab withdrew marketing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      vi.setSystemTime(1_000_001);
+      await manager.savePreferences({ analytics: false, marketing: true });
+
+      vi.setSystemTime(1_000_002);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts even when the browser forbids a BroadcastChannel", async () => {
+    // Regression: in a sandboxed iframe without allow-same-origin the constructor throws a
+    // SecurityError, which made init() reject before the banner flow.
+    vi.stubGlobal(
+      "BroadcastChannel",
+      class {
+        constructor() {
+          throw new DOMException("opaque origin", "SecurityError");
+        }
+      }
+    );
+    try {
+      const manager = basicManager();
+      await expect(manager.init()).resolves.toBeUndefined();
+      await manager.acceptAll();
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("tracks from a consent callback once a stored grant is confirmed", async () => {
+    // Regression: init() ran the callbacks of a confirmed stored grant while the consent still
+    // counted as unsettled, so an event they tracked was dropped.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    let manager: ConsentManager | null = null;
+    manager = basicManager({ onConsentChange: () => manager?.trackEvent("restored") });
+
+    await manager.init();
+
+    expect(commands().filter((c) => c[0] === "event" && c[1] === "restored")).toHaveLength(1);
   });
 
   it("keeps an Analytics opt-out the site set itself on a grant", async () => {

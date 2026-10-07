@@ -494,8 +494,12 @@ export class ConsentManager {
     document.addEventListener("visibilitychange", sync);
     if (typeof BroadcastChannel !== "undefined") {
       const cookieName = this.config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
-      this.tabChannel = new BroadcastChannel(`vue-privacy:${cookieName}`);
-      this.tabChannel.addEventListener("message", announced);
+      try {
+        this.tabChannel = new BroadcastChannel(`vue-privacy:${cookieName}`);
+        this.tabChannel.addEventListener("message", announced);
+      } catch {
+        // An opaque origin (a sandboxed iframe) may not open one; focus and visibility remain.
+      }
     }
     this.tabWatchCleanup = () => {
       window.removeEventListener("focus", sync);
@@ -729,6 +733,9 @@ export class ConsentManager {
       // instance loaded it before a remount), so it is told about a refusal all the same.
       // A request in flight or past its timeout may still run; one that failed cannot.
       const tagRunning = isTagLiveFor(gaId);
+      // Tracked with analytics refused too: linked advertising products of a tag still on the
+      // page follow the ad signals, so a later marketing change must reach them.
+      this.googleMarketing = signals.ad_storage === "granted";
       if (basicDenied) {
         // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
         // sending cookieless pings; only a reload stops a running tag. A marketing-only
@@ -743,7 +750,6 @@ export class ConsentManager {
         setAnalyticsDisabled(gaId, false);
         startsMeasuring = !this.googleMeasuring;
         this.googleMeasuring = true;
-        this.googleMarketing = signals.ad_storage === "granted";
       }
     }
     if (!gaId) {
@@ -788,14 +794,14 @@ export class ConsentManager {
 
   /**
    * Reload once the current flow is done: the choice is already stored and the consent
-   * callbacks of this decision run first, so the reloaded page starts from it.
+   * callbacks of this decision run first, so the reloaded page starts from it. destroy() does
+   * not cancel it: the tag runs page-wide, and a callback that unmounted the app leaves it
+   * running all the same.
    */
   private scheduleReload(): void {
     if (this.reloadScheduled) return;
     this.reloadScheduled = true;
-    setTimeout(() => {
-      if (!this.destroyed) reloadPage();
-    }, 0);
+    setTimeout(reloadPage, 0);
   }
 
   /**
@@ -836,6 +842,9 @@ export class ConsentManager {
     // Basic mode allows analytics only on the visitor's own choice: a jurisdiction's grant leaves
     // it off for Google, for the consent callbacks and for the script blocker alike.
     const categories = implied && this.basicMode ? { ...granted, analytics: false } : granted;
+    // Every caller passes a decision (the roaming check, if any, is behind it), so the callbacks
+    // below may already track under it.
+    this.consentSettled = true;
     // Not stored (a stored grant counts as the visitor's choice in basic mode), but the
     // preference centre still has to show what is in effect, marketing included.
     if (implied && this.basicMode) this.impliedChoice = this.choiceRecord(categories);
@@ -1040,12 +1049,17 @@ export class ConsentManager {
       (this.listenedCategories === null ||
         !sameCategories(consent.categories, this.listenedCategories))
     ) {
+      const epoch = this.consentEpoch;
       this.notifyListeners(consent.categories);
+      // A listener may have answered with its own choice or a reset, which already brought the
+      // tag in line; that newer decision stands, not the snapshot taken above.
+      if (this.consentEpoch !== epoch) {
+        return this.choiceInEffect()?.categories.analytics === true;
+      }
     }
     const allowed = consent !== null && consent.categories.analytics;
-    const stale =
-      allowed !== this.googleMeasuring ||
-      (allowed && consent.categories.marketing !== this.googleMarketing);
+    const marketing = consent !== null && consent.categories.marketing;
+    const stale = allowed !== this.googleMeasuring || marketing !== this.googleMarketing;
     if (this.config.gaId && stale) {
       this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
     }
