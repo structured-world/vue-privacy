@@ -427,7 +427,8 @@ export interface ConsentConfig {
 
   /**
    * Callback when consent changes. In basic mode it also runs for a choice made in another tab
-   * of the site, once this tab follows it.
+   * of the site, once this tab follows it. An error it throws is logged and does not stop the
+   * consent from taking effect.
    */
   onConsentChange?: (consent: StoredConsent) => void;
 

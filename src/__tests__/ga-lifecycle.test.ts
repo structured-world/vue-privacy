@@ -2149,6 +2149,88 @@ describe("basic consent mode", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("keeps scripts blocked for a non-EU grant another tab saved while init() found the EU", async () => {
+    // Regression: init() skipped the grant but left it in the cookie, and the scan after init()
+    // read it through getConsent() and ran analytics scripts before the EU visitor chose.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(blocked.isConnected).toBe(true);
+    expect(manager.getConsent()).toBeNull();
+  });
+
+  it("stops the tag after a cross-tab withdrawal even when the consent callback throws", async () => {
+    // Regression: the configured callback ran before the tag was switched off, and its error
+    // ended the sync, leaving the tag measuring under the withdrawn grant.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager({
+        onConsentChange: (consent) => {
+          if (!consent.categories.analytics) throw new Error("callback failed");
+        },
+      });
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed tag load for a new choice from another tab", async () => {
+    // Regression: after a failed load the tag counted as measuring, so a new choice that kept
+    // analytics allowed (functional changed) synced nothing and the tag never loaded.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      scriptOutcome = "error";
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      expect(gtagScripts()).toHaveLength(0);
+
+      scriptOutcome = "load";
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: false }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("runs the configured consent callback for a choice made in another tab", async () => {
     // Regression: only listeners registered with onConsentChange() heard a cross-tab choice;
     // the configured callback kept the app on the previous consent.

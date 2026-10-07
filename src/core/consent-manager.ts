@@ -909,11 +909,17 @@ export class ConsentManager {
     // A tracking call the callback makes runs the cross-tab sync, which must not notify the
     // listeners a second time for these same categories.
     this.listenedCategories = { ...categories };
-    this.config.onConsentChange?.({
-      categories,
-      timestamp: Date.now(),
-      version: this.config.version ?? DEFAULT_CONFIG.version,
-    });
+    try {
+      this.config.onConsentChange?.({
+        categories,
+        timestamp: Date.now(),
+        version: this.config.version ?? DEFAULT_CONFIG.version,
+      });
+    } catch (error) {
+      // The app's callback must not stop the consent from taking effect: the listeners and, for a
+      // choice from another tab, the switch that stops the Google tag still follow.
+      console.error("[vue-privacy] onConsentChange failed", error);
+    }
     if (this.consentEpoch !== epoch) return;
     this.notifyListeners(categories);
   }
@@ -1026,6 +1032,17 @@ export class ConsentManager {
    * reset in another tab, and the visitor is undecided again.
    */
   private choiceInEffect(): StoredConsent | null {
+    const found = this.latestChoice();
+    if (found === null || this.isEU !== true || found.isEU === true) return found;
+    // A record another tab saved outside the EU (it had not noticed the visitor's move) is no
+    // consent here once this tab knows it is in the EU, as init()'s roaming check rejects it;
+    // every reader (the Google tag, the script blocker, getConsent()) gets the same answer.
+    // This page's own choice carries the location it was made with and is not judged again.
+    return found.timestamp === this.pageChoice?.timestamp ? found : null;
+  }
+
+  /** The newest choice, from the shared cookie or this page; see choiceInEffect(). */
+  private latestChoice(): StoredConsent | null {
     const stored = getStoredConsent(this.config);
     const own = this.pageChoice;
     if (own === null) return stored;
@@ -1099,26 +1116,20 @@ export class ConsentManager {
    * Basic mode: bring the Google tag in line with the choice in effect, which another tab may
    * have changed through the shared cookie. Returns whether that choice allows analytics.
    */
-  private syncBasicTag(found: StoredConsent | null = this.choiceInEffect()): boolean {
+  private syncBasicTag(consent: StoredConsent | null = this.choiceInEffect()): boolean {
     // Until init() settled, a stored grant may still fail the roaming check (a visitor now in
     // the EU needs a fresh choice): nothing starts on the cookie's word alone.
     if (!this.consentSettled) return false;
-    // A record another tab saved outside the EU (it had not noticed the visitor's move) is no
-    // consent here once this tab knows it is in the EU, as init()'s roaming check rejects it.
-    // This page's own choice carries the location it was made with and is not judged again.
-    const ownChoice = found !== null && found.timestamp === this.pageChoice?.timestamp;
-    const consent =
-      found !== null && this.isEU === true && found.isEU !== true && !ownChoice ? null : found;
     // A reset in another tab: the listeners hold nothing now, so the same grant made again later
     // reaches them as new.
     if (consent === null) this.listenedCategories = null;
     // A choice made in another tab also reaches the configured callback and the listeners, so the
     // app and the script blocker follow it as well.
-    if (
+    const newChoice =
       consent !== null &&
       (this.listenedCategories === null ||
-        !sameCategories(consent.categories, this.listenedCategories))
-    ) {
+        !sameCategories(consent.categories, this.listenedCategories));
+    if (newChoice && consent !== null) {
       const epoch = this.consentEpoch;
       this.notifyChange({ ...consent.categories });
       // A listener may have answered with its own choice or a reset, which already brought the
@@ -1130,8 +1141,13 @@ export class ConsentManager {
     const allowed = consent !== null && consent.categories.analytics;
     const marketing = consent !== null && consent.categories.marketing;
     const stale = allowed !== this.googleMeasuring || marketing !== this.googleMarketing;
-    if (this.config.gaId && stale) {
+    const gaId = this.config.gaId;
+    if (gaId && stale) {
       this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
+    } else if (gaId && allowed && newChoice && !this.gaLoaded && !this.gaLoading) {
+      // The tag counts as measuring after a load that failed; a new choice is the next push that
+      // retries it, as a local one does, but a tracking call alone does not.
+      this.loadGtag(gaId);
     }
     return allowed;
   }
