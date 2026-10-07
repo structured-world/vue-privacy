@@ -79,14 +79,17 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
         // report it twice.
         let initialized = false;
 
-        // Initialize consent manager
+        // Initialize consent manager. The page in view is tracked once init() is done, also when
+        // it failed: a navigation made meanwhile was skipped and is measured only here.
+        // Before user choice: sent under Consent Mode defaults (cookieless).
+        // After explicit denial (analytics: false): events are NOT sent.
         manager
           .init()
+          .catch((err) => {
+            console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
+          })
           .then(() => {
             initialized = true;
-            // Track initial page view after init completes.
-            // Before user choice: sent under Consent Mode defaults (cookieless).
-            // After explicit denial (analytics: false): events are NOT sent.
             nextTick(() => {
               const frontmatter = ctx.router?.route.data.frontmatter as
                 | VitePressGA4Frontmatter
@@ -98,10 +101,6 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
                 manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
               }
             });
-          })
-          .catch((err) => {
-            initialized = true;
-            console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
           });
 
         // Track subsequent SPA navigations via router

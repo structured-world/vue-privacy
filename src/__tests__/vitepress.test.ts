@@ -64,4 +64,36 @@ describe("enhanceWithConsent", () => {
 
     expect(pageViews()).toHaveLength(1);
   });
+
+  it("counts the page in view when init() fails after a navigation", async () => {
+    // Regression: the navigation made while init() ran was skipped, and a failing init() only
+    // enabled tracking for later navigations, so the page in view went unmeasured.
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const route = reactive({ path: "/", data: { frontmatter: {} } });
+    const ctx = {
+      app: { provide: () => undefined, component: () => undefined },
+      router: { route },
+    } as unknown as EnhanceContext;
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    enhanceWithConsent({} as Theme, {
+      gaId: "G-TEST123",
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+      onBannerShow: () => {
+        throw new Error("banner failed");
+      },
+    }).enhanceApp?.(ctx);
+
+    try {
+      route.path = "/guide";
+      await settle();
+      resolveGeo({ isEU: true, method: "manual" });
+      await settle();
+
+      expect(error).toHaveBeenCalled();
+      expect(pageViews()).toHaveLength(1);
+    } finally {
+      error.mockRestore();
+    }
+  });
 });

@@ -1884,6 +1884,73 @@ describe("basic consent mode", () => {
     manager.destroy();
   });
 
+  it("hands a cross-tab grant to the listeners after a local reset of the same grant", async () => {
+    // Regression: a local reset kept the categories last handed to the listeners, so the same
+    // grant saved in another tab afterwards counted as delivered and scripts stayed blocked.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      manager.resetConsent();
+      const listener = vi.fn();
+      manager.onConsentChange(listener);
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("loads no tag for a cross-tab grant whose callback destroyed the manager", async () => {
+    // Regression: the sync pushed the grant after the callbacks without checking destroy(), so
+    // a callback that unmounted the app still got gtag.js appended for it.
+    let manager: ConsentManager | null = null;
+    manager = basicManager({ onConsentChange: () => manager?.destroy() });
+    await manager.init();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("follows a refusal another tab saved in the same millisecond as this tab's grant", async () => {
+    // Regression: a timestamp tie always kept this page's choice, so a withdrawal another tab
+    // wrote over the confirmed grant in the same millisecond left the tag measuring.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      expect(analyticsDisabled()).toBe(true);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("follows a refusal another tab saved during the roaming check", async () => {
     // Regression: init() resumed with the grant it read before the check, wrote it over the
     // newer refusal and loaded the tag.
@@ -2329,6 +2396,29 @@ describe("basic consent mode", () => {
 
     expect(manager.hasConsent()).toBe(false);
     expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("keeps a choice made after another tab's reset when the announcement arrives late", async () => {
+    // Regression: the reset announcement carried no time, so one delivered after this page's
+    // newer grant dropped it, and the out-of-scope cookie could not bring it back.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const manager = basicManager({ cookie: { path: "/app/" } });
+      await manager.init();
+      const otherTab = basicManager({ cookie: { path: "/app/" } });
+
+      vi.setSystemTime(1_000_000);
+      otherTab.resetConsent();
+      vi.setSystemTime(1_000_001);
+      await manager.acceptAll();
+      cookieStore = "";
+      await settle();
+
+      expect(manager.hasConsent()).toBe(true);
+      expect(analyticsDisabled()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hands the configured callback its own copy of the categories", async () => {

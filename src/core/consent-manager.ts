@@ -99,6 +99,16 @@ function sameSignals(a: GoogleConsentSignals, b: GoogleConsentSignals): boolean 
   );
 }
 
+/** What a tab announces to the others: a stored choice, or a reset made at `at`. */
+type TabAnnouncement = { change: "consent" } | { change: "reset"; at: number };
+
+/** The time of a reset announcement; null for any other message. */
+function resetTime(data: unknown): number | null {
+  if (typeof data !== "object" || data === null) return null;
+  const message = data as Partial<Record<"change" | "at", unknown>>;
+  return message.change === "reset" && typeof message.at === "number" ? message.at : null;
+}
+
 /** The consent in effect, as every consumer sees it. */
 interface ConsentInEffect {
   /** The visitor's own choice (stored, or made on this page), or null while undecided. */
@@ -422,8 +432,7 @@ export class ConsentManager {
               // Adopted as this page's choice: it stays in effect even where the cookie cannot be
               // written (a sandboxed frame).
               this.pageChoice = this.choiceRecord(remote.categories);
-              storeConsent(this.pageChoice, this.config);
-              this.cookieConfirmed = getStoredConsent(this.config) !== null;
+              this.storeAndConfirm(this.pageChoice);
               this.reconcile();
               return;
             }
@@ -536,8 +545,12 @@ export class ConsentManager {
     };
     const announced = (event: MessageEvent): void => {
       // A reset removed the shared cookie. On a route outside cookie.path this tab cannot see it
-      // either way, so the announcement, not the cookie, tells that its own choice is gone.
-      if (event.data === "reset") this.pageChoice = null;
+      // either way, so the announcement, not the cookie, tells that its own choice is gone; a
+      // choice made after the reset (the announcement arrived late) stands.
+      const resetAt = resetTime(event.data);
+      if (resetAt !== null && this.pageChoice !== null && this.pageChoice.timestamp <= resetAt) {
+        this.pageChoice = null;
+      }
       this.syncFromOutside();
     };
     window.addEventListener("focus", sync);
@@ -569,14 +582,15 @@ export class ConsentManager {
    * choice made before init() opened this tab's channel goes out on a short-lived one: a message
    * is queued for the other tabs when posted, so closing the sender right after loses nothing.
    */
-  private announceToOtherTabs(change: "consent" | "reset"): void {
+  private announceToOtherTabs(change: TabAnnouncement["change"]): void {
     if (!this.basicMode || !this.config.gaId) return;
+    const message: TabAnnouncement = change === "reset" ? { change, at: Date.now() } : { change };
     if (this.tabChannel) {
-      this.tabChannel.postMessage(change);
+      this.tabChannel.postMessage(message);
       return;
     }
     const channel = this.openTabChannel();
-    channel?.postMessage(change);
+    channel?.postMessage(message);
     channel?.close();
   }
 
@@ -609,6 +623,22 @@ export class ConsentManager {
   }
 
   /**
+   * Write the record to the consent cookie and read it back. Only the record itself counts as
+   * confirmation: a stale cookie left by a failed overwrite does not. A confirmed write tells a
+   * later missing cookie (another tab's reset) apart from a blocked one (sandboxed frame,
+   * disabled cookies), and a later different cookie (another tab's choice) apart from that stale
+   * one, also within the same millisecond.
+   */
+  private storeAndConfirm(record: StoredConsent): void {
+    storeConsent(record, this.config);
+    const read = getStoredConsent(this.config);
+    this.cookieConfirmed =
+      read !== null &&
+      read.timestamp === record.timestamp &&
+      sameCategories(read.categories, record.categories);
+  }
+
+  /**
    * Persist the visitor's choice locally and (if remote storage is configured) remotely. A
    * refusal is stored like a grant, for the cookie's lifetime (365 days by default): an opt-out
    * must stay in effect (California Civil Code 1798.135(c)(4)), and a site that needs a refused
@@ -623,10 +653,7 @@ export class ConsentManager {
     // is a grant worth a remote identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
-    storeConsent(record, this.config);
-    // Read back: a cookie that took tells a later missing one (another tab's reset) apart from a
-    // blocked one (sandboxed frame, disabled cookies), where this page's choice has to stand.
-    this.cookieConfirmed = getStoredConsent(this.config) !== null;
+    this.storeAndConfirm(record);
     if (!hasNonNecessary) {
       // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
       // an earlier remote grant, should the remote write of this refusal fail.
@@ -1128,9 +1155,9 @@ export class ConsentManager {
   /**
    * The choice in effect, read without the copy getConsent() hands out (internal reads only).
    * The cookie is shared by every tab: one written after this page's choice is a later one made
-   * elsewhere (a withdrawal in another tab), and it wins. Within the same millisecond only a
-   * cookie holding this very decision counts: a timestamp tie cannot tell a stale grant whose
-   * overwrite failed from the write of this choice. The page's own choice stands while the
+   * elsewhere (a withdrawal in another tab), and it wins. Within the same millisecond the cookie
+   * wins once this page's write was confirmed; otherwise it may be a stale grant whose overwrite
+   * failed, and only one holding this very decision counts. The page's own choice stands while the
    * cookie is older or cannot be read; a missing cookie this page did write was removed by a
    * reset in another tab, and the visitor is undecided again.
    */
@@ -1167,7 +1194,9 @@ export class ConsentManager {
     if (stored === null) return this.cookieConfirmed && this.cookieInScope() ? null : own;
     if (stored.timestamp < own.timestamp) return own;
     if (stored.timestamp > own.timestamp) return stored;
-    return sameCategories(stored.categories, own.categories) ? stored : own;
+    // The same millisecond: after a confirmed write, a cookie that differs was written later by
+    // another tab; without one, it is the stale cookie this page failed to overwrite.
+    return this.cookieConfirmed || sameCategories(stored.categories, own.categories) ? stored : own;
   }
 
   /**
