@@ -234,8 +234,9 @@ export class ConsentManager {
   }
 
   /**
-   * Register a listener that fires whenever consent categories change.
-   * Used internally by the script blocker; also available for external consumers.
+   * Register a listener that fires whenever consent categories change, also for a choice made in
+   * another tab. Used internally by the script blocker; also available for external consumers.
+   * Each listener receives its own copy; one that throws is logged and does not stop the others.
    */
   onConsentChange(listener: (categories: Omit<ConsentCategories, "necessary">) => void): void {
     this.consentChangeListeners.push(listener);
@@ -376,7 +377,18 @@ export class ConsentManager {
             const geoResult = await this.performGeoDetection();
             if (superseded()) return;
 
-            if (geoResult.isEU) {
+            // Another tab may have saved a choice, or reset, while the record was fetched: that
+            // is newer than the record, which must not be written over it.
+            const current = getStoredConsent(this.config);
+            if (current && (!geoResult.isEU || current.isEU === true)) {
+              this.applyConsent(current.categories);
+              return;
+            }
+            const resetElsewhere = getConsentUid() !== uid;
+
+            if (resetElsewhere) {
+              // Undecided again: decided below like a first visit.
+            } else if (geoResult.isEU) {
               // User is in EU — cannot use remote consent without GDPR disclosure.
               // Clear consent_uid and fall through to show banner.
               clearConsentUid(this.config);
@@ -850,6 +862,9 @@ export class ConsentManager {
     if (implied && this.basicMode) this.impliedChoice = this.choiceRecord(categories);
     this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
     const epoch = this.consentEpoch;
+    // The listeners are notified below; a tracking call the callback makes runs the cross-tab
+    // sync, which must not notify them a second time for these same categories.
+    this.listenedCategories = { ...categories };
 
     // Notify config callback
     this.config.onConsentChange?.({
@@ -864,14 +879,21 @@ export class ConsentManager {
     this.notifyListeners(categories);
   }
 
-  /** Hand the categories in effect to the registered listeners (the script blocker first). */
+  /**
+   * Hand the categories in effect to the registered listeners (the script blocker first). Each
+   * gets its own copy, so an edit cannot change what the manager applies; a listener that throws
+   * is reported and skipped, so the others, and the Google tag sync after them, still run.
+   */
   private notifyListeners(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = this.consentEpoch;
-    // A copy: a listener may edit the object it receives.
     this.listenedCategories = { ...categories };
     for (const listener of this.consentChangeListeners) {
       if (this.consentEpoch !== epoch) return;
-      listener(categories);
+      try {
+        listener({ ...categories });
+      } catch (error) {
+        console.error("[vue-privacy] consent listener failed", error);
+      }
     }
   }
 
