@@ -1,3 +1,9 @@
+## [1.11.0](https://github.com/structured-world/vue-privacy/compare/v1.10.1...v1.11.0) (2026-10-07)
+
+### Features
+
+* **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
+
 ## [1.10.1](https://github.com/structured-world/vue-privacy/compare/v1.10.0...v1.10.1) (2026-10-06)
 
 ### Bug Fixes
