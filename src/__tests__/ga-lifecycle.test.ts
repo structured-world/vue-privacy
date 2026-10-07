@@ -2543,6 +2543,22 @@ describe("basic consent mode", () => {
     expect(hide).toHaveBeenCalledTimes(1);
   });
 
+  it("asks again when another tab resets the choice", async () => {
+    // Regression: a reset found in the shared cookie stopped the tag but showed no banner, as
+    // a local reset does, so the visitor stayed undecided without being asked.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    const show = vi.fn();
+    manager.onShowBanner(show);
+
+    cookieStore = "";
+    window.dispatchEvent(new Event("focus"));
+
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(analyticsDisabled()).toBe(true);
+  });
+
   it("does not show a banner another tab answered before its component mounted", async () => {
     // Regression: the pending banner request outlived the answer from another tab, and the
     // component that mounted afterwards showed the stale banner.

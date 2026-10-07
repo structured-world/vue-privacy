@@ -520,14 +520,7 @@ export class ConsentManager {
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
       this.restore(false);
-
-      // Show banner (or defer if component hasn't mounted yet)
-      if (this.showBannerCallback) {
-        this.showBannerCallback();
-      } else {
-        this.bannerPending = true;
-      }
-      this.config.onBannerShow?.();
+      this.requestBanner();
       return;
     }
     const grantedCategories = {
@@ -1043,9 +1036,22 @@ export class ConsentManager {
     if (!this.consentSettled) return false;
     const acted = this.actedOnRecord;
     const allowed = this.reconcile();
-    // Another tab answered the banner this tab is showing, or still holds for its component.
-    if (this.actedOnRecord !== null && this.actedOnRecord !== acted) this.closeBanner();
+    if (this.actedOnRecord === acted) return allowed;
+    // Another tab answered the banner this tab is showing (or holds for its component), or
+    // reset the choice, which asks again here as a local reset does.
+    if (this.actedOnRecord !== null) this.closeBanner();
+    else this.requestBanner();
     return allowed;
+  }
+
+  /** Ask the visitor: show the banner, or hold the request for a component not mounted yet. */
+  private requestBanner(): void {
+    if (this.showBannerCallback) {
+      this.showBannerCallback();
+    } else {
+      this.bannerPending = true;
+    }
+    this.config.onBannerShow?.();
   }
 
   /** The banner's question is answered: close it, or drop a request its component never got. */
@@ -1273,12 +1279,7 @@ export class ConsentManager {
     this.reconcile(false);
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
-    if (this.showBannerCallback) {
-      this.showBannerCallback();
-    } else {
-      this.bannerPending = true;
-    }
-    this.config.onBannerShow?.();
+    this.requestBanner();
   }
 
   /**
