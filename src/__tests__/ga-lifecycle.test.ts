@@ -1754,6 +1754,44 @@ describe("basic consent mode", () => {
       expect(reloadPage).toHaveBeenCalledTimes(1);
     });
 
+    it("reloads only after the remote write of the latest withdrawal", async () => {
+      // Regression: withdraw, grant, withdraw again while writes were pending: the first
+      // withdrawal's wait took the second's timer for its own and reloaded before the latest
+      // refusal reached remote storage.
+      let hold = false;
+      const pending: Array<() => void> = [];
+      const set = vi.fn(
+        (_uid: string | null, _consent: StoredConsent, signal?: AbortSignal): Promise<string> =>
+          hold
+            ? new Promise<string>((resolve, reject) => {
+                pending.push(() => resolve("uid-1"));
+                signal?.addEventListener("abort", () => reject(new Error("aborted")));
+              })
+            : Promise.resolve("uid-1")
+      );
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      hold = true;
+
+      await manager.savePreferences({ analytics: false, marketing: true });
+      // The first withdrawal's reload is now waiting for its write.
+      await settle();
+      await manager.acceptAll();
+      await manager.savePreferences({ analytics: false, marketing: true });
+      await settle();
+      expect(reloadPage).not.toHaveBeenCalled();
+
+      for (const finish of pending.splice(0)) finish();
+      await settle();
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(set.mock.calls.at(-1)?.[1].categories.analytics).toBe(false);
+    });
+
     it("does not reload when a consent callback allows analytics again", async () => {
       // Regression: the reload scheduled for the withdrawal still ran after the callback's own
       // grant restored the tag, and dropped the page state for nothing.
@@ -2245,6 +2283,54 @@ describe("basic consent mode", () => {
 
     expect(manager.getConsent()?.categories.analytics).toBe(false);
     expect(manager.hasConsent()).toBe(true);
+  });
+
+  it("follows a reset in another tab while this page's cookie is out of scope", async () => {
+    // Regression: the reset announcement only asked this tab to reread a cookie it cannot see
+    // on this route, so it kept its grant and went on measuring.
+    const manager = basicManager({ cookie: { path: "/app/" } });
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+    cookieStore = "";
+
+    const otherTab = basicManager({ cookie: { path: "/app/" } });
+    otherTab.resetConsent();
+    await settle();
+
+    expect(manager.hasConsent()).toBe(false);
+    expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("hands the configured callback its own copy of the categories", async () => {
+    // Regression: the callback got the manager's working object; an edit to it reached the
+    // listeners, so the script blocker ran analytics scripts for a refusal.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    const manager = basicManager({
+      onConsentChange: (consent) => {
+        consent.categories.analytics = true;
+      },
+    });
+    await manager.init();
+
+    await manager.rejectAll();
+    await settle();
+
+    expect(blocked.isConnected).toBe(true);
+  });
+
+  it("denies the ad signals of an implied grant to a tag already on the page", async () => {
+    // Regression: a jurisdiction's implied grant kept marketing on for Google, so a tag an
+    // earlier instance loaded resumed linked Ads/Floodlight before the visitor chose.
+    markTagRan();
+    const manager = ccpaManager();
+    await manager.init();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(manager.getConsent()?.categories.marketing).toBe(true);
   });
 
   it("keeps this page's choice when its cookie is out of the current path's scope", async () => {

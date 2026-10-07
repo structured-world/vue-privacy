@@ -125,8 +125,8 @@ export class ConsentManager {
   private googleMeasuring = false;
   /** Basic mode: the ad signals last sent to the measuring tag were granted. */
   private googleMarketing = false;
-  /** The pending reload for a withdrawal (reloadOnWithdrawal), if one is scheduled. */
-  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The token of the pending reload for a withdrawal (reloadOnWithdrawal), if one is scheduled. */
+  private pendingReload: object | null = null;
   /**
    * init() decided the consent state, or the visitor chose or reset: until then a stored grant
    * may still fail the roaming check, so basic mode does not act on the cookie by itself.
@@ -512,7 +512,10 @@ export class ConsentManager {
     const sync = (): void => {
       if (document.visibilityState !== "hidden") this.syncBasicTag();
     };
-    const announced = (): void => {
+    const announced = (event: MessageEvent): void => {
+      // A reset removed the shared cookie. On a route outside cookie.path this tab cannot see it
+      // either way, so the announcement, not the cookie, tells that its own choice is gone.
+      if (event.data === "reset") this.pageChoice = null;
       this.syncBasicTag();
     };
     window.addEventListener("focus", sync);
@@ -544,14 +547,14 @@ export class ConsentManager {
    * choice made before init() opened this tab's channel goes out on a short-lived one: a message
    * is queued for the other tabs when posted, so closing the sender right after loses nothing.
    */
-  private announceToOtherTabs(): void {
+  private announceToOtherTabs(change: "consent" | "reset"): void {
     if (!this.basicMode || !this.config.gaId) return;
     if (this.tabChannel) {
-      this.tabChannel.postMessage("consent");
+      this.tabChannel.postMessage(change);
       return;
     }
     const channel = this.openTabChannel();
-    channel?.postMessage("consent");
+    channel?.postMessage(change);
     channel?.close();
   }
 
@@ -796,10 +799,7 @@ export class ConsentManager {
       } else {
         // A newer choice allows analytics again before a pending withdrawal reload ran (a
         // consent callback answering the refusal): the tag stays, so the reload has no purpose.
-        if (this.reloadTimer !== null) {
-          clearTimeout(this.reloadTimer);
-          this.reloadTimer = null;
-        }
+        this.pendingReload = null;
         setAnalyticsDisabled(gaId, false);
         startsMeasuring = !this.googleMeasuring;
         this.googleMeasuring = true;
@@ -852,17 +852,29 @@ export class ConsentManager {
    * running all the same. A newer choice that allows analytics again does (see pushGoogleConsent).
    */
   private scheduleReload(): void {
-    if (this.reloadTimer !== null) return;
-    this.reloadTimer = setTimeout(() => {
-      // The unload would abort the remote write of this withdrawal, leaving the remote record on
-      // the withdrawn grant; the reload waits for it, as long as a superseded write is waited for.
-      void settledWithin(this.remoteWrite, SUPERSEDED_WRITE_GRACE_MS).then(() => {
-        // A newer grant cancelled the reload while the write was pending.
-        if (this.reloadTimer === null) return;
-        this.reloadTimer = null;
-        reloadPage();
-      });
-    }, 0);
+    if (this.pendingReload !== null) return;
+    // Its own token: a newer grant cancels it, and a later withdrawal schedules another, which
+    // this one must not take for itself.
+    const token = {};
+    this.pendingReload = token;
+    setTimeout(() => void this.reloadAfterWrites(token), 0);
+  }
+
+  /**
+   * The unload would abort a remote write still running and leave the remote record on the
+   * withdrawn grant. The reload waits for the write chain, including writes a newer decision
+   * queued meanwhile, each as long as a superseded write is waited for.
+   */
+  private async reloadAfterWrites(token: object): Promise<void> {
+    let write: Promise<void>;
+    do {
+      write = this.remoteWrite;
+      await settledWithin(write, SUPERSEDED_WRITE_GRACE_MS);
+    } while (this.pendingReload === token && write !== this.remoteWrite);
+    // Cancelled by a newer grant, or replaced by a later withdrawal's own reload.
+    if (this.pendingReload !== token) return;
+    this.pendingReload = null;
+    reloadPage();
   }
 
   /**
@@ -909,7 +921,11 @@ export class ConsentManager {
     // Not stored (a stored grant counts as the visitor's choice in basic mode), but the
     // preference centre still has to show what is in effect, marketing included.
     if (implied && this.basicMode) this.impliedChoice = this.choiceRecord(categories);
-    this.pushGoogleConsent(categoriesToGoogleSignals(categories), true);
+    // Google gets no grant before an explicit basic-mode choice either: a tag an earlier instance
+    // left on the page would resume linked Ads/Floodlight on implied ad signals. The callbacks and
+    // the script blocker still follow the jurisdiction's marketing state (an opt-out model).
+    const forGoogle = implied && this.basicMode ? { ...categories, marketing: false } : categories;
+    this.pushGoogleConsent(categoriesToGoogleSignals(forGoogle), true);
     this.notifyChange(categories);
   }
 
@@ -925,7 +941,8 @@ export class ConsentManager {
     this.listenedCategories = { ...categories };
     try {
       this.config.onConsentChange?.({
-        categories,
+        // Its own copy, like each listener's: an edit must not reach the listeners after it.
+        categories: { ...categories },
         timestamp: Date.now(),
         version: this.config.version ?? DEFAULT_CONFIG.version,
       });
@@ -1007,7 +1024,7 @@ export class ConsentManager {
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories, this.pageChoice);
-    this.announceToOtherTabs();
+    this.announceToOtherTabs("consent");
     this.applyConsent(categories);
 
     // The preference centre closes either way; it would cover a banner a callback's reset
@@ -1104,7 +1121,7 @@ export class ConsentManager {
   resetConsent(): void {
     clearConsent(this.config);
     clearConsentUid(this.config);
-    this.announceToOtherTabs();
+    this.announceToOtherTabs("reset");
     this.userId = null;
     this.identityGeneration++;
     this.pageChoice = null;
