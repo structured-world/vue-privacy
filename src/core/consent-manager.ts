@@ -177,6 +177,8 @@ export class ConsentManager {
   private destroyed = false;
   /** Tail of the remote consent writes, which run one after another. */
   private remoteWrite: Promise<void> = Promise.resolve();
+  /** Settles when the latest remote write gets its turn (the one before it settled or timed out). */
+  private remoteWriteTurn: Promise<void> = Promise.resolve();
   /** Aborts the latest remote write once a newer decision supersedes it. */
   private remoteWriteAbort: AbortController | null = null;
   /** Remote writes started so far; tells a write whether a newer one began while it ran. */
@@ -318,6 +320,16 @@ export class ConsentManager {
     if (typeof document !== "undefined") {
       this.scriptBlockerCleanup = initScriptBlocker(this);
       if (this.basicMode && this.config.gaId) this.watchOtherTabs();
+    }
+
+    if (this.pageChoice !== null) {
+      // A choice made on this page before init() stands, like one made while it runs: it was
+      // stored before the location was known, which the roaming check must not take for consent
+      // given outside the EU. init() only detects the jurisdiction and stores it with the choice.
+      await this.detectJurisdiction();
+      this.storeLocationWithChoice();
+      this.reconcile();
+      return;
     }
 
     // Fast-path: check consent_preferences cookie
@@ -710,7 +722,9 @@ export class ConsentManager {
       this.remoteWriteAbort?.abort();
       const controller = new AbortController();
       this.remoteWriteAbort = controller;
-      this.remoteWrite = settledWithin(this.remoteWrite, SUPERSEDED_WRITE_GRACE_MS)
+      const turn = settledWithin(this.remoteWrite, SUPERSEDED_WRITE_GRACE_MS);
+      this.remoteWriteTurn = turn;
+      this.remoteWrite = turn
         .then(async () => {
           if (this.consentEpoch !== epoch) return;
           const started = ++this.remoteWritesStarted;
@@ -947,17 +961,21 @@ export class ConsentManager {
   /**
    * The unload would abort a remote write still running and leave the remote record on the
    * withdrawn grant. The reload waits for the write chain, including writes a newer decision
-   * queued meanwhile, each as long as a superseded write is waited for.
+   * queued meanwhile: for the latest write's turn (bounded by the grace period of the write
+   * before it), then for that write itself, as long again.
    */
   private async reloadAfterWrites(token: object): Promise<void> {
     const write = this.remoteWrite;
+    await this.remoteWriteTurn;
     await settledWithin(write, SUPERSEDED_WRITE_GRACE_MS);
     // Cancelled by a newer grant, or replaced by a later withdrawal's own reload.
     if (this.pendingReload !== token) return;
     // A newer decision queued another write meanwhile: wait for that one too.
     if (write !== this.remoteWrite) return this.reloadAfterWrites(token);
     this.pendingReload = null;
-    reloadPage();
+    // The request found in flight may have failed meanwhile: nothing is left to stop then.
+    const gaId = this.config.gaId;
+    if (gaId && isTagLiveFor(gaId)) reloadPage();
   }
 
   /**
@@ -1028,6 +1046,13 @@ export class ConsentManager {
     this.consentSettled = true;
     const epoch = this.consentEpoch;
     const { choice, categories, signals } = this.consentInEffect();
+    if (choice !== null && choice !== this.pageChoice) {
+      // A record read from the cookie (stored earlier, or by another tab) becomes this page's
+      // choice, so it stays in effect on a route where a cookie limited to cookie.path is
+      // hidden, instead of an older choice of this page.
+      this.pageChoice = choice;
+      this.cookieConfirmed = true;
+    }
     // A record not acted on before: a new decision, here or in another tab, even with the same
     // categories (it retries a failed tag load and reaches the callbacks).
     const newRecord = choice !== null && choice.timestamp !== this.actedOnRecord;

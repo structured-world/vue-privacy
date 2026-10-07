@@ -1792,6 +1792,70 @@ describe("basic consent mode", () => {
       expect(set.mock.calls.at(-1)?.[1].categories.analytics).toBe(false);
     });
 
+    it("gives the withdrawal's remote write its own grace period", async () => {
+      // Regression: the reload's wait began before the withdrawal's write, behind a superseded
+      // write that ignored its abort; the grace period ran out as the withdrawal write started,
+      // and the reload aborted it, leaving the remote record granted.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        let finishWithdrawal: () => void = () => {};
+        const set = vi.fn(() => Promise.resolve("uid-1"));
+        const manager = basicManager({
+          reloadOnWithdrawal: true,
+          storage: { get: () => Promise.resolve(null), set },
+        });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // A marketing-only change whose write ignores the abort and never settles.
+        set.mockImplementationOnce(() => new Promise<string>(() => {}));
+        await manager.savePreferences({ analytics: true, marketing: false });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(set).toHaveBeenCalledTimes(2);
+        set.mockImplementationOnce(
+          () => new Promise<string>((resolve) => (finishWithdrawal = () => resolve("uid-1")))
+        );
+        await manager.rejectAll();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+        expect(set).toHaveBeenCalledTimes(3);
+        expect(reloadPage).not.toHaveBeenCalled();
+
+        finishWithdrawal();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reloadPage).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not reload once the pending tag failed while the write was awaited", async () => {
+      // Regression: the reload was decided when the withdrawal found gtag.js in flight; that
+      // request failed while the remote write ran, yet the page still reloaded for nothing.
+      scriptOutcome = "manual";
+      let finishWithdrawal: () => void = () => {};
+      const set = vi.fn(() => Promise.resolve("uid-1"));
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      set.mockImplementationOnce(
+        () => new Promise<string>((resolve) => (finishWithdrawal = () => resolve("uid-1")))
+      );
+
+      await manager.rejectAll();
+      await settle();
+      settlePendingTag("error");
+      finishWithdrawal();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
     it("does not reload when a consent callback allows analytics again", async () => {
       // Regression: the reload scheduled for the withdrawal still ran after the callback's own
       // grant restored the tag, and dropped the page state for nothing.
@@ -2396,6 +2460,45 @@ describe("basic consent mode", () => {
 
     expect(manager.hasConsent()).toBe(false);
     expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("keeps another tab's withdrawal after the cookie leaves the route's scope", async () => {
+    // Regression: the withdrawal was read from the cookie but this page kept its own grant as
+    // its choice; on a route outside cookie.path the grant came back and analytics resumed.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager({ cookie: { path: "/app/" } });
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        { cookie: { path: "/app/" } }
+      );
+      window.dispatchEvent(new Event("focus"));
+      cookieStore = "";
+      manager.trackEvent("sign_up");
+
+      expect(count("event")).toBe(0);
+      expect(analyticsDisabled()).toBe(true);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a choice made before init() when the location turns out to be in the EU", async () => {
+    // Regression: the choice was stored before the location was known, so init()'s roaming
+    // check took it for consent given outside the EU, cleared it and asked again.
+    const manager = basicManager();
+    await manager.acceptAll();
+    await manager.init();
+
+    expect(manager.hasConsent()).toBe(true);
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+    expect(manager.getConsent()?.isEU).toBe(true);
   });
 
   it("keeps a choice made after another tab's reset when the announcement arrives late", async () => {
