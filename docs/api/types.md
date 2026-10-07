@@ -49,6 +49,7 @@ interface ConsentConfig {
    * 'basic': nothing reaches Google until the visitor allows analytics;
    * a grant implied by the jurisdiction does not count, and withdrawing
    * analytics switches a loaded tag off and deletes the _ga cookies.
+   * Requires gaId: the manager loads the tag (the constructor throws without it).
    * @default 'advanced'
    */
   consentMode?: "advanced" | "basic";

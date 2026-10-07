@@ -22,10 +22,12 @@ beforeEach(() => {
   });
 });
 
+const EXPIRED = /;\s*expires=Thu, 01 Jan 1970/i;
+
 /** The expiry-in-the-past writes issued for one cookie on path "/", as `name|domain` pairs. */
 function deletions(name: string): string[] {
   return writes
-    .filter((w) => w.startsWith(`${name}=;`) && w.includes("1970") && /path=\/(;|$)/.test(w))
+    .filter((w) => w.startsWith(`${name}=;`) && EXPIRED.test(w) && /path=\/(;|$)/.test(w))
     .map((w) => `${name}|${/domain=([^;]+)/.exec(w)?.[1] ?? ""}`);
 }
 
@@ -48,7 +50,7 @@ describe("clearAnalyticsCookies", () => {
 
     clearAnalyticsCookies("G-TEST123");
 
-    const deleted = new Set(writes.filter((w) => w.includes("1970")).map((w) => w.split("=")[0]));
+    const deleted = new Set(writes.filter((w) => EXPIRED.test(w)).map((w) => w.split("=")[0]));
     expect(deleted).toEqual(new Set(["_ga", "_ga_TEST123", "site_ga", "site_ga_TEST123"]));
     expect(writes.some((w) => w.startsWith("site_ga=;") && w.includes("path=/page"))).toBe(true);
   });
@@ -98,7 +100,7 @@ describe("clearAnalyticsCookies", () => {
 
     clearAnalyticsCookies("G-TEST123");
 
-    const deleted = new Set(writes.filter((w) => w.includes("1970")).map((w) => w.split("=")[0]));
+    const deleted = new Set(writes.filter((w) => EXPIRED.test(w)).map((w) => w.split("=")[0]));
     expect(deleted.has("site_ga")).toBe(true);
     expect(deleted.has("privacy_ga")).toBe(false);
     expect(deleted.has("notes_ga_TEST123")).toBe(false);

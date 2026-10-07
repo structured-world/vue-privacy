@@ -76,6 +76,8 @@ createConsentPlugin({
 });
 ```
 
+Basic mode requires `gaId`: the promise holds only for a tag the manager loads itself and can switch off. A site that loads gtag.js with its own snippet contacts Google before any choice, so the manager refuses `consentMode: 'basic'` without `gaId` (the constructor throws).
+
 A withdrawal on the same page stops Google Analytics at once, but a script already running cannot be unloaded: products linked to the same Google tag in Google's tag settings (Google Ads, Floodlight) ignore `ga-disable` and keep sending cookieless pings until the page reloads. A site that links them and promises nothing is sent after a refusal sets `reloadOnWithdrawal: true`: when the visitor withdraws analytics after the tag loaded, the choice is saved and the page reloads. It is off by default because the reload drops in-page state (a half-filled form, SPA state). While analytics stays allowed the tag loads, and linked advertising products follow the ad signals: with marketing refused they send cookieless pings. Keep them in a separate tag if refusing marketing must stop them entirely.
 
 ```typescript

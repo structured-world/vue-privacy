@@ -21,8 +21,8 @@ beforeEach(() => {
       const [nameValue] = value.split(";");
       const [name] = nameValue.split("=");
 
-      // Check if it's a deletion (expires in the past)
-      if (value.includes("1970")) {
+      // A deletion is an expiry in the past; the value itself may contain "1970" (a timestamp).
+      if (/;\s*expires=Thu, 01 Jan 1970/i.test(value)) {
         // Remove this cookie
         const cookies = cookieStore
           .split(";")

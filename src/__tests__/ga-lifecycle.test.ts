@@ -149,7 +149,8 @@ beforeEach(() => {
         .split(";")
         .map((c) => c.trim())
         .filter((c) => c && !c.startsWith(`${name}=`));
-      if (!value.includes("1970")) kept.push(nameValue);
+      // A deletion is an expiry in the past; the value itself may contain "1970" (a timestamp).
+      if (!/;\s*expires=Thu, 01 Jan 1970/i.test(value)) kept.push(nameValue);
       cookieStore = kept.join("; ");
     },
     configurable: true,
@@ -318,9 +319,9 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(showBanner).toHaveBeenCalledTimes(1);
     expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
-    expect(onGoogleAnalyticsError.mock.calls[0][0]).toEqual(
-      new Error(`Failed to load gtag.js for ${GA_ID}`)
-    );
+    const reported = onGoogleAnalyticsError.mock.calls[0][0] as unknown;
+    expect(reported).toBeInstanceOf(Error);
+    expect((reported as Error).message).toBe(`Failed to load gtag.js for ${GA_ID}`);
     expect(gtagScripts()).toHaveLength(0);
 
     scriptOutcome = "load";
@@ -1389,21 +1390,29 @@ describe("basic consent mode", () => {
   });
 
   it("loads the tag on the next page from the stored grant", async () => {
-    storeConsent(
-      {
-        categories: { analytics: true, marketing: false, functional: true },
-        isEU: true,
-        countryCode: "DE",
-      },
-      {}
-    );
+    // The clock is pinned to a timestamp containing "1970": the cookie stub once took any
+    // write mentioning 1970 for a deletion and dropped the stored grant, failing at random.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_791_197_000_000);
+    try {
+      storeConsent(
+        {
+          categories: { analytics: true, marketing: false, functional: true },
+          isEU: true,
+          countryCode: "DE",
+        },
+        {}
+      );
 
-    await basicManager().init();
-    await settle();
+      await basicManager().init();
+      await settle();
 
-    expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
-    expect(count("config")).toBe(1);
-    expect(gtagScripts()).toHaveLength(1);
+      expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
+      expect(count("config")).toBe(1);
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("denies and removes the analytics cookies when analytics is withdrawn", async () => {
@@ -1646,6 +1655,21 @@ describe("basic consent mode", () => {
       }
     });
 
+    it("does not reload for a tag request that failed outright", async () => {
+      // Regression: a gtag.js request that fired error (its element removed, nothing left to
+      // run) still counted as a running tag, and the refusal reloaded the page for nothing.
+      scriptOutcome = "error";
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
     it("does not reload a refusal made before any tag loaded", async () => {
       const manager = basicManager({ reloadOnWithdrawal: true });
       await manager.init();
@@ -1805,6 +1829,36 @@ describe("basic consent mode", () => {
     resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
     await initDone;
     expect(blocked.isConnected).toBe(true);
+  });
+
+  it("unblocks an allowed script added while init() was still settling", async () => {
+    // Regression: an allowed script that ran during init() added another consent-gated script;
+    // the observer saw it before consent had settled, and nothing scanned again afterwards.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+    // Registered after the script blocker's own listener, so it runs right after the blocker's
+    // scan, as a script that scan allowed would.
+    let nested: HTMLScriptElement | null = null;
+    manager.onConsentChange(() => {
+      nested = document.createElement("script");
+      nested.type = "text/plain";
+      nested.setAttribute("data-consent-category", "analytics");
+      document.head.appendChild(nested);
+    });
+
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(nested).not.toBeNull();
+    expect(nested!.isConnected).toBe(false);
   });
 
   it("keeps a consent cookie whose name ends in _ga on a refusal", async () => {
@@ -1974,6 +2028,13 @@ describe("basic consent mode", () => {
 
     expect(received).toEqual([false]);
     expect(listened).toEqual([false]);
+  });
+
+  it("refuses basic mode without a measurement ID", () => {
+    // Regression: without gaId the site loads gtag itself, so nothing the manager does keeps
+    // Google from being contacted before consent or after a refusal; basic mode silently
+    // degraded to sending consent updates to that tag.
+    expect(() => new ConsentManager({ consentMode: "basic" })).toThrow(/gaId/);
   });
 
   it("keeps the advanced mode as the default", async () => {

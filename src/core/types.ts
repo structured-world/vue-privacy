@@ -385,7 +385,9 @@ export interface ConsentConfig {
    *   consent jurisdictions) does not count. Withdrawing analytics switches a loaded tag off
    *   (`ga-disable-<ID>`) and deletes the `_ga` cookies.
    *   Choose it when the site promises "Google Analytics only with consent"; Google then
-   *   models no conversions for visitors who did not consent.
+   *   models no conversions for visitors who did not consent. Requires `gaId` (the manager
+   *   loads the tag); a site that loads gtag itself cannot keep that promise, and the
+   *   constructor throws.
    * @default 'advanced'
    */
   consentMode?: "advanced" | "basic";

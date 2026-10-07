@@ -150,7 +150,7 @@ interface ConsentConfig {
 
   // 'advanced' (default): gtag.js loads for every visitor with denied defaults and Google
   //   receives cookieless pings before any choice and after a refusal.
-  // 'basic': nothing reaches Google until the visitor allows analytics.
+  // 'basic': nothing reaches Google until the visitor allows analytics. Requires gaId.
   consentMode?: 'advanced' | 'basic';
 
   // Basic mode: reload the page when analytics is withdrawn after the Google tag loaded, so

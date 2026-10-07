@@ -212,6 +212,20 @@ function settleOnLoad(
 }
 
 /**
+ * gtag.js did not load. `mayStillRun` tells a request that timed out, whose element stays on the
+ * page and may still run, from one that failed (error event), which cannot run any more.
+ */
+export class GtagLoadError extends Error {
+  constructor(
+    gaId: string,
+    readonly mayStillRun: boolean
+  ) {
+    super(`Failed to load gtag.js for ${gaId}`);
+    this.name = "GtagLoadError";
+  }
+}
+
+/**
  * Load Google Analytics gtag.js script
  *
  * An element for this ID that is already on the page counts only once the Google tag ran for
@@ -226,7 +240,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
       return;
     }
 
-    const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
+    const failure = (mayStillRun: boolean) => new GtagLoadError(gaId, mayStillRun);
     const matching = Array.from(
       document.querySelectorAll<HTMLScriptElement>(
         `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
@@ -242,17 +256,17 @@ export function loadGtagScript(gaId: string): Promise<void> {
     if (existing) {
       // Its load or error event may already have fired before this call, and a settled script
       // does not fire again; past the timeout it counts as failed, and a retry loads its own.
-      const fail = () => {
+      const fail = (mayStillRun: boolean) => {
         clearTimeout(timer);
         stalledTags.add(existing);
-        reject(failure());
+        reject(failure(mayStillRun));
       };
       const timer = setTimeout(
-        () => (isTagLoadedFor(gaId) ? resolve() : fail()),
+        () => (isTagLoadedFor(gaId) ? resolve() : fail(true)),
         TAG_LOAD_TIMEOUT_MS
       );
       existing.addEventListener("load", () => settleOnLoad(timer, resolve, gaId), { once: true });
-      existing.addEventListener("error", fail, { once: true });
+      existing.addEventListener("error", () => fail(false), { once: true });
       return;
     }
 
@@ -266,14 +280,14 @@ export function loadGtagScript(gaId: string): Promise<void> {
         return;
       }
       stalledTags.add(script);
-      reject(failure());
+      reject(failure(true));
     }, TAG_LOAD_TIMEOUT_MS);
     script.onload = () => settleOnLoad(timer, resolve, gaId);
     script.onerror = () => {
       clearTimeout(timer);
       // A failed element would make the next attempt wait on it instead of retrying.
       script.remove();
-      reject(failure());
+      reject(failure(false));
     };
 
     document.head.appendChild(script);

@@ -13,7 +13,7 @@ import type {
 import { DEFAULT_CONFIG } from "./types";
 import { detectLocale } from "../i18n/index";
 import type { SupportedLocale } from "../i18n/types";
-import { initScriptBlocker } from "./script-blocker";
+import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
 import {
   getStoredConsent,
   storeConsent,
@@ -28,6 +28,7 @@ import {
   queueGoogleAnalyticsConfig,
   queueConsentUpdate,
   loadGtagScript,
+  GtagLoadError,
   clearAnalyticsCookies,
   setAnalyticsDisabled,
   isTagLoadedFor,
@@ -128,10 +129,10 @@ export class ConsentManager {
   /** gtag.js loaded; no further attempt is needed. */
   private gaLoaded = false;
   /**
-   * A gtag.js request was made on this page. One that timed out stays in flight and may still
-   * run, so it counts as a running tag for a withdrawal.
+   * A gtag.js request timed out: its element stays on the page and may still run, so it counts
+   * as a running tag for a withdrawal. One that failed outright cannot run and does not count.
    */
-  private gaRequested = false;
+  private gaMayStillRun = false;
   /** A consent push found the load in flight; a failure of that attempt retries at once. */
   private gaRetryOnFailure = false;
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
@@ -163,6 +164,11 @@ export class ConsentManager {
   > = [];
 
   constructor(config: ConsentConfig = {}) {
+    // Basic mode's promise (nothing reaches Google before consent or after a refusal) holds only
+    // for a tag this manager loads and can switch off; a tag the site loads itself is beyond it.
+    if (config.consentMode === "basic" && !config.gaId) {
+      throw new Error("consentMode 'basic' requires gaId: the manager must load the Google tag");
+    }
     this.locale = config.locale ?? detectLocale();
     this.config = {
       ...config,
@@ -259,6 +265,10 @@ export class ConsentManager {
       await this.decideInitialConsent();
     } finally {
       this.consentSettled = true;
+      // The script blocker ignored scripts added before this point (an allowed script may add
+      // more while init() finishes); with the consent settled they are scanned once more.
+      const settled = this.scriptBlockerCleanup ? this.getConsent() : null;
+      if (settled && !this.destroyed) unblockScriptsByCategory(settled.categories);
     }
   }
 
@@ -692,7 +702,8 @@ export class ConsentManager {
     if (gaId && this.basicMode) {
       // The tag may already run on the page whatever this instance has sent (an earlier manager
       // instance loaded it before a remount), so it is told about a refusal all the same.
-      const tagRunning = this.gaRequested || isTagLoadedFor(gaId);
+      const tagRunning =
+        this.gaLoading || this.gaLoaded || this.gaMayStillRun || isTagLoadedFor(gaId);
       if (basicDenied) {
         // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
         // sending cookieless pings; only a reload stops a running tag. A marketing-only
@@ -768,7 +779,6 @@ export class ConsentManager {
    */
   private loadGtag(gaId: string): void {
     this.gaLoading = true;
-    this.gaRequested = true;
     this.gaRetryOnFailure = false;
     loadGtagScript(gaId).then(
       () => {
@@ -777,6 +787,7 @@ export class ConsentManager {
       },
       (error: unknown) => {
         this.gaLoading = false;
+        if (error instanceof GtagLoadError && error.mayStillRun) this.gaMayStillRun = true;
         // The app that owned this manager is gone; nothing may be reported or appended for it.
         if (this.destroyed) return;
         try {
