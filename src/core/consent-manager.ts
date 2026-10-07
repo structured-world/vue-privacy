@@ -313,13 +313,6 @@ export class ConsentManager {
 
   private async decideInitialConsent(): Promise<void> {
     const epoch = this.consentEpoch;
-    const superseded = (): boolean => {
-      if (this.consentEpoch === epoch) return false;
-      // A choice made meanwhile was stored before its location was known; without it, the
-      // next page load would take an EU visitor's choice for non-EU consent and ask again.
-      this.storeLocationWithChoice();
-      return true;
-    };
 
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
@@ -329,145 +322,16 @@ export class ConsentManager {
 
     // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
+    if (stored && (await this.restoreStoredConsent(stored, epoch))) return;
+    // Remote fallback: restore the record stored for this visitor's ID. Without one, geo
+    // detection below starts at once, with no extra tick.
+    const storage = this.remoteStorage;
+    const uid = storage ? getConsentUid() : null;
+    if (storage && uid && (await this.restoreRemoteConsent(storage, uid, epoch))) return;
 
-    if (stored) {
-      // GDPR roaming protection: consent given in EU context is valid everywhere,
-      // but consent given outside EU may not be valid if user is now in EU.
-      // GDPR protects everyone IN the EU, not just EU citizens.
-      if (stored.isEU === true) {
-        // Consent was given in EU context with full GDPR disclosure — valid everywhere.
-        this.isEU = true;
-        this.geoResult = {
-          isEU: true,
-          method: stored.geoMethod ?? "manual",
-          countryCode: stored.countryCode,
-          region: stored.region,
-        };
-        this.geoDetectionLog = [
-          {
-            method: stored.geoMethod ?? "manual",
-            status: "success",
-            result: { isEU: true, countryCode: stored.countryCode, region: stored.region },
-            duration: 0,
-          },
-        ];
-        this.reconcile();
-        return;
-      }
-
-      // Non-EU consent (isEU=false or undefined): must verify current location.
-      // GDPR protects everyone IN the EU, so if user has roamed to EU, need re-consent.
-      // NOTE: This runs geo detection on every page load for non-EU users — intentional
-      // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
-      const needsReconsent = await this.checkRoamingToEU(stored);
-      if (superseded()) return;
-      // Another tab may have saved a choice, or reset, while the location was checked. That is
-      // the visitor's latest decision: the consent read above must not be written back over it.
-      const current = getStoredConsent(this.config);
-      const changed = current === null || current.timestamp !== stored.timestamp;
-      if (changed && current !== null && (!needsReconsent || current.isEU === true)) {
-        this.reconcile();
-        return;
-      }
-      if (!changed && !needsReconsent) {
-        // User is not in EU now — non-EU consent remains valid.
-        // Update cookie with fresh geo data from roaming check (for debugging/analytics).
-        // This doesn't skip future roaming checks — only isEU=true fast-path does that.
-        if (this.geoResult) {
-          storeConsent(
-            {
-              categories: stored.categories,
-              isEU: this.geoResult.isEU,
-              geoMethod: this.geoResult.method,
-              countryCode: this.geoResult.countryCode,
-              region: this.geoResult.region,
-            },
-            this.config
-          );
-        }
-        this.reconcile();
-        return;
-      }
-      // Now in the EU with consent given outside it (cleared here), or reset in another tab:
-      // undecided, and decided below like a first visit.
-      if (needsReconsent) clearConsent(this.config);
-    }
-
-    // Remote fallback: if storage is configured, try to restore consent
-    if (this.remoteStorage) {
-      const uid = getConsentUid();
-      if (uid) {
-        this.userId = uid;
-        const version = this.config.version ?? DEFAULT_CONFIG.version;
-        try {
-          const remote = await this.remoteStorage.get(uid, version);
-          if (remote) {
-            // GDPR roaming protection: remote storage doesn't include geo data,
-            // so we must check current location before restoring.
-            // If user is now in EU, they need fresh GDPR-compliant consent.
-            const geoResult = await this.performGeoDetection();
-            if (superseded()) return;
-
-            // Another tab may have saved a choice, or reset, while the record was fetched: that
-            // is newer than the record, which must not be written over it.
-            const current = getStoredConsent(this.config);
-            if (current && (!geoResult.isEU || current.isEU === true)) {
-              this.reconcile();
-              return;
-            }
-            const resetElsewhere = getConsentUid() !== uid;
-
-            if (resetElsewhere) {
-              // Undecided again: decided below like a first visit.
-            } else if (geoResult.isEU) {
-              // User is in EU — cannot use remote consent without GDPR disclosure.
-              // Clear consent_uid and fall through to show banner.
-              clearConsentUid(this.config);
-              // Fall through to geo detection / banner
-            } else {
-              // Not in EU — safe to restore remote consent.
-              // Store geo data for debugging/analytics. Note: on next page load,
-              // this cookie (with isEU=false) will trigger roaming check again —
-              // only isEU=true fast-path skips geo detection.
-              // Adopted as this page's choice: it stays in effect even where the cookie cannot be
-              // written (a sandboxed frame).
-              this.pageChoice = this.choiceRecord(remote.categories);
-              this.storeAndConfirm(this.pageChoice);
-              this.reconcile();
-              return;
-            }
-          }
-        } catch {
-          // Remote storage failed — fall through to geo detection
-        }
-        // A choice or reset made while remote.get() was pending is caught after geo detection
-        // below, which still runs: isEUUser() and isCCPAUser() must hold for this page.
-      }
-    }
-
-    // Detect if user is in EU (skip if already detected in roaming check or remote storage)
-    if (this.isEU === null) {
-      try {
-        await this.performGeoDetection();
-      } catch {
-        // Geo detection failed: assume non-EU to avoid blocking site usage.
-        // This is a fail-open strategy - if we can't determine location, we grant
-        // consent by default (same behavior as non-EU, non-CCPA users).
-        // This prioritizes user experience over strict compliance in edge cases.
-        this.isEU = false;
-        this.geoDetectionLog = [
-          {
-            method: "fallback",
-            status: "failed",
-            result: { isEU: false },
-            duration: 0,
-            error: "Geo detection failed; defaulting to non-EU",
-          },
-        ];
-      }
-    }
+    await this.detectJurisdiction();
     // Every await is behind us: a choice or reset made meanwhile stands over what this flow read.
-    if (superseded()) return;
+    if (this.supersededSince(epoch)) return;
     // So does a choice another tab saved meanwhile (the cookie is shared); a jurisdiction's
     // grant or the banner must not take its place.
     const latest = getStoredConsent(this.config);
@@ -479,7 +343,177 @@ export class ConsentManager {
       this.reconcile();
       return;
     }
+    this.decideByJurisdiction();
+  }
 
+  /** Whether the visitor chose or reset since `epoch`; that decision stands over init()'s reads. */
+  private supersededSince(epoch: number): boolean {
+    if (this.consentEpoch === epoch) return false;
+    // A choice made meanwhile was stored before its location was known; without it, the
+    // next page load would take an EU visitor's choice for non-EU consent and ask again.
+    this.storeLocationWithChoice();
+    return true;
+  }
+
+  /**
+   * Restore the consent cookie, checking a choice made outside the EU against the current
+   * location. Returns whether the consent is decided; false leaves the visitor undecided.
+   */
+  private async restoreStoredConsent(stored: StoredConsent, epoch: number): Promise<boolean> {
+    // GDPR roaming protection: consent given in EU context is valid everywhere,
+    // but consent given outside EU may not be valid if user is now in EU.
+    // GDPR protects everyone IN the EU, not just EU citizens.
+    if (stored.isEU === true) {
+      // Consent was given in EU context with full GDPR disclosure — valid everywhere.
+      this.adoptStoredLocation(stored);
+      this.reconcile();
+      return true;
+    }
+
+    // Non-EU consent (isEU=false or undefined): must verify current location.
+    // GDPR protects everyone IN the EU, so if user has roamed to EU, need re-consent.
+    // NOTE: This runs geo detection on every page load for non-EU users — intentional
+    // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
+    const needsReconsent = await this.checkRoamingToEU(stored);
+    if (this.supersededSince(epoch)) return true;
+    // Another tab may have saved a choice, or reset, while the location was checked. That is
+    // the visitor's latest decision: the consent read above must not be written back over it.
+    const current = getStoredConsent(this.config);
+    const changed = current?.timestamp !== stored.timestamp;
+    if (changed && current !== null && (!needsReconsent || current.isEU === true)) {
+      this.reconcile();
+      return true;
+    }
+    if (!changed && !needsReconsent) {
+      // User is not in EU now — non-EU consent remains valid.
+      this.storeDetectedLocation(stored);
+      this.reconcile();
+      return true;
+    }
+    // Now in the EU with consent given outside it (cleared here), or reset in another tab:
+    // undecided, and decided later like a first visit.
+    if (needsReconsent) clearConsent(this.config);
+    return false;
+  }
+
+  /** The location a choice made in the EU carries, as this page's detection result. */
+  private adoptStoredLocation(stored: StoredConsent): void {
+    this.isEU = true;
+    this.geoResult = {
+      isEU: true,
+      method: stored.geoMethod ?? "manual",
+      countryCode: stored.countryCode,
+      region: stored.region,
+    };
+    this.geoDetectionLog = [
+      {
+        method: stored.geoMethod ?? "manual",
+        status: "success",
+        result: { isEU: true, countryCode: stored.countryCode, region: stored.region },
+        duration: 0,
+      },
+    ];
+  }
+
+  /**
+   * Update the cookie with fresh geo data from the roaming check (for debugging/analytics).
+   * This doesn't skip future roaming checks — only the isEU=true fast-path does that.
+   */
+  private storeDetectedLocation(stored: StoredConsent): void {
+    if (!this.geoResult) return;
+    storeConsent(
+      {
+        categories: stored.categories,
+        isEU: this.geoResult.isEU,
+        geoMethod: this.geoResult.method,
+        countryCode: this.geoResult.countryCode,
+        region: this.geoResult.region,
+      },
+      this.config
+    );
+  }
+
+  /** Restore the remote record stored for `uid`. Returns whether the consent is decided. */
+  private async restoreRemoteConsent(
+    storage: ConsentStorage,
+    uid: string,
+    epoch: number
+  ): Promise<boolean> {
+    this.userId = uid;
+    const version = this.config.version ?? DEFAULT_CONFIG.version;
+    try {
+      const remote = await storage.get(uid, version);
+      if (remote) return await this.adoptRemoteConsent(remote, uid, epoch);
+    } catch {
+      // Remote storage failed — fall through to geo detection
+    }
+    // A choice or reset made while remote.get() was pending is caught after geo detection,
+    // which still runs: isEUUser() and isCCPAUser() must hold for this page.
+    return false;
+  }
+
+  /** Adopt a remote record outside the EU. Returns whether the consent is decided. */
+  private async adoptRemoteConsent(
+    remote: StoredConsent,
+    uid: string,
+    epoch: number
+  ): Promise<boolean> {
+    // GDPR roaming protection: remote storage doesn't include geo data,
+    // so we must check current location before restoring.
+    // If user is now in EU, they need fresh GDPR-compliant consent.
+    const geoResult = await this.performGeoDetection();
+    if (this.supersededSince(epoch)) return true;
+
+    // Another tab may have saved a choice, or reset, while the record was fetched: that
+    // is newer than the record, which must not be written over it.
+    const current = getStoredConsent(this.config);
+    if (current && (!geoResult.isEU || current.isEU === true)) {
+      this.reconcile();
+      return true;
+    }
+    // Reset in another tab meanwhile: undecided again, decided like a first visit.
+    if (getConsentUid() !== uid) return false;
+    if (geoResult.isEU) {
+      // User is in EU — cannot use remote consent without GDPR disclosure.
+      // Clear consent_uid and fall through to show banner.
+      clearConsentUid(this.config);
+      return false;
+    }
+    // Not in EU — safe to restore remote consent. Note: on next page load, this cookie (with
+    // isEU=false) will trigger the roaming check again — only the isEU=true fast-path skips geo
+    // detection. Adopted as this page's choice: it stays in effect even where the cookie cannot
+    // be written (a sandboxed frame).
+    this.pageChoice = this.choiceRecord(remote.categories);
+    this.storeAndConfirm(this.pageChoice);
+    this.reconcile();
+    return true;
+  }
+
+  /** Detect if user is in EU (skip if already detected in roaming check or remote storage). */
+  private async detectJurisdiction(): Promise<void> {
+    if (this.isEU !== null) return;
+    try {
+      await this.performGeoDetection();
+    } catch {
+      // Geo detection failed: assume non-EU to avoid blocking site usage.
+      // This is a fail-open strategy - if we can't determine location, we grant
+      // consent by default (same behavior as non-EU, non-CCPA users).
+      // This prioritizes user experience over strict compliance in edge cases.
+      this.isEU = false;
+      this.geoDetectionLog = [
+        {
+          method: "fallback",
+          status: "failed",
+          result: { isEU: false },
+          duration: 0,
+          error: "Geo detection failed; defaulting to non-EU",
+        },
+      ];
+    }
+  }
+
+  /** An undecided visitor: ask in the EU, apply the jurisdiction's grant elsewhere. */
+  private decideByJurisdiction(): void {
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
       this.reconcile(false);
@@ -491,16 +525,17 @@ export class ConsentManager {
         this.bannerPending = true;
       }
       this.config.onBannerShow?.();
-    } else if (this.isCCPAUser()) {
+      return;
+    }
+    const grantedCategories = {
+      analytics: true,
+      marketing: true,
+      functional: true,
+    };
+    if (this.isCCPAUser()) {
       // CCPA user (US state with privacy law): grant all consent silently.
       // No banner required — CCPA uses opt-out model (via "Do Not Sell" link).
       // User can opt-out later via showPreferenceCenter() triggered by "Do Not Sell" link.
-      const grantedCategories = {
-        analytics: true,
-        marketing: true,
-        functional: true,
-      };
-
       // Persisted before it is applied, so geo-detection is not repeated on the next visit and
       // an opt-out a consent callback makes in response is the last choice written. Basic mode
       // keeps it unstored: a stored grant is the visitor's consent there, and this one is not.
@@ -508,19 +543,13 @@ export class ConsentManager {
       this.impliedChoice = this.impliedRecord(grantedCategories);
       this.reconcile();
       this.config.onCCPAUser?.();
-    } else {
-      // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
-      // Don't store — this is the default state for unrestricted jurisdictions.
-      // Consent will only be stored if user explicitly changes preferences.
-      const grantedCategories = {
-        analytics: true,
-        marketing: true,
-        functional: true,
-      };
-
-      this.impliedChoice = this.impliedRecord(grantedCategories);
-      this.reconcile();
+      return;
     }
+    // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
+    // Don't store — this is the default state for unrestricted jurisdictions.
+    // Consent will only be stored if user explicitly changes preferences.
+    this.impliedChoice = this.impliedRecord(grantedCategories);
+    this.reconcile();
   }
 
   /**
@@ -828,31 +857,52 @@ export class ConsentManager {
     const firstSetup = !this.gaDefaultsSent;
     let startsMeasuring = false;
     if (gaId && this.basicMode) {
-      // The tag may already run on the page whatever this instance has sent (an earlier manager
-      // instance loaded it before a remount), so it is told about a refusal all the same.
-      // A request in flight or past its timeout may still run; one that failed cannot.
-      const tagRunning = isTagLiveFor(gaId);
-      if (signals.analytics_storage === "denied") {
-        // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
-        // sending cookieless pings; only a reload stops a running tag. A marketing-only
-        // withdrawal needs none: with analytics allowed the next page loads the same tag, and
-        // the denied ad signals reach the running one as an update already. Analytics refused
-        // before was already withdrawn, so a repeated refusal reloads nothing.
-        const withdrawn = previous?.analytics_storage !== "denied";
-        if (withdrawn && tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
-        clearAnalyticsCookies(gaId);
-        setAnalyticsDisabled(gaId, true);
-        // A refusal itself must not cause a request to Google: no retry of a failed load either.
-        this.gaRetryOnFailure = false;
-        if (firstSetup && !tagRunning) return;
-      } else {
-        // A newer choice allows analytics again before a pending withdrawal reload ran (a
-        // consent callback answering the refusal): the tag stays, so the reload has no purpose.
-        this.pendingReload = null;
-        setAnalyticsDisabled(gaId, false);
-        startsMeasuring = previous?.analytics_storage !== "granted";
+      if (signals.analytics_storage === "granted") {
+        startsMeasuring = this.switchAnalyticsOn(gaId, previous);
+      } else if (!this.switchAnalyticsOff(gaId, previous) && firstSetup) {
+        // A refusal before anything was sent, with no tag on the page: Google gets nothing.
+        return;
       }
     }
+    this.sendConsentCommands(signals, final);
+    if (startsMeasuring) this.sendPendingPageView(firstSetup);
+  }
+
+  /**
+   * Basic mode: a push that leaves analytics denied deletes the `_ga` cookies and switches the
+   * tag off. Returns whether a tag runs on the page.
+   */
+  private switchAnalyticsOff(gaId: string, previous: GoogleConsentSignals | null): boolean {
+    // The tag may already run on the page whatever this instance has sent (an earlier manager
+    // instance loaded it before a remount), so it is told about a refusal all the same.
+    // A request in flight or past its timeout may still run; one that failed cannot.
+    const tagRunning = isTagLiveFor(gaId);
+    // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
+    // sending cookieless pings; only a reload stops a running tag. A marketing-only
+    // withdrawal needs none: with analytics allowed the next page loads the same tag, and
+    // the denied ad signals reach the running one as an update already. Analytics refused
+    // before was already withdrawn, so a repeated refusal reloads nothing.
+    const withdrawn = previous?.analytics_storage !== "denied";
+    if (withdrawn && tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
+    clearAnalyticsCookies(gaId);
+    setAnalyticsDisabled(gaId, true);
+    // A refusal itself must not cause a request to Google: no retry of a failed load either.
+    this.gaRetryOnFailure = false;
+    return tagRunning;
+  }
+
+  /** Basic mode: lift this library's switch. Returns whether analytics starts measuring now. */
+  private switchAnalyticsOn(gaId: string, previous: GoogleConsentSignals | null): boolean {
+    // A newer choice allows analytics again before a pending withdrawal reload ran (a
+    // consent callback answering the refusal): the tag stays, so the reload has no purpose.
+    this.pendingReload = null;
+    setAnalyticsDisabled(gaId, false);
+    return previous?.analytics_storage !== "granted";
+  }
+
+  /** The `consent default` (with `js` and `config`) on the first push, an update otherwise. */
+  private sendConsentCommands(signals: GoogleConsentSignals, final: boolean): void {
+    const gaId = this.config.gaId;
     if (!gaId) {
       updateGoogleConsent(signals);
     } else if (this.gaDefaultsSent) {
@@ -865,7 +915,6 @@ export class ConsentManager {
       else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
       queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
-    if (startsMeasuring) this.sendPendingPageView(firstSetup);
   }
 
   /**
@@ -901,13 +950,12 @@ export class ConsentManager {
    * queued meanwhile, each as long as a superseded write is waited for.
    */
   private async reloadAfterWrites(token: object): Promise<void> {
-    let write: Promise<void>;
-    do {
-      write = this.remoteWrite;
-      await settledWithin(write, SUPERSEDED_WRITE_GRACE_MS);
-    } while (this.pendingReload === token && write !== this.remoteWrite);
+    const write = this.remoteWrite;
+    await settledWithin(write, SUPERSEDED_WRITE_GRACE_MS);
     // Cancelled by a newer grant, or replaced by a later withdrawal's own reload.
     if (this.pendingReload !== token) return;
+    // A newer decision queued another write meanwhile: wait for that one too.
+    if (write !== this.remoteWrite) return this.reloadAfterWrites(token);
     this.pendingReload = null;
     reloadPage();
   }

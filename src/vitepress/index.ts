@@ -83,6 +83,17 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
         // it failed: a navigation made meanwhile was skipped and is measured only here.
         // Before user choice: sent under Consent Mode defaults (cookieless).
         // After explicit denial (analytics: false): events are NOT sent.
+        const trackPageInView = (): void => {
+          const frontmatter = ctx.router?.route.data.frontmatter as
+            | VitePressGA4Frontmatter
+            | undefined;
+          manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
+
+          // Fire ga4Event from frontmatter if defined
+          if (frontmatter?.ga4Event) {
+            manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+          }
+        };
         manager
           .init()
           .catch((err) => {
@@ -90,17 +101,10 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           })
           .then(() => {
             initialized = true;
-            nextTick(() => {
-              const frontmatter = ctx.router?.route.data.frontmatter as
-                | VitePressGA4Frontmatter
-                | undefined;
-              manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
-
-              // Fire ga4Event from frontmatter if defined
-              if (frontmatter?.ga4Event) {
-                manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
-              }
-            });
+            return nextTick(trackPageInView);
+          })
+          .catch((err) => {
+            console.error("[@structured-world/vue-privacy] Failed to track the page view:", err);
           });
 
         // Track subsequent SPA navigations via router

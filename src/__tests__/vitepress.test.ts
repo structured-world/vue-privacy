@@ -65,6 +65,38 @@ describe("enhanceWithConsent", () => {
     expect(pageViews()).toHaveLength(1);
   });
 
+  it("reports a failure to track the page in view instead of leaving it unhandled", async () => {
+    // Regression: the tracking after init() ran in a nextTick whose promise nobody handled, so
+    // an exception there became an unhandled rejection.
+    const failure = new Error("frontmatter failed");
+    const route = {
+      path: "/",
+      data: {
+        get frontmatter(): never {
+          throw failure;
+        },
+      },
+    };
+    const ctx = {
+      app: { provide: () => undefined, component: () => undefined },
+      router: { route },
+    } as unknown as EnhanceContext;
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      enhanceWithConsent({} as Theme, {
+        gaId: "G-TEST123",
+        geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      }).enhanceApp?.(ctx);
+      await settle();
+      await settle();
+
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("track"), failure);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("counts the page in view when init() fails after a navigation", async () => {
     // Regression: the navigation made while init() ran was skipped, and a failing init() only
     // enabled tracking for later navigations, so the page in view went unmeasured.

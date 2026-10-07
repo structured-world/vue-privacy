@@ -338,13 +338,28 @@ export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
 /** Values gtag.js stores: `GA1.<n>.<id>.<time>` in `_ga`, `GS1.`/`GS2.` session state in `_ga_<ID>`. */
 const GA_COOKIE_VALUE = /^G[AS]\d\./;
 
-/** cookie_prefix / cookie_path / cookie_domain this page passed to the Google tag for an ID. */
-function configuredCookieSettings(gaId: string): {
+/**
+ * The parameters a dataLayer command applies to the tag for an ID, or null. `set` applies to
+ * every tag on the page, `config` only to the ID it names. `set` also takes one setting as
+ * `gtag('set', 'cookie_path', '/path')`.
+ */
+function paramsFor(command: ArrayLike<unknown>, gaId: string): unknown {
+  if (command[0] === "set") {
+    return typeof command[1] === "string" ? { [command[1]]: command[2] } : command[1];
+  }
+  return command[0] === "config" && command[1] === gaId ? command[2] : null;
+}
+
+/** Settings the Google tag stores its cookies under for one ID. */
+interface CookieSettings {
   prefixes: Set<string>;
   paths: Set<string>;
   domains: Set<string>;
-} {
-  const settings = {
+}
+
+/** cookie_prefix / cookie_path / cookie_domain this page passed to the Google tag for an ID. */
+function configuredCookieSettings(gaId: string): CookieSettings {
+  const settings: CookieSettings = {
     prefixes: new Set([""]),
     paths: new Set<string>(),
     domains: new Set<string>(),
@@ -353,16 +368,7 @@ function configuredCookieSettings(gaId: string): {
   for (const entry of window.dataLayer) {
     const command = commandOf(entry);
     if (command === null) continue;
-    // `set` applies to every tag on the page, `config` only to the ID it names. `set` also takes
-    // one setting as `gtag('set', 'cookie_path', '/path')`.
-    const params =
-      command[0] === "set"
-        ? typeof command[1] === "string"
-          ? { [command[1]]: command[2] }
-          : command[1]
-        : command[0] === "config" && command[1] === gaId
-          ? command[2]
-          : null;
+    const params = paramsFor(command, gaId);
     if (typeof params !== "object" || params === null) continue;
     const { cookie_prefix, cookie_path, cookie_domain } = params as Record<string, unknown>;
     if (typeof cookie_prefix === "string") settings.prefixes.add(cookie_prefix);
@@ -389,8 +395,19 @@ function configuredCookieSettings(gaId: string): {
  */
 export function clearAnalyticsCookies(gaId: string): void {
   if (typeof document === "undefined") return;
-  const session = `_ga_${gaId.replace(/^G-/, "")}`;
   const configured = configuredCookieSettings(gaId);
+  const paths = analyticsCookiePaths(configured);
+  const domains = analyticsCookieDomains(configured);
+  for (const name of analyticsCookieNames(gaId, configured)) {
+    for (const path of paths) {
+      for (const domain of domains) deleteCookie(name, path, domain);
+    }
+  }
+}
+
+/** The configured `_ga` / `_ga_<ID>` names, plus visible GA-like names whose value is GA's. */
+function analyticsCookieNames(gaId: string, configured: CookieSettings): Set<string> {
+  const session = `_ga_${gaId.replace(/^G-/, "")}`;
   const names = new Set<string>();
   for (const prefix of configured.prefixes) {
     names.add(`${prefix}_ga`);
@@ -411,10 +428,19 @@ export function clearAnalyticsCookies(gaId: string): void {
       names.add(name);
     }
   }
+  return names;
+}
 
+/** The host-only form, the configured domains, the host and each parent domain (no bare TLD). */
+function analyticsCookieDomains(configured: CookieSettings): (string | undefined)[] {
   const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
   const domains: (string | undefined)[] = [undefined, ...configured.domains];
   for (let i = 0; i < labels.length - 1; i++) domains.push(labels.slice(i).join("."));
+  return domains;
+}
+
+/** "/", the configured paths, and every path prefix of this page. */
+function analyticsCookiePaths(configured: CookieSettings): Set<string> {
   const paths = new Set(["/", ...configured.paths]);
   const segments = typeof location === "undefined" ? [] : location.pathname.split("/");
   for (let i = 2; i <= segments.length; i++) {
@@ -425,12 +451,7 @@ export function clearAnalyticsCookies(gaId: string): void {
     // covers this page only when it is an ancestor, so the page's own path gets none.
     if (i < segments.length) paths.add(`${path}/`);
   }
-
-  for (const name of names) {
-    for (const path of paths) {
-      for (const domain of domains) deleteCookie(name, path, domain);
-    }
-  }
+  return paths;
 }
 
 /**
