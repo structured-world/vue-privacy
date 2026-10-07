@@ -16,6 +16,7 @@ export const nl: Translations = {
       "Kies welke cookies u wilt toestaan. U kunt deze instellingen op elk moment wijzigen.",
     savePreferences: "Voorkeuren opslaan",
     acceptAll: "Alles accepteren",
+    rejectAll: "Alles weigeren",
     categories: {
       necessary: {
         name: "Strikt noodzakelijk",

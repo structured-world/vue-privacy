@@ -38,9 +38,9 @@ Style the banner with CSS variables:
   --consent-btn-accept-bg: #0066cc;
   --consent-btn-accept-text: #ffffff;
 
-  /* Reject Button */
-  --consent-btn-reject-bg: #e0e0e0;
-  --consent-btn-reject-text: #1a1a1a;
+  /* Reject Button: unset by default, so it takes the accept colours */
+  /* --consent-btn-reject-bg: ...; */
+  /* --consent-btn-reject-text: ...; */
 
   /* Typography */
   --consent-font: system-ui, -apple-system, sans-serif;
@@ -57,11 +57,13 @@ The banner automatically supports `prefers-color-scheme: dark`:
     --consent-bg: #1a1a1a;
     --consent-text: #ffffff;
     --consent-text-secondary: #a0a0a0;
-    --consent-btn-reject-bg: #333333;
-    --consent-btn-reject-text: #ffffff;
   }
 }
 ```
+
+### Equal prominence for refusing
+
+"Accept all" and "Reject all" share one style by default (same size, weight and colours): the EDPB Cookie Banner Taskforce report (January 2023, points 9-14) and the CNIL guidance treat a refusal that is less visible than an acceptance as a deceptive design. Setting `--consent-btn-reject-bg` and `--consent-btn-reject-text` gives the reject button colours of its own; keep its contrast equal to the accept button's.
 
 ## Cookie Settings
 

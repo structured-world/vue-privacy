@@ -58,6 +58,8 @@ The modal displays four cookie categories:
 
 Each category shows a name and description, translated to the user's locale.
 
+The footer offers "Reject all" beside "Accept all", styled the same: refusing every optional category takes one click, as accepting does. "Save preferences" stores the toggles as set.
+
 ## Opening Programmatically
 
 Use the `useConsent` composable:
@@ -93,6 +95,7 @@ createConsentPlugin({
     description: 'Choose which cookies you want to allow.',
     savePreferences: 'Save My Choices',
     acceptAll: 'Accept Everything',
+    rejectAll: 'Refuse Everything',
     categories: {
       analytics: {
         name: 'Performance Cookies',

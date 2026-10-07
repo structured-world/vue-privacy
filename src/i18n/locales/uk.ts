@@ -16,6 +16,7 @@ export const uk: Translations = {
       "Оберіть, які файли cookie ви хочете дозволити. Ви можете змінити ці налаштування в будь-який час.",
     savePreferences: "Зберегти налаштування",
     acceptAll: "Прийняти всі",
+    rejectAll: "Відхилити всі",
     categories: {
       necessary: {
         name: "Суворо необхідні",

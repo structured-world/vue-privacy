@@ -165,6 +165,8 @@ export interface PreferenceCenterConfig {
   savePreferences: string;
   /** Accept all button text */
   acceptAll: string;
+  /** Reject all button text */
+  rejectAll: string;
   /** Category display text overrides */
   categories: {
     necessary: Partial<CategoryDisplayConfig>;

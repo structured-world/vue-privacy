@@ -1,6 +1,9 @@
 import { defineConfig } from "vitest/config";
+import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
+  // Compiles the .vue components, so tests can mount them.
+  plugins: [vue()],
   test: {
     globals: true,
     environment: "node",

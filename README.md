@@ -185,6 +185,7 @@ interface ConsentConfig {
     description?: string;
     savePreferences?: string;
     acceptAll?: string;
+    rejectAll?: string;
     categories?: {
       necessary?: { name?: string; description?: string };
       analytics?: { name?: string; description?: string };
@@ -370,13 +371,15 @@ The banner and preference center use CSS custom properties:
   --consent-link: #0066cc;
   --consent-btn-accept-bg: #0066cc;
   --consent-btn-accept-text: #ffffff;
-  --consent-btn-reject-bg: #e0e0e0;
-  --consent-btn-reject-text: #1a1a1a;
+  /* Unset by default: "Reject all" then takes the accept colours */
+  /* --consent-btn-reject-bg, --consent-btn-reject-text */
   --consent-font: system-ui, -apple-system, sans-serif;
 }
 ```
 
 Dark mode is automatically supported via `prefers-color-scheme`.
+
+Refusing is as easy and as visible as accepting by default: "Accept all" and "Reject all" on the banner share one style (same size, weight and colours), and the preference centre offers "Reject all" beside "Accept all". The EDPB Cookie Banner Taskforce report (January 2023, points 9-14) and the CNIL guidance treat a less visible refusal as a deceptive design. A site that sets `--consent-btn-reject-bg` / `--consent-btn-reject-text` keeps its own colours.
 
 ## Current Features
 

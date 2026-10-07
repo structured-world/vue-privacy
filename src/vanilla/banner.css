@@ -9,6 +9,9 @@
  *   --consent-bg, --consent-text, --consent-text-secondary,
  *   --consent-link, --consent-btn-accept-bg, --consent-btn-accept-text,
  *   --consent-btn-reject-bg, --consent-btn-reject-text, --consent-font
+ *
+ * The reject colours default to the accept ones, so refusing is as visible as accepting
+ * (EDPB Cookie Banner Taskforce report, January 2023, points 9-14).
  */
 
 /* Light theme (default) */
@@ -20,8 +23,6 @@
   --consent-link: #0066cc;
   --consent-btn-accept-bg: #0066cc;
   --consent-btn-accept-text: #ffffff;
-  --consent-btn-reject-bg: #e0e0e0;
-  --consent-btn-reject-text: #1a1a1a;
   --consent-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -33,8 +34,6 @@
   --consent-link: #66b3ff;
   --consent-btn-accept-bg: #0066cc;
   --consent-btn-accept-text: #ffffff;
-  --consent-btn-reject-bg: #333333;
-  --consent-btn-reject-text: #ffffff;
 }
 
 /* Auto theme: follow system preference */
@@ -46,8 +45,6 @@
     --consent-link: #66b3ff;
     --consent-btn-accept-bg: #0066cc;
     --consent-btn-accept-text: #ffffff;
-    --consent-btn-reject-bg: #333333;
-    --consent-btn-reject-text: #ffffff;
   }
 }
 
@@ -164,8 +161,8 @@
 
 /* Reject button */
 .consent-banner__btn--reject {
-  background: var(--consent-btn-reject-bg, #e0e0e0);
-  color: var(--consent-btn-reject-text, #1a1a1a);
+  background: var(--consent-btn-reject-bg, var(--consent-btn-accept-bg, #0066cc));
+  color: var(--consent-btn-reject-text, var(--consent-btn-accept-text, #ffffff));
 }
 
 /* Customize button */

@@ -31,6 +31,7 @@ const modalConfig = computed(() => {
     description: cfg?.description ?? t.description,
     savePreferences: cfg?.savePreferences ?? t.savePreferences,
     acceptAll: cfg?.acceptAll ?? t.acceptAll,
+    rejectAll: cfg?.rejectAll ?? t.rejectAll,
     categories: {
       necessary: {
         name: cfg?.categories?.necessary?.name ?? t.categories.necessary.name,
@@ -98,6 +99,11 @@ async function handleSave() {
 
 async function handleAcceptAll() {
   await consentManager?.acceptAll();
+  emit("close");
+}
+
+async function handleRejectAll() {
+  await consentManager?.rejectAll();
   emit("close");
 }
 
@@ -259,6 +265,14 @@ function handleKeydown(e: KeyboardEvent) {
           </div>
 
           <div class="consent-modal__footer">
+            <!-- Refusing takes one click, as accepting does, and looks the same. -->
+            <button
+              type="button"
+              class="consent-modal__btn consent-modal__btn--reject-all"
+              @click="handleRejectAll"
+            >
+              {{ modalConfig.rejectAll }}
+            </button>
             <button
               type="button"
               class="consent-modal__btn consent-modal__btn--accept-all"

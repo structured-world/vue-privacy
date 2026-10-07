@@ -42,7 +42,7 @@ export const MODAL_CSS = `/* Vue Privacy - Vanilla Modal Styles */
 .consent-modal__btn:hover{opacity:.9}
 .consent-modal__btn:focus-visible{outline:2px solid var(--consent-link,#0066cc);outline-offset:2px}
 .consent-modal__btn--save{background:var(--consent-btn-accept-bg,#0066cc);color:var(--consent-btn-accept-text,#fff)}
-.consent-modal__btn--accept-all{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
+.consent-modal__btn--accept-all,.consent-modal__btn--reject-all{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
 @media(max-width:640px){.consent-modal{max-width:100%;max-height:100vh;border-radius:0}.consent-modal__footer{flex-direction:column}.consent-modal__btn{width:100%;text-align:center}}
 @media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444}}
 [data-consent-theme="dark"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444}`;
@@ -139,6 +139,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   const description = config.description ?? t.description;
   const savePreferencesText = config.savePreferences ?? t.savePreferences;
   const acceptAllText = config.acceptAll ?? t.acceptAll;
+  const rejectAllText = config.rejectAll ?? t.rejectAll;
   const categories = {
     necessary: {
       name: config.categories?.necessary?.name ?? t.categories.necessary.name,
@@ -218,6 +219,9 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
         </div>
       </div>
       <div class="consent-modal__footer">
+        <button type="button" class="consent-modal__btn consent-modal__btn--reject-all" data-action="reject-all">
+          ${escapeHtml(rejectAllText)}
+        </button>
         <button type="button" class="consent-modal__btn consent-modal__btn--accept-all" data-action="accept-all">
           ${escapeHtml(acceptAllText)}
         </button>
@@ -280,6 +284,11 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
       // Hide immediately for consistent UX, then run async manager call
       hide();
       await manager.acceptAll();
+      onClose?.();
+    } else if (action === "reject-all") {
+      // Hide immediately for consistent UX, then run async manager call
+      hide();
+      await manager.rejectAll();
       onClose?.();
     } else if (action === "save") {
       const cats = getCategories();
