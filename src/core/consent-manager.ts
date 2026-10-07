@@ -82,13 +82,31 @@ function settledWithin(write: Promise<void>, ms: number): Promise<void> {
   });
 }
 
-function sameCategories(
-  a: Omit<ConsentCategories, "necessary">,
-  b: Omit<ConsentCategories, "necessary">
-): boolean {
+type Categories = Omit<ConsentCategories, "necessary">;
+
+function sameCategories(a: Categories, b: Categories): boolean {
   return (
     a.analytics === b.analytics && a.marketing === b.marketing && a.functional === b.functional
   );
+}
+
+function sameSignals(a: GoogleConsentSignals, b: GoogleConsentSignals): boolean {
+  return (
+    a.analytics_storage === b.analytics_storage &&
+    a.ad_storage === b.ad_storage &&
+    a.ad_user_data === b.ad_user_data &&
+    a.ad_personalization === b.ad_personalization
+  );
+}
+
+/** The consent in effect, as every consumer sees it. */
+interface ConsentInEffect {
+  /** The visitor's own choice (stored, or made on this page), or null while undecided. */
+  choice: StoredConsent | null;
+  /** What the consent callback, the listeners and the script blocker follow; null: undecided. */
+  categories: Categories | null;
+  /** What Google gets. */
+  signals: GoogleConsentSignals;
 }
 
 /**
@@ -114,17 +132,15 @@ export class ConsentManager {
   private tabWatchCleanup: (() => void) | null = null;
   /** Basic mode: tells the other tabs of this site that a choice or a reset was stored. */
   private tabChannel: BroadcastChannel | null = null;
-  /** The timestamp of the record the cross-tab sync last saw (null: none since a reset). */
-  private syncedTimestamp: number | null = null;
-  /** The categories the listeners last received, so a sync hands them only a change. */
-  private listenedCategories: Omit<ConsentCategories, "necessary"> | null = null;
   private routerCleanup: (() => void) | null = null;
   /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
-  /** Basic mode: the Google tag is set up and measuring, by the visitor's grant of analytics. */
-  private googleMeasuring = false;
-  /** Basic mode: the ad signals last sent to the measuring tag were granted. */
-  private googleMarketing = false;
+  /** The signals reconcile() last sent to Google (null: none yet). */
+  private sentSignals: GoogleConsentSignals | null = null;
+  /** The categories the callback and listeners last received (null: none, or reset since). */
+  private notifiedCategories: Categories | null = null;
+  /** The timestamp of the choice reconcile() last acted on; a newer record is a new decision. */
+  private actedOnRecord: number | null = null;
   /** The token of the pending reload for a withdrawal (reloadOnWithdrawal), if one is scheduled. */
   private pendingReload: object | null = null;
   /**
@@ -134,7 +150,10 @@ export class ConsentManager {
   private consentSettled = false;
   /** This page's choice reached the consent cookie, so a missing cookie means another tab reset. */
   private cookieConfirmed = false;
-  /** Basic mode: the jurisdiction's grant (analytics off), for the UI; not stored, not a choice. */
+  /**
+   * The jurisdiction's grant (CCPA, outside consent jurisdictions) while the visitor has not
+   * chosen; not a choice. Basic mode keeps analytics off in it and gives Google nothing on it.
+   */
   private impliedChoice: StoredConsent | null = null;
   /** Basic mode: the page view tracked while analytics was off, measured once it is allowed. */
   private pendingPageView: { path: string; title?: string } | null = null;
@@ -322,7 +341,7 @@ export class ConsentManager {
             duration: 0,
           },
         ];
-        this.applyConsent(stored.categories);
+        this.reconcile();
         return;
       }
 
@@ -337,7 +356,7 @@ export class ConsentManager {
       const current = getStoredConsent(this.config);
       const changed = current === null || current.timestamp !== stored.timestamp;
       if (changed && current !== null && (!needsReconsent || current.isEU === true)) {
-        this.applyConsent(current.categories);
+        this.reconcile();
         return;
       }
       if (!changed && !needsReconsent) {
@@ -356,7 +375,7 @@ export class ConsentManager {
             this.config
           );
         }
-        this.applyConsent(stored.categories);
+        this.reconcile();
         return;
       }
       // Now in the EU with consent given outside it (cleared here), or reset in another tab:
@@ -383,7 +402,7 @@ export class ConsentManager {
             // is newer than the record, which must not be written over it.
             const current = getStoredConsent(this.config);
             if (current && (!geoResult.isEU || current.isEU === true)) {
-              this.applyConsent(current.categories);
+              this.reconcile();
               return;
             }
             const resetElsewhere = getConsentUid() !== uid;
@@ -400,17 +419,12 @@ export class ConsentManager {
               // Store geo data for debugging/analytics. Note: on next page load,
               // this cookie (with isEU=false) will trigger roaming check again —
               // only isEU=true fast-path skips geo detection.
-              storeConsent(
-                {
-                  categories: remote.categories,
-                  isEU: this.isEU ?? undefined,
-                  geoMethod: this.geoResult?.method,
-                  countryCode: this.geoResult?.countryCode,
-                  region: this.geoResult?.region,
-                },
-                this.config
-              );
-              this.applyConsent(remote.categories);
+              // Adopted as this page's choice: it stays in effect even where the cookie cannot be
+              // written (a sandboxed frame).
+              this.pageChoice = this.choiceRecord(remote.categories);
+              storeConsent(this.pageChoice, this.config);
+              this.cookieConfirmed = getStoredConsent(this.config) !== null;
+              this.reconcile();
               return;
             }
           }
@@ -453,15 +467,13 @@ export class ConsentManager {
       latest.timestamp !== stored?.timestamp &&
       (!this.isEU || latest.isEU === true)
     ) {
-      this.applyConsent(latest.categories);
+      this.reconcile();
       return;
     }
 
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
-      if (this.config.gaId) {
-        this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
-      }
+      this.reconcile(false);
 
       // Show banner (or defer if component hasn't mounted yet)
       if (this.showBannerCallback) {
@@ -484,7 +496,8 @@ export class ConsentManager {
       // an opt-out a consent callback makes in response is the last choice written. Basic mode
       // keeps it unstored: a stored grant is the visitor's consent there, and this one is not.
       if (!this.basicMode) this.saveConsentWithRemote(grantedCategories);
-      this.applyConsent(grantedCategories, true);
+      this.impliedChoice = this.impliedRecord(grantedCategories);
+      this.reconcile();
       this.config.onCCPAUser?.();
     } else {
       // Non-EU, non-CCPA user: grant all consent silently (same as "Accept All").
@@ -496,8 +509,17 @@ export class ConsentManager {
         functional: true,
       };
 
-      this.applyConsent(grantedCategories, true);
+      this.impliedChoice = this.impliedRecord(grantedCategories);
+      this.reconcile();
     }
+  }
+
+  /**
+   * The jurisdiction's grant as a record. Basic mode allows analytics only on the visitor's own
+   * choice, so it is off there for the consent callbacks and the script blocker alike.
+   */
+  private impliedRecord(granted: Categories): StoredConsent {
+    return this.choiceRecord(this.basicMode ? { ...granted, analytics: false } : granted);
   }
 
   /**
@@ -510,13 +532,13 @@ export class ConsentManager {
    */
   private watchOtherTabs(): void {
     const sync = (): void => {
-      if (document.visibilityState !== "hidden") this.syncBasicTag();
+      if (document.visibilityState !== "hidden") this.syncFromOutside();
     };
     const announced = (event: MessageEvent): void => {
       // A reset removed the shared cookie. On a route outside cookie.path this tab cannot see it
       // either way, so the announcement, not the cookie, tells that its own choice is gone.
       if (event.data === "reset") this.pageChoice = null;
-      this.syncBasicTag();
+      this.syncFromOutside();
     };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", sync);
@@ -764,18 +786,18 @@ export class ConsentManager {
    * gtag itself, so every push is an update.
    *
    * In basic mode Google gets nothing until a push allows analytics, which only the visitor's
-   * own choice does (applyConsent() turns a jurisdiction's grant into analytics denied): until
-   * then pushes are dropped, and from then on they go out as in advanced mode. A push that
-   * leaves analytics denied also deletes the `_ga` cookies, switches a tag already on the page
-   * off, and never starts or schedules a load of the tag.
+   * own choice does (consentInEffect() denies everything on a jurisdiction's grant): until then
+   * pushes are dropped, and from then on they go out as in advanced mode. A push that leaves
+   * analytics denied also deletes the `_ga` cookies and switches a tag already on the page off.
+   * Loading the tag is reconcile()'s last step, not this one's.
    *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
    */
   private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
     const gaId = this.config.gaId;
-    const basicDenied =
-      gaId !== undefined && this.basicMode && signals.analytics_storage === "denied";
+    const previous = this.sentSignals;
+    this.sentSignals = signals;
     const firstSetup = !this.gaDefaultsSent;
     let startsMeasuring = false;
     if (gaId && this.basicMode) {
@@ -783,26 +805,25 @@ export class ConsentManager {
       // instance loaded it before a remount), so it is told about a refusal all the same.
       // A request in flight or past its timeout may still run; one that failed cannot.
       const tagRunning = isTagLiveFor(gaId);
-      // Tracked with analytics refused too: linked advertising products of a tag still on the
-      // page follow the ad signals, so a later marketing change must reach them.
-      this.googleMarketing = signals.ad_storage === "granted";
-      if (basicDenied) {
+      if (signals.analytics_storage === "denied") {
         // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
         // sending cookieless pings; only a reload stops a running tag. A marketing-only
         // withdrawal needs none: with analytics allowed the next page loads the same tag, and
-        // the denied ad signals reach the running one as an update already.
-        if (tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
+        // the denied ad signals reach the running one as an update already. Analytics refused
+        // before was already withdrawn, so a repeated refusal reloads nothing.
+        const withdrawn = previous?.analytics_storage !== "denied";
+        if (withdrawn && tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
         clearAnalyticsCookies(gaId);
         setAnalyticsDisabled(gaId, true);
-        this.googleMeasuring = false;
+        // A refusal itself must not cause a request to Google: no retry of a failed load either.
+        this.gaRetryOnFailure = false;
         if (firstSetup && !tagRunning) return;
       } else {
         // A newer choice allows analytics again before a pending withdrawal reload ran (a
         // consent callback answering the refusal): the tag stays, so the reload has no purpose.
         this.pendingReload = null;
         setAnalyticsDisabled(gaId, false);
-        startsMeasuring = !this.googleMeasuring;
-        this.googleMeasuring = true;
+        startsMeasuring = previous?.analytics_storage !== "granted";
       }
     }
     if (!gaId) {
@@ -817,20 +838,7 @@ export class ConsentManager {
       else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
       queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
     }
-    if (!gaId) return;
     if (startsMeasuring) this.sendPendingPageView(firstSetup);
-    if (basicDenied) {
-      // A refusal itself must not cause a request to Google: no load now and no retry later.
-      this.gaRetryOnFailure = false;
-      return;
-    }
-
-    if (this.gaLoading) {
-      // Should the attempt in flight fail, this push still gets its retry.
-      this.gaRetryOnFailure = true;
-      return;
-    }
-    if (!this.gaLoaded) this.loadGtag(gaId);
   }
 
   /**
@@ -907,26 +915,89 @@ export class ConsentManager {
   }
 
   /**
-   * Apply consent settings
-   *
-   * @param implied - Granted by the jurisdiction, not chosen by the visitor
+   * The consent in effect, derived from the visitor's choice (this page's or the shared cookie's)
+   * or, before any, the jurisdiction's grant. Every consumer follows this one derivation.
    */
-  private applyConsent(granted: Omit<ConsentCategories, "necessary">, implied = false): void {
-    // Basic mode allows analytics only on the visitor's own choice: a jurisdiction's grant leaves
-    // it off for Google, for the consent callbacks and for the script blocker alike.
-    const categories = implied && this.basicMode ? { ...granted, analytics: false } : granted;
-    // Every caller passes a decision (the roaming check, if any, is behind it), so the callbacks
-    // below may already track under it.
+  private consentInEffect(): ConsentInEffect {
+    const denied = categoriesToGoogleSignals({});
+    const choice = this.choiceInEffect();
+    if (choice !== null) {
+      return {
+        choice,
+        categories: choice.categories,
+        signals: categoriesToGoogleSignals(choice.categories),
+      };
+    }
+    const implied = this.impliedChoice;
+    if (implied === null) return { choice: null, categories: null, signals: denied };
+    return {
+      choice: null,
+      categories: implied.categories,
+      // Basic mode gives Google no grant before an explicit choice: a tag an earlier instance
+      // left on the page would resume linked Ads/Floodlight on implied ad signals. The callbacks
+      // and the script blocker still follow the jurisdiction's marketing state (an opt-out model).
+      signals: this.basicMode ? denied : categoriesToGoogleSignals(implied.categories),
+    };
+  }
+
+  /**
+   * Bring every consumer in line with consentInEffect(), in a fixed order: the Google commands
+   * (a denial takes effect before anything else runs), then the consent callback and the
+   * listeners, then the tag load, unless a callback made a newer decision meanwhile. Each step
+   * acts only on what changed since the last call, so it is safe to call from any trigger (a
+   * choice, init(), another tab, a tracking call). Returns whether analytics is allowed.
+   *
+   * @param final - The state is a decision, so tags need not hold their first hits for an update
+   */
+  private reconcile(final = true): boolean {
     this.consentSettled = true;
-    // Not stored (a stored grant counts as the visitor's choice in basic mode), but the
-    // preference centre still has to show what is in effect, marketing included.
-    if (implied && this.basicMode) this.impliedChoice = this.choiceRecord(categories);
-    // Google gets no grant before an explicit basic-mode choice either: a tag an earlier instance
-    // left on the page would resume linked Ads/Floodlight on implied ad signals. The callbacks and
-    // the script blocker still follow the jurisdiction's marketing state (an opt-out model).
-    const forGoogle = implied && this.basicMode ? { ...categories, marketing: false } : categories;
-    this.pushGoogleConsent(categoriesToGoogleSignals(forGoogle), true);
-    this.notifyChange(categories);
+    const epoch = this.consentEpoch;
+    const { choice, categories, signals } = this.consentInEffect();
+    // A record not acted on before: a new decision, here or in another tab, even with the same
+    // categories (it retries a failed tag load and reaches the callbacks).
+    const newRecord = choice !== null && choice.timestamp !== this.actedOnRecord;
+    this.actedOnRecord = choice?.timestamp ?? null;
+    const googleChanged = this.sentSignals === null || !sameSignals(signals, this.sentSignals);
+    const decided = googleChanged || newRecord;
+    if (decided) this.pushGoogleConsent(signals, final);
+
+    if (categories === null) {
+      // Undecided (a reset): the same grant made again later reaches the listeners as new.
+      this.notifiedCategories = null;
+    } else if (
+      newRecord ||
+      this.notifiedCategories === null ||
+      !sameCategories(categories, this.notifiedCategories)
+    ) {
+      this.notifyChange(categories);
+      // A callback answered with its own choice or a reset, which reconciled everything itself.
+      if (this.consentEpoch !== epoch) return this.consentInEffect().categories?.analytics === true;
+    }
+
+    if (decided) this.startTagLoad(signals);
+    return categories?.analytics === true;
+  }
+
+  /**
+   * Basic mode: follow a change another tab made through the shared cookie. Until init() settled
+   * a stored grant may still fail the roaming check, so nothing acts on the cookie's word alone.
+   */
+  private syncFromOutside(): boolean {
+    return this.consentSettled && this.reconcile();
+  }
+
+  /** Load gtag.js for the consent just sent, unless it refuses analytics in basic mode. */
+  private startTagLoad(signals: GoogleConsentSignals): void {
+    const gaId = this.config.gaId;
+    if (!gaId || this.destroyed) return;
+    // A refusal itself must not cause a request to Google: no load now and no retry later.
+    if (this.basicMode && signals.analytics_storage === "denied") return;
+    if (this.gaLoading) {
+      // Should the attempt in flight fail, this decision still gets its retry.
+      this.gaRetryOnFailure = true;
+      return;
+    }
+    if (!this.gaLoaded) this.loadGtag(gaId);
   }
 
   /**
@@ -938,7 +1009,7 @@ export class ConsentManager {
     const epoch = this.consentEpoch;
     // A tracking call the callback makes runs the cross-tab sync, which must not notify the
     // listeners a second time for these same categories.
-    this.listenedCategories = { ...categories };
+    this.notifiedCategories = { ...categories };
     try {
       this.config.onConsentChange?.({
         // Its own copy, like each listener's: an edit must not reach the listeners after it.
@@ -962,7 +1033,7 @@ export class ConsentManager {
    */
   private notifyListeners(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = this.consentEpoch;
-    this.listenedCategories = { ...categories };
+    this.notifiedCategories = { ...categories };
     for (const listener of this.consentChangeListeners) {
       if (this.consentEpoch !== epoch) return;
       try {
@@ -1018,14 +1089,13 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
-    this.consentSettled = true;
     this.impliedChoice = null;
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories, this.pageChoice);
     this.announceToOtherTabs("consent");
-    this.applyConsent(categories);
+    this.reconcile();
 
     // The preference centre closes either way; it would cover a banner a callback's reset
     // just showed. The banner stays when a callback made a newer decision.
@@ -1044,7 +1114,9 @@ export class ConsentManager {
    * the jurisdiction implies (analytics off); otherwise null while the visitor is undecided
    */
   getConsent(): StoredConsent | null {
-    const consent = this.choiceInEffect() ?? this.impliedChoice;
+    // Basic mode keeps the jurisdiction's grant unstored, but the preference centre still has to
+    // show what is in effect; advanced mode stores it (CCPA) or reports the visitor undecided.
+    const consent = this.choiceInEffect() ?? (this.basicMode ? this.impliedChoice : null);
     // A copy, like the snapshot parsed from the cookie: editing the result must not change the
     // consent in effect before the visitor saves it.
     if (consent !== null && (consent === this.pageChoice || consent === this.impliedChoice)) {
@@ -1126,11 +1198,10 @@ export class ConsentManager {
     this.identityGeneration++;
     this.pageChoice = null;
     this.impliedChoice = null;
-    this.consentSettled = true;
     // Undecided again: the signals go back to denied while the banner asks, and a pending
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
-    this.pushGoogleConsent(categoriesToGoogleSignals({}), false);
+    this.reconcile(false);
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
     if (this.showBannerCallback) {
@@ -1153,56 +1224,11 @@ export class ConsentManager {
    * marketing alone updates the ad signals (the four signals follow analytics and marketing).
    */
   private analyticsSuppressed(): boolean {
-    const consent = this.choiceInEffect();
-    if (!this.basicMode) return consent !== null && !consent.categories.analytics;
-    return !this.syncBasicTag(consent);
-  }
-
-  /**
-   * Basic mode: bring the Google tag in line with the choice in effect, which another tab may
-   * have changed through the shared cookie. Returns whether that choice allows analytics.
-   */
-  private syncBasicTag(consent: StoredConsent | null = this.choiceInEffect()): boolean {
-    // Until init() settled, a stored grant may still fail the roaming check (a visitor now in
-    // the EU needs a fresh choice): nothing starts on the cookie's word alone.
-    if (!this.consentSettled) return false;
-    // A reset in another tab: the listeners hold nothing now, so the same grant made again later
-    // reaches them as new.
-    if (consent === null) this.listenedCategories = null;
-    // A record not seen before: another tab saved a choice, possibly the same categories again.
-    // This page's own choice is the baseline until the sync has seen a record.
-    const newRecord =
-      consent !== null &&
-      consent.timestamp !== (this.syncedTimestamp ?? this.pageChoice?.timestamp);
-    this.syncedTimestamp = consent?.timestamp ?? null;
-    // A choice made in another tab also reaches the configured callback and the listeners, so the
-    // app and the script blocker follow it as well.
-    const newChoice =
-      consent !== null &&
-      (this.listenedCategories === null ||
-        !sameCategories(consent.categories, this.listenedCategories));
-    if (newChoice && consent !== null) {
-      const epoch = this.consentEpoch;
-      this.notifyChange({ ...consent.categories });
-      // A listener may have answered with its own choice or a reset, which already brought the
-      // tag in line; that newer decision stands, not the snapshot taken above.
-      if (this.consentEpoch !== epoch) {
-        return this.choiceInEffect()?.categories.analytics === true;
-      }
+    if (!this.basicMode) {
+      const consent = this.choiceInEffect();
+      return consent !== null && !consent.categories.analytics;
     }
-    const allowed = consent !== null && consent.categories.analytics;
-    const marketing = consent !== null && consent.categories.marketing;
-    const stale = allowed !== this.googleMeasuring || marketing !== this.googleMarketing;
-    const gaId = this.config.gaId;
-    if (gaId && stale) {
-      this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
-    } else if (gaId && allowed && (newChoice || newRecord) && !this.gaLoaded && !this.gaLoading) {
-      // The tag counts as measuring after a load that failed; a newly saved choice (even with
-      // the same categories) is the next push that retries it, as a local one does, but a
-      // tracking call alone does not.
-      this.loadGtag(gaId);
-    }
-    return allowed;
+    return !this.syncFromOutside();
   }
 
   /**

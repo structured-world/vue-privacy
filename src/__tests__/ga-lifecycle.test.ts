@@ -2193,6 +2193,35 @@ describe("basic consent mode", () => {
     expectNothingSentToGoogle();
   });
 
+  it("keeps a remote grant in effect where the consent cookie cannot be written", async () => {
+    // Regression: the restored record was applied but not kept for the page, so where the cookie
+    // write is dropped (a sandboxed frame) the next tracking call found no choice, sent a denied
+    // update and switched the tag off again.
+    Object.defineProperty(document, "cookie", {
+      get: () => "consent_uid=uid-1",
+      set: () => {},
+      configurable: true,
+    });
+    const manager = basicManager({
+      geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      storage: {
+        get: () =>
+          Promise.resolve({
+            categories: { analytics: true, marketing: false, functional: true },
+            timestamp: 1,
+            version: "1",
+          }),
+        set: () => Promise.resolve("uid-1"),
+      },
+    });
+    await manager.init();
+
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+    expect(consentCalls("update")).toEqual([]);
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+  });
+
   it("ignores a cross-tab grant saved outside the EU once this tab is in the EU", async () => {
     // Regression: a tab that had not noticed the move into the EU saved a non-EU grant, and this
     // tab, which detected the EU, started the tag on it; init()'s roaming check rejects it.
