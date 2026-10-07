@@ -398,7 +398,7 @@ export interface ConsentConfig {
    * to the same Google tag (Google Ads, Floodlight) keep sending cookieless pings until the page
    * reloads, and a running script cannot be unloaded. The choice is saved first and the consent
    * callbacks run; the reload follows even if they destroy the manager, since the tag runs
-   * page-wide. It drops in-page state, so enable it deliberately. While analytics stays allowed
+   * page-wide, and is dropped if they allow analytics again. It drops in-page state, so enable it deliberately. While analytics stays allowed
    * the tag loads, and linked advertising products follow the ad signals (cookieless pings when
    * marketing is refused); keep them in a separate tag if refusing marketing must stop them.
    * @default false

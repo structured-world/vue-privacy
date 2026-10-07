@@ -1729,6 +1729,26 @@ describe("basic consent mode", () => {
       manager.destroy();
     });
 
+    it("does not reload when a consent callback allows analytics again", async () => {
+      // Regression: the reload scheduled for the withdrawal still ran after the callback's own
+      // grant restored the tag, and dropped the page state for nothing.
+      let manager: ConsentManager | null = null;
+      manager = basicManager({
+        reloadOnWithdrawal: true,
+        onConsentChange: (consent) => {
+          if (!consent.categories.analytics) void manager?.acceptAll();
+        },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
     it("still reloads when the manager is destroyed before the reload fires", async () => {
       // Regression: a consent callback that unmounted the app (destroying the manager) cancelled
       // the reload, yet the page-wide tag and its linked destinations kept running.
@@ -2108,6 +2128,56 @@ describe("basic consent mode", () => {
 
     expect(manager.getConsent()?.categories.analytics).toBe(false);
     expectNothingSentToGoogle();
+  });
+
+  it("notifies listeners again when another tab regrants after a reset", async () => {
+    // Regression: a reset from another tab left the listeners' last grant recorded, so the same
+    // grant made again was taken for one already delivered and gated scripts stayed blocked.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      const listener = vi.fn();
+      manager.onConsentChange(listener);
+      const grant = { analytics: true, marketing: false, functional: true };
+
+      storeConsent({ categories: grant, isEU: true }, {});
+      window.dispatchEvent(new Event("focus"));
+      cookieStore = "";
+      window.dispatchEvent(new Event("focus"));
+      vi.setSystemTime(1_000_001);
+      storeConsent({ categories: grant, isEU: true }, {});
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("announces a choice made before init() to the other tabs", async () => {
+    // Regression: the channel opened only in init(), so a choice made earlier (autoInit off,
+    // a mounted hook) reached no other tab until it regained focus.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const otherTab = basicManager();
+      await otherTab.init();
+      await otherTab.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      const thisTab = basicManager();
+      await thisTab.rejectAll();
+      // Both managers share this window; only the other tab's own reaction may switch the tag
+      // off again once what this one set here is undone.
+      (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = false;
+      await settle();
+
+      expect(analyticsDisabled()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("hands each listener its own copy of a cross-tab choice", async () => {

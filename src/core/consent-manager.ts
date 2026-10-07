@@ -123,8 +123,8 @@ export class ConsentManager {
   private googleMeasuring = false;
   /** Basic mode: the ad signals last sent to the measuring tag were granted. */
   private googleMarketing = false;
-  /** A reload for a withdrawal (reloadOnWithdrawal) is scheduled. */
-  private reloadScheduled = false;
+  /** The pending reload for a withdrawal (reloadOnWithdrawal), if one is scheduled. */
+  private reloadTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * init() decided the consent state, or the visitor chose or reset: until then a stored grant
    * may still fail the roaming check, so basic mode does not act on the cookie by itself.
@@ -515,15 +515,8 @@ export class ConsentManager {
     };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", sync);
-    if (typeof BroadcastChannel !== "undefined") {
-      const cookieName = this.config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
-      try {
-        this.tabChannel = new BroadcastChannel(`vue-privacy:${cookieName}`);
-        this.tabChannel.addEventListener("message", announced);
-      } catch {
-        // An opaque origin (a sandboxed iframe) may not open one; focus and visibility remain.
-      }
-    }
+    this.tabChannel = this.openTabChannel();
+    this.tabChannel?.addEventListener("message", announced);
     this.tabWatchCleanup = () => {
       window.removeEventListener("focus", sync);
       document.removeEventListener("visibilitychange", sync);
@@ -532,9 +525,32 @@ export class ConsentManager {
     };
   }
 
-  /** Tell the other tabs that the stored choice changed; they read it from the shared cookie. */
+  /** The channel the tabs sharing this consent cookie announce changes on, if one can open. */
+  private openTabChannel(): BroadcastChannel | null {
+    if (typeof BroadcastChannel === "undefined") return null;
+    const cookieName = this.config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
+    try {
+      return new BroadcastChannel(`vue-privacy:${cookieName}`);
+    } catch {
+      // An opaque origin (a sandboxed iframe) may not open one; focus and visibility remain.
+      return null;
+    }
+  }
+
+  /**
+   * Tell the other tabs that the stored choice changed; they read it from the shared cookie. A
+   * choice made before init() opened this tab's channel goes out on a short-lived one: a message
+   * is queued for the other tabs when posted, so closing the sender right after loses nothing.
+   */
   private announceToOtherTabs(): void {
-    this.tabChannel?.postMessage("consent");
+    if (!this.basicMode || !this.config.gaId) return;
+    if (this.tabChannel) {
+      this.tabChannel.postMessage("consent");
+      return;
+    }
+    const channel = this.openTabChannel();
+    channel?.postMessage("consent");
+    channel?.close();
   }
 
   /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
@@ -770,6 +786,12 @@ export class ConsentManager {
         this.googleMeasuring = false;
         if (firstSetup && !tagRunning) return;
       } else {
+        // A newer choice allows analytics again before a pending withdrawal reload ran (a
+        // consent callback answering the refusal): the tag stays, so the reload has no purpose.
+        if (this.reloadTimer !== null) {
+          clearTimeout(this.reloadTimer);
+          this.reloadTimer = null;
+        }
         setAnalyticsDisabled(gaId, false);
         startsMeasuring = !this.googleMeasuring;
         this.googleMeasuring = true;
@@ -819,12 +841,14 @@ export class ConsentManager {
    * Reload once the current flow is done: the choice is already stored and the consent
    * callbacks of this decision run first, so the reloaded page starts from it. destroy() does
    * not cancel it: the tag runs page-wide, and a callback that unmounted the app leaves it
-   * running all the same.
+   * running all the same. A newer choice that allows analytics again does (see pushGoogleConsent).
    */
   private scheduleReload(): void {
-    if (this.reloadScheduled) return;
-    this.reloadScheduled = true;
-    setTimeout(reloadPage, 0);
+    if (this.reloadTimer !== null) return;
+    this.reloadTimer = setTimeout(() => {
+      this.reloadTimer = null;
+      reloadPage();
+    }, 0);
   }
 
   /**
@@ -1075,6 +1099,9 @@ export class ConsentManager {
     // Until init() settled, a stored grant may still fail the roaming check (a visitor now in
     // the EU needs a fresh choice): nothing starts on the cookie's word alone.
     if (!this.consentSettled) return false;
+    // A reset in another tab: the listeners hold nothing now, so the same grant made again later
+    // reaches them as new.
+    if (consent === null) this.listenedCategories = null;
     // A choice made in another tab also reaches the listeners, so the script blocker releases
     // the scripts it grants here as well.
     if (
