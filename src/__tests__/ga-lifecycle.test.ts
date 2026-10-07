@@ -2055,6 +2055,31 @@ describe("basic consent mode", () => {
     expect(manager.getConsent()?.categories.analytics).toBe(false);
   });
 
+  it("keeps a refusal another tab saved while the first location lookup ran", async () => {
+    // Regression: outside consent jurisdictions the implied grant (marketing on) was applied
+    // over the refusal another tab saved meanwhile, and released marketing scripts.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "marketing");
+    document.head.appendChild(blocked);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    storeConsent(
+      { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(manager.getConsent()?.categories.marketing).toBe(false);
+    expect(blocked.isConnected).toBe(true);
+  });
+
   it("keeps a refusal another tab saved while the remote record was fetched", async () => {
     // Regression: the remote record read for the stored ID was applied over the refusal the
     // other tab saved meanwhile, and its stale grant loaded the tag.

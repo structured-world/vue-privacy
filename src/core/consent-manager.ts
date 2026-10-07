@@ -443,6 +443,17 @@ export class ConsentManager {
     }
     // Every await is behind us: a choice or reset made meanwhile stands over what this flow read.
     if (superseded()) return;
+    // So does a choice another tab saved meanwhile (the cookie is shared); a jurisdiction's
+    // grant or the banner must not take its place.
+    const latest = getStoredConsent(this.config);
+    if (
+      latest !== null &&
+      latest.timestamp !== stored?.timestamp &&
+      (!this.isEU || latest.isEU === true)
+    ) {
+      this.applyConsent(latest.categories);
+      return;
+    }
 
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
