@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
-import { initGoogleAnalytics, initGtag } from "../core/gtag";
+import { initGoogleAnalytics, initGtag, isTagLiveFor } from "../core/gtag";
 import { storeConsent, setConsentUid } from "../core/storage";
 import { reloadPage } from "../core/page";
 
@@ -1792,6 +1792,22 @@ describe("basic consent mode", () => {
       expect(set.mock.calls.at(-1)?.[1].categories.analytics).toBe(false);
     });
 
+    it("does not reload for a refusal init() restores while a tag is on the page", async () => {
+      // Regression: the first push of a restored refusal counted as a withdrawal, so a tag on
+      // the page reloaded it, and the same refusal and tag reloaded every load after.
+      markTagRan();
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      expect(analyticsDisabled()).toBe(true);
+    });
+
     it("gives the withdrawal's remote write its own grace period", async () => {
       // Regression: the reload's wait began before the withdrawal's write, behind a superseded
       // write that ignored its abort; the grace period ran out as the withdrawal write started,
@@ -2199,10 +2215,9 @@ describe("basic consent mode", () => {
     }
   });
 
-  it("stops the tag after a withdrawal in another tab while this one stays visible", async () => {
-    // Regression: with two windows side by side neither focus nor visibilitychange fires in
-    // this one after the other withdraws, and its tag kept sending automatic events (video
-    // progress) that need no interaction.
+  it("stops the tag when a window beside the one that withdrew gets focus", async () => {
+    // The consent cookie is the only state the tabs share: a window that stays visible beside
+    // the one that withdrew follows the withdrawal once it is focused (or tracks something).
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(1_000_000);
@@ -2218,7 +2233,7 @@ describe("basic consent mode", () => {
       // tab's own reaction can switch the tag off again.
       (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = false;
       const updates = consentCalls("update").length;
-      await settle();
+      window.dispatchEvent(new Event("focus"));
 
       expect(analyticsDisabled()).toBe(true);
       expect(consentCalls("update")).toHaveLength(updates + 1);
@@ -2445,21 +2460,104 @@ describe("basic consent mode", () => {
     expect(manager.hasConsent()).toBe(true);
   });
 
-  it("follows a reset in another tab while this page's cookie is out of scope", async () => {
-    // Regression: the reset announcement only asked this tab to reread a cookie it cannot see
-    // on this route, so it kept its grant and went on measuring.
-    const manager = basicManager({ cookie: { path: "/app/" } });
+  it("keeps the choice's timestamp when a page load refreshes its location", async () => {
+    // Regression: the roaming check rewrote the stored choice with a new timestamp, so every
+    // other open tab took it for a new decision and ran the consent callbacks again.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      const nonEU = {
+        geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" as const }) },
+      };
+      vi.setSystemTime(1_000_001);
+      const thisTab = basicManager(nonEU);
+      await thisTab.init();
+      const listener = vi.fn();
+      thisTab.onConsentChange(listener);
+
+      vi.setSystemTime(1_000_002);
+      const newTab = basicManager(nonEU);
+      await newTab.init();
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A script-blocker placeholder for gtag.js: inert until its category is allowed. */
+  async function addTagPlaceholder(category: string): Promise<HTMLScriptElement> {
+    // An inert element never loads; the test stub settles only the elements added afterwards.
+    scriptOutcome = "manual";
+    const placeholder = document.createElement("script");
+    placeholder.type = "text/plain";
+    placeholder.setAttribute("data-consent-category", category);
+    placeholder.src = GTAG_SRC;
+    document.head.appendChild(placeholder);
+    await settle();
+    scriptOutcome = "load";
+    return placeholder;
+  }
+
+  it("does not count a consent-blocked placeholder as a tag that may run", async () => {
+    // Regression: the inert placeholder (type="text/plain") counted as a live tag, so with
+    // reloadOnWithdrawal a refusal reloaded the page, which held the same placeholder again.
+    await addTagPlaceholder("analytics");
+
+    expect(isTagLiveFor(GA_ID)).toBe(false);
+  });
+
+  it("loads gtag.js over a placeholder of a category still refused", async () => {
+    // Regression: a placeholder the script blocker keeps inert (its category is refused) counted
+    // as the tag's element, so the grant waited on it instead of loading the tag.
+    const placeholder = await addTagPlaceholder("marketing");
+    const manager = basicManager();
     await manager.init();
-    await manager.acceptAll();
-    await settle();
-    cookieStore = "";
 
-    const otherTab = basicManager({ cookie: { path: "/app/" } });
-    otherTab.resetConsent();
+    await manager.savePreferences({ analytics: true, marketing: false });
     await settle();
 
-    expect(manager.hasConsent()).toBe(false);
-    expect(analyticsDisabled()).toBe(true);
+    const executable = Array.from(gtagScripts()).filter((script) => script !== placeholder);
+    expect(executable).toHaveLength(1);
+  });
+
+  it("closes the banner when another tab answers it", async () => {
+    // Regression: a choice another tab saved reached the tag and the listeners, but the banner
+    // stayed open here, asking a question already answered.
+    const manager = basicManager();
+    await manager.init();
+    const hide = vi.fn();
+    manager.onHideBanner(hide);
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show a banner another tab answered before its component mounted", async () => {
+    // Regression: the pending banner request outlived the answer from another tab, and the
+    // component that mounted afterwards showed the stale banner.
+    const manager = basicManager();
+    await manager.init();
+
+    storeConsent(
+      { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+    const show = vi.fn();
+    manager.onShowBanner(show);
+
+    expect(show).not.toHaveBeenCalled();
   });
 
   it("keeps another tab's withdrawal after the cookie leaves the route's scope", async () => {
@@ -2499,29 +2597,6 @@ describe("basic consent mode", () => {
     expect(manager.hasConsent()).toBe(true);
     expect(manager.getConsent()?.categories.analytics).toBe(true);
     expect(manager.getConsent()?.isEU).toBe(true);
-  });
-
-  it("keeps a choice made after another tab's reset when the announcement arrives late", async () => {
-    // Regression: the reset announcement carried no time, so one delivered after this page's
-    // newer grant dropped it, and the out-of-scope cookie could not bring it back.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      const manager = basicManager({ cookie: { path: "/app/" } });
-      await manager.init();
-      const otherTab = basicManager({ cookie: { path: "/app/" } });
-
-      vi.setSystemTime(1_000_000);
-      otherTab.resetConsent();
-      vi.setSystemTime(1_000_001);
-      await manager.acceptAll();
-      cookieStore = "";
-      await settle();
-
-      expect(manager.hasConsent()).toBe(true);
-      expect(analyticsDisabled()).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it("hands the configured callback its own copy of the categories", async () => {
@@ -2669,30 +2744,6 @@ describe("basic consent mode", () => {
     }
   });
 
-  it("announces a choice made before init() to the other tabs", async () => {
-    // Regression: the channel opened only in init(), so a choice made earlier (autoInit off,
-    // a mounted hook) reached no other tab until it regained focus.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      vi.setSystemTime(1_000_000);
-      const otherTab = basicManager();
-      await otherTab.init();
-      await otherTab.acceptAll();
-
-      vi.setSystemTime(1_000_001);
-      const thisTab = basicManager();
-      await thisTab.rejectAll();
-      // Both managers share this window; only the other tab's own reaction may switch the tag
-      // off again once what this one set here is undone.
-      (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = false;
-      await settle();
-
-      expect(analyticsDisabled()).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("hands each listener its own copy of a cross-tab choice", async () => {
     // Regression: listeners received the parsed cookie's categories object itself; one that
     // edited it changed the state the sync then applied to the Google tag.
@@ -2781,27 +2832,6 @@ describe("basic consent mode", () => {
       expect(consentCalls("update").at(-1)).toEqual(DENIED);
     } finally {
       vi.useRealTimers();
-    }
-  });
-
-  it("starts even when the browser forbids a BroadcastChannel", async () => {
-    // Regression: in a sandboxed iframe without allow-same-origin the constructor throws a
-    // SecurityError, which made init() reject before the banner flow.
-    vi.stubGlobal(
-      "BroadcastChannel",
-      class {
-        constructor() {
-          throw new DOMException("opaque origin", "SecurityError");
-        }
-      }
-    );
-    try {
-      const manager = basicManager();
-      await expect(manager.init()).resolves.toBeUndefined();
-      await manager.acceptAll();
-      expect(gtagScripts()).toHaveLength(1);
-    } finally {
-      vi.unstubAllGlobals();
     }
   });
 

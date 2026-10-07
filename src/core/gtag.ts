@@ -101,12 +101,45 @@ const stalledTags = new WeakSet<HTMLScriptElement>();
 /** gtag.js elements that fired error: they cannot run any more, timed out or not. */
 const failedTags = new WeakSet<HTMLScriptElement>();
 
+/** The JavaScript MIME type essences (HTML Living Standard, "JavaScript MIME type"). */
+const JAVASCRIPT_MIME_TYPES = new Set([
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript",
+]);
+
+/**
+ * Whether the browser runs this element. Per HTML Living Standard 4.12.1.1 ("prepare the script
+ * element"), a missing or empty type, a JavaScript MIME type essence match (the whole trimmed
+ * string, no parameters) or "module" runs; any other type (a script blocker's "text/plain"
+ * placeholder) is a data block that never does.
+ */
+function isExecutable(element: HTMLScriptElement): boolean {
+  const type = element.getAttribute("type");
+  if (type === null) return true;
+  const value = type.trim().toLowerCase();
+  return value === "" || value === "module" || JAVASCRIPT_MIME_TYPES.has(value);
+}
+
 function tagElementsFor(gaId: string): HTMLScriptElement[] {
   return Array.from(
     document.querySelectorAll<HTMLScriptElement>(
       `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
     )
-  );
+  ).filter(isExecutable);
 }
 
 /**

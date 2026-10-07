@@ -99,16 +99,6 @@ function sameSignals(a: GoogleConsentSignals, b: GoogleConsentSignals): boolean 
   );
 }
 
-/** What a tab announces to the others: a stored choice, or a reset made at `at`. */
-type TabAnnouncement = { change: "consent" } | { change: "reset"; at: number };
-
-/** The time of a reset announcement; null for any other message. */
-function resetTime(data: unknown): number | null {
-  if (typeof data !== "object" || data === null) return null;
-  const message = data as Partial<Record<"change" | "at", unknown>>;
-  return message.change === "reset" && typeof message.at === "number" ? message.at : null;
-}
-
 /** The consent in effect, as every consumer sees it. */
 interface ConsentInEffect {
   /** The visitor's own choice (stored, or made on this page), or null while undecided. */
@@ -140,8 +130,6 @@ export class ConsentManager {
   private scriptBlockerCleanup: (() => void) | null = null;
   /** Removes the basic-mode listeners that follow choices made in other tabs. */
   private tabWatchCleanup: (() => void) | null = null;
-  /** Basic mode: tells the other tabs of this site that a choice or a reset was stored. */
-  private tabChannel: BroadcastChannel | null = null;
   private routerCleanup: (() => void) | null = null;
   /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
@@ -328,7 +316,7 @@ export class ConsentManager {
       // given outside the EU. init() only detects the jurisdiction and stores it with the choice.
       await this.detectJurisdiction();
       this.storeLocationWithChoice();
-      this.reconcile();
+      this.restore();
       return;
     }
 
@@ -352,7 +340,7 @@ export class ConsentManager {
       latest.timestamp !== stored?.timestamp &&
       (!this.isEU || latest.isEU === true)
     ) {
-      this.reconcile();
+      this.restore();
       return;
     }
     this.decideByJurisdiction();
@@ -378,7 +366,7 @@ export class ConsentManager {
     if (stored.isEU === true) {
       // Consent was given in EU context with full GDPR disclosure — valid everywhere.
       this.adoptStoredLocation(stored);
-      this.reconcile();
+      this.restore();
       return true;
     }
 
@@ -393,13 +381,13 @@ export class ConsentManager {
     const current = getStoredConsent(this.config);
     const changed = current?.timestamp !== stored.timestamp;
     if (changed && current !== null && (!needsReconsent || current.isEU === true)) {
-      this.reconcile();
+      this.restore();
       return true;
     }
     if (!changed && !needsReconsent) {
       // User is not in EU now — non-EU consent remains valid.
       this.storeDetectedLocation(stored);
-      this.reconcile();
+      this.restore();
       return true;
     }
     // Now in the EU with consent given outside it (cleared here), or reset in another tab:
@@ -436,6 +424,9 @@ export class ConsentManager {
     storeConsent(
       {
         categories: stored.categories,
+        // The same moment: refreshing the location does not make the choice a newer one, which
+        // the other open tabs would take for a new decision.
+        timestamp: stored.timestamp,
         isEU: this.geoResult.isEU,
         geoMethod: this.geoResult.method,
         countryCode: this.geoResult.countryCode,
@@ -480,7 +471,7 @@ export class ConsentManager {
     // is newer than the record, which must not be written over it.
     const current = getStoredConsent(this.config);
     if (current && (!geoResult.isEU || current.isEU === true)) {
-      this.reconcile();
+      this.restore();
       return true;
     }
     // Reset in another tab meanwhile: undecided again, decided like a first visit.
@@ -497,7 +488,7 @@ export class ConsentManager {
     // be written (a sandboxed frame).
     this.pageChoice = this.choiceRecord(remote.categories);
     this.storeAndConfirm(this.pageChoice);
-    this.reconcile();
+    this.restore();
     return true;
   }
 
@@ -528,7 +519,7 @@ export class ConsentManager {
   private decideByJurisdiction(): void {
     if (this.isEU) {
       // EU user: denied defaults that wait for the banner's answer, then show the banner
-      this.reconcile(false);
+      this.restore(false);
 
       // Show banner (or defer if component hasn't mounted yet)
       if (this.showBannerCallback) {
@@ -553,7 +544,7 @@ export class ConsentManager {
       // keeps it unstored: a stored grant is the visitor's consent there, and this one is not.
       if (!this.basicMode) this.saveConsentWithRemote(grantedCategories);
       this.impliedChoice = this.impliedRecord(grantedCategories);
-      this.reconcile();
+      this.restore();
       this.config.onCCPAUser?.();
       return;
     }
@@ -561,7 +552,7 @@ export class ConsentManager {
     // Don't store — this is the default state for unrestricted jurisdictions.
     // Consent will only be stored if user explicitly changes preferences.
     this.impliedChoice = this.impliedRecord(grantedCategories);
-    this.reconcile();
+    this.restore();
   }
 
   /**
@@ -573,66 +564,21 @@ export class ConsentManager {
   }
 
   /**
-   * Basic mode: a choice made in another tab changes the shared cookie but fires nothing here.
-   * Tabs of the same origin announce each stored choice or reset on a channel, and this tab
-   * follows at once, also while it stays visible beside the other window (a playing video keeps
-   * sending progress events without any interaction). A subdomain sharing the cookie is on
-   * another origin and no channel reaches it, so the tag is also brought in line whenever the tab
-   * is shown again or regains focus.
+   * Basic mode: the consent cookie is the one source of truth shared by the tabs, and a choice
+   * made in another tab changes it without firing anything here. This tab reads it again when
+   * it is shown or regains focus, and on every tracking call (analyticsSuppressed()); a tab that
+   * stays visible without either keeps its state until then.
    */
   private watchOtherTabs(): void {
     const sync = (): void => {
       if (document.visibilityState !== "hidden") this.syncFromOutside();
     };
-    const announced = (event: MessageEvent): void => {
-      // A reset removed the shared cookie. On a route outside cookie.path this tab cannot see it
-      // either way, so the announcement, not the cookie, tells that its own choice is gone; a
-      // choice made after the reset (the announcement arrived late) stands.
-      const resetAt = resetTime(event.data);
-      if (resetAt !== null && this.pageChoice !== null && this.pageChoice.timestamp <= resetAt) {
-        this.pageChoice = null;
-      }
-      this.syncFromOutside();
-    };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", sync);
-    this.tabChannel = this.openTabChannel();
-    this.tabChannel?.addEventListener("message", announced);
     this.tabWatchCleanup = () => {
       window.removeEventListener("focus", sync);
       document.removeEventListener("visibilitychange", sync);
-      this.tabChannel?.close();
-      this.tabChannel = null;
     };
-  }
-
-  /** The channel the tabs sharing this consent cookie announce changes on, if one can open. */
-  private openTabChannel(): BroadcastChannel | null {
-    if (typeof BroadcastChannel === "undefined") return null;
-    const cookieName = this.config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
-    try {
-      return new BroadcastChannel(`vue-privacy:${cookieName}`);
-    } catch {
-      // An opaque origin (a sandboxed iframe) may not open one; focus and visibility remain.
-      return null;
-    }
-  }
-
-  /**
-   * Tell the other tabs that the stored choice changed; they read it from the shared cookie. A
-   * choice made before init() opened this tab's channel goes out on a short-lived one: a message
-   * is queued for the other tabs when posted, so closing the sender right after loses nothing.
-   */
-  private announceToOtherTabs(change: TabAnnouncement["change"]): void {
-    if (!this.basicMode || !this.config.gaId) return;
-    const message: TabAnnouncement = change === "reset" ? { change, at: Date.now() } : { change };
-    if (this.tabChannel) {
-      this.tabChannel.postMessage(message);
-      return;
-    }
-    const channel = this.openTabChannel();
-    channel?.postMessage(message);
-    channel?.close();
   }
 
   /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
@@ -864,7 +810,11 @@ export class ConsentManager {
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
    */
-  private pushGoogleConsent(signals: GoogleConsentSignals, final: boolean): void {
+  private pushGoogleConsent(
+    signals: GoogleConsentSignals,
+    final: boolean,
+    mayReload: boolean
+  ): void {
     const gaId = this.config.gaId;
     const previous = this.sentSignals;
     this.sentSignals = signals;
@@ -873,7 +823,7 @@ export class ConsentManager {
     if (gaId && this.basicMode) {
       if (signals.analytics_storage === "granted") {
         startsMeasuring = this.switchAnalyticsOn(gaId, previous);
-      } else if (!this.switchAnalyticsOff(gaId, previous) && firstSetup) {
+      } else if (!this.switchAnalyticsOff(gaId, previous, mayReload) && firstSetup) {
         // A refusal before anything was sent, with no tag on the page: Google gets nothing.
         return;
       }
@@ -886,7 +836,11 @@ export class ConsentManager {
    * Basic mode: a push that leaves analytics denied deletes the `_ga` cookies and switches the
    * tag off. Returns whether a tag runs on the page.
    */
-  private switchAnalyticsOff(gaId: string, previous: GoogleConsentSignals | null): boolean {
+  private switchAnalyticsOff(
+    gaId: string,
+    previous: GoogleConsentSignals | null,
+    mayReload: boolean
+  ): boolean {
     // The tag may already run on the page whatever this instance has sent (an earlier manager
     // instance loaded it before a remount), so it is told about a refusal all the same.
     // A request in flight or past its timeout may still run; one that failed cannot.
@@ -896,7 +850,7 @@ export class ConsentManager {
     // withdrawal needs none: with analytics allowed the next page loads the same tag, and
     // the denied ad signals reach the running one as an update already. Analytics refused
     // before was already withdrawn, so a repeated refusal reloads nothing.
-    const withdrawn = previous?.analytics_storage !== "denied";
+    const withdrawn = mayReload && previous?.analytics_storage !== "denied";
     if (withdrawn && tagRunning && this.config.reloadOnWithdrawal) this.scheduleReload();
     clearAnalyticsCookies(gaId);
     setAnalyticsDisabled(gaId, true);
@@ -1041,8 +995,11 @@ export class ConsentManager {
    * choice, init(), another tab, a tracking call). Returns whether analytics is allowed.
    *
    * @param final - The state is a decision, so tags need not hold their first hits for an update
+   * @param mayReload - A refusal may count as a withdrawal and reload (reloadOnWithdrawal). Not
+   *   for the state init() finds: a tag on a freshly loaded page is the site's own, comes back
+   *   with every load, and a reload for it would never end.
    */
-  private reconcile(final = true): boolean {
+  private reconcile(final = true, mayReload = true): boolean {
     this.consentSettled = true;
     const epoch = this.consentEpoch;
     const { choice, categories, signals } = this.consentInEffect();
@@ -1059,7 +1016,7 @@ export class ConsentManager {
     this.actedOnRecord = choice?.timestamp ?? null;
     const googleChanged = this.sentSignals === null || !sameSignals(signals, this.sentSignals);
     const decided = googleChanged || newRecord;
-    if (decided) this.pushGoogleConsent(signals, final);
+    if (decided) this.pushGoogleConsent(signals, final, mayReload);
 
     if (categories === null) {
       // Undecided (a reset): the same grant made again later reaches the listeners as new.
@@ -1083,7 +1040,24 @@ export class ConsentManager {
    * a stored grant may still fail the roaming check, so nothing acts on the cookie's word alone.
    */
   private syncFromOutside(): boolean {
-    return this.consentSettled && this.reconcile();
+    if (!this.consentSettled) return false;
+    const acted = this.actedOnRecord;
+    const allowed = this.reconcile();
+    // Another tab answered the banner this tab is showing, or still holds for its component.
+    if (this.actedOnRecord !== null && this.actedOnRecord !== acted) this.closeBanner();
+    return allowed;
+  }
+
+  /** The banner's question is answered: close it, or drop a request its component never got. */
+  private closeBanner(): void {
+    this.bannerPending = false;
+    this.hideBannerCallback?.();
+    this.config.onBannerHide?.();
+  }
+
+  /** Apply the consent init() found; see reconcile()'s `mayReload`. */
+  private restore(final = true): void {
+    this.reconcile(final, false);
   }
 
   /** Load gtag.js for the consent just sent, unless it refuses analytics in basic mode. */
@@ -1194,7 +1168,6 @@ export class ConsentManager {
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories, this.pageChoice);
-    this.announceToOtherTabs("consent");
     this.reconcile();
 
     // The preference centre closes either way; it would cover a banner a callback's reset
@@ -1202,10 +1175,7 @@ export class ConsentManager {
     this.hidePreferenceCenterCallback?.();
     this.config.onPreferenceCenterHide?.();
     if (this.consentEpoch !== epoch) return;
-    // A banner requested before its component mounted is answered by this choice.
-    this.bannerPending = false;
-    this.hideBannerCallback?.();
-    this.config.onBannerHide?.();
+    this.closeBanner();
   }
 
   /**
@@ -1226,13 +1196,8 @@ export class ConsentManager {
   }
 
   /**
-   * The choice in effect, read without the copy getConsent() hands out (internal reads only).
-   * The cookie is shared by every tab: one written after this page's choice is a later one made
-   * elsewhere (a withdrawal in another tab), and it wins. Within the same millisecond the cookie
-   * wins once this page's write was confirmed; otherwise it may be a stale grant whose overwrite
-   * failed, and only one holding this very decision counts. The page's own choice stands while the
-   * cookie is older or cannot be read; a missing cookie this page did write was removed by a
-   * reset in another tab, and the visitor is undecided again.
+   * The choice in effect (latestChoice(), valid for this tab's location), read without the copy
+   * getConsent() hands out (internal reads only).
    */
   private choiceInEffect(): StoredConsent | null {
     const found = this.latestChoice();
@@ -1259,17 +1224,20 @@ export class ConsentManager {
     return cookiePath.endsWith("/") || path.charAt(cookiePath.length) === "/";
   }
 
-  /** The newest choice, from the shared cookie or this page; see choiceInEffect(). */
+  /**
+   * The visitor's choice. The consent cookie is the one source of truth shared by the tabs:
+   * while this page's writes reach it, what it holds now (another tab's later write included)
+   * is the choice, and its absence on a route it covers is a reset. This page's last record
+   * stands in only where the cookie does not work here: a cookie limited to cookie.path is
+   * hidden on the current route, or writes do not take (sandboxed frame, disabled cookies), where
+   * a cookie still readable counts only once it is newer (written elsewhere after this choice).
+   */
   private latestChoice(): StoredConsent | null {
     const stored = getStoredConsent(this.config);
     const own = this.pageChoice;
     if (own === null) return stored;
-    if (stored === null) return this.cookieConfirmed && this.cookieInScope() ? null : own;
-    if (stored.timestamp < own.timestamp) return own;
-    if (stored.timestamp > own.timestamp) return stored;
-    // The same millisecond: after a confirmed write, a cookie that differs was written later by
-    // another tab; without one, it is the stale cookie this page failed to overwrite.
-    return this.cookieConfirmed || sameCategories(stored.categories, own.categories) ? stored : own;
+    if (this.cookieConfirmed) return stored ?? (this.cookieInScope() ? null : own);
+    return stored !== null && stored.timestamp > own.timestamp ? stored : own;
   }
 
   /**
@@ -1295,7 +1263,6 @@ export class ConsentManager {
   resetConsent(): void {
     clearConsent(this.config);
     clearConsentUid(this.config);
-    this.announceToOtherTabs("reset");
     this.userId = null;
     this.identityGeneration++;
     this.pageChoice = null;
