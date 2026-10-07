@@ -102,10 +102,11 @@ const stalledTags = new WeakSet<HTMLScriptElement>();
 const failedTags = new WeakSet<HTMLScriptElement>();
 
 /**
- * gtag.js elements this library appended on this page (any manager instance). Unlike a tag the
- * site loads itself, one of these does not come back after a reload.
+ * gtag.js elements a consent manager appended on this page (any instance). Unlike a tag the site
+ * loads itself (its own snippet, or the public loader it calls on every start), one of these does
+ * not come back after a reload.
  */
-const libraryTags = new WeakSet<HTMLScriptElement>();
+const managedTags = new WeakSet<HTMLScriptElement>();
 
 /** The JavaScript MIME type essences (HTML Living Standard, "JavaScript MIME type"). */
 const JAVASCRIPT_MIME_TYPES = new Set([
@@ -162,15 +163,15 @@ export function isTagLiveFor(gaId: string): boolean {
 }
 
 /**
- * Whether a gtag.js element this library appended for this ID is on the page and has not
+ * Whether a gtag.js element a consent manager appended for this ID is on the page and has not
  * failed: the tag may run, and a reload removes it for good.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
-export function isLibraryTagLiveFor(gaId: string): boolean {
+export function isManagedTagLiveFor(gaId: string): boolean {
   if (typeof document === "undefined") return false;
   return tagElementsFor(gaId).some(
-    (element) => libraryTags.has(element) && !failedTags.has(element)
+    (element) => managedTags.has(element) && !failedTags.has(element)
   );
 }
 
@@ -296,6 +297,21 @@ function settleOnLoad(
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
 export function loadGtagScript(gaId: string): Promise<void> {
+  // The site's own call: it runs again on every start, so the element is not the manager's.
+  return appendGtagScript(gaId, false);
+}
+
+/**
+ * The consent manager's load of gtag.js. The element it appends counts as the manager's: unlike
+ * a site's own load, it does not come back after a reload. Not part of the public API.
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function loadManagedGtagScript(gaId: string): Promise<void> {
+  return appendGtagScript(gaId, true);
+}
+
+function appendGtagScript(gaId: string, managed: boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     if (typeof document === "undefined") {
       resolve();
@@ -339,7 +355,7 @@ export function loadGtagScript(gaId: string): Promise<void> {
     const script = document.createElement("script");
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
-    libraryTags.add(script);
+    if (managed) managedTags.add(script);
     // A request that neither loads nor fails would otherwise hold every later attempt forever.
     const timer = setTimeout(() => {
       if (isTagLoadedFor(gaId)) {

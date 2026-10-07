@@ -27,11 +27,11 @@ import {
   hasConsentDefault,
   queueGoogleAnalyticsConfig,
   queueConsentUpdate,
-  loadGtagScript,
+  loadManagedGtagScript,
   clearAnalyticsCookies,
   setAnalyticsDisabled,
   isTagLiveFor,
-  isLibraryTagLiveFor,
+  isManagedTagLiveFor,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -844,10 +844,10 @@ export class ConsentManager {
     // withdrawal needs none: with analytics allowed the next page loads the same tag, and
     // the denied ad signals reach the running one as an update already. Analytics refused
     // before was already withdrawn, so a repeated refusal reloads nothing. For the state init()
-    // found, only a tag this library loaded (a previous manager's, before a remount) counts:
+    // found, only a tag a consent manager loaded (a previous one's, before a remount) counts:
     // the site's own tag comes back with every load, and a reload for it would never end.
     const withdrawn = previous?.analytics_storage !== "denied";
-    const stoppable = restoring ? isLibraryTagLiveFor(gaId) : tagRunning;
+    const stoppable = restoring ? isManagedTagLiveFor(gaId) : tagRunning;
     if (withdrawn && stoppable && this.config.reloadOnWithdrawal) this.scheduleReload();
     clearAnalyticsCookies(gaId);
     setAnalyticsDisabled(gaId, true);
@@ -936,7 +936,7 @@ export class ConsentManager {
   private loadGtag(gaId: string): void {
     this.gaLoading = true;
     this.gaRetryOnFailure = false;
-    loadGtagScript(gaId).then(
+    loadManagedGtagScript(gaId).then(
       () => {
         this.gaLoading = false;
         this.gaLoaded = true;
@@ -993,7 +993,8 @@ export class ConsentManager {
    *
    * @param final - The state is a decision, so tags need not hold their first hits for an update
    * @param restoring - The state init() found: a refusal in it reloads (reloadOnWithdrawal) only
-   *   for a tag this library loaded, never for the site's own, which comes back with every load.
+   *   for a tag a consent manager loaded, never for the site's own (its snippet, or the public
+   *   loader it calls on every start), which comes back with every load.
    */
   private reconcile(final = true, restoring = false): boolean {
     this.consentSettled = true;
