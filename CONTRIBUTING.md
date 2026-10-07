@@ -33,7 +33,7 @@ A bug fix comes with a test that fails without the fix. Behaviour, options and A
 
 ## Commits and pull requests
 
-Pull requests are squash-merged, so the pull request title becomes the commit on `main` and drives the release. Use [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope): ...`, `fix(scope): ...`, `docs: ...`, and `!` after the type for a breaking change (`feat!: ...`). Reference the issue in the description (`Closes #123`).
+Pull requests are squash-merged, so the pull request title becomes the commit on `main` and drives the release: release-please collects these commits into a release pull request (version bump and changelog), and merging that pull request publishes the release. Use [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope): ...`, `fix(scope): ...`, `docs: ...`, and `!` after the type for a breaking change (`feat!: ...`). Reference the issue in the description (`Closes #123`).
 
 Every review thread is resolved before the pull request merges.
 

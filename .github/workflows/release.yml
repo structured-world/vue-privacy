@@ -1,38 +1,105 @@
+# Release Please: on every push to main it opens or updates the release PR (version bump and
+# CHANGELOG); merging that PR creates the tag and the GitHub release, and the publish job then
+# puts that version on npm. A release whose publish failed is published again by running this
+# workflow by hand with its tag.
+#
+# The file keeps its name: npm trusted publishing (OIDC) is bound to this workflow file.
+
 name: Release
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish to npm (vX.Y.Z)"
+        required: true
+        type: string
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 jobs:
-  release:
+  release-please:
+    name: Release Please
     runs-on: ubuntu-latest
-    if: github.repository == 'structured-world/vue-privacy'
+    if: github.repository == 'structured-world/vue-privacy' && github.event_name == 'push'
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    outputs:
+      release-created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
 
     steps:
-      - name: Generate App Token
+      # The app token, not GITHUB_TOKEN: a release PR opened with GITHUB_TOKEN would not run CI.
+      - name: Generate release token
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.RELEASER_APP_ID }}
           private-key: ${{ secrets.RELEASER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          # Only what Release Please needs, not every permission of the app's installation.
+          permission-contents: write
+          permission-pull-requests: write
+
+      # Pinned to a commit: a third-party tag can be moved, and this step holds a token that
+      # writes to the repository. Dependabot updates the pin and the version comment.
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: release-please
+    # always(): a manual run skips release-please, which would otherwise skip this job too.
+    if: >-
+      always() && github.repository == 'structured-world/vue-privacy' &&
+      (needs.release-please.outputs.release-created == 'true' ||
+      github.event_name == 'workflow_dispatch')
+
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || needs.release-please.outputs.tag }}
+
+    steps:
+      # A manual run names the tag by hand: only a release tag may be checked out and published.
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$TAG' is not a release tag (vX.Y.Z)."
+            exit 1
+          fi
 
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          ref: refs/tags/${{ env.TAG }}
+          persist-credentials: false
+
+      - name: Check the version matches the tag
+        run: |
+          VERSION="$(jq -r .version package.json)"
+          if [ "v${VERSION}" != "$TAG" ]; then
+            echo "::error::package.json has ${VERSION}, the tag is ${TAG}."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
-          registry-url: "https://registry.npmjs.org"
+          # npm 11.5+ (bundled with Node 24) publishes through OIDC. No registry-url: the .npmrc
+          # it writes carries a NODE_AUTH_TOKEN placeholder that would override OIDC.
+          node-version: 24
 
       - name: Enable Corepack
         run: corepack enable
@@ -60,8 +127,14 @@ jobs:
           test -f dist/quasar/index.d.ts
           test -f dist/vanilla/index.d.ts
 
-      - name: Semantic Release
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-          NPM_CONFIG_PROVENANCE: true
-        run: yarn semantic-release
+      # npm, not `yarn npm publish`: Yarn 4 does not publish through OIDC. The build above is the
+      # one verified, so prepublishOnly does not run it again. A rerun after a published version
+      # skips instead of failing.
+      - name: Publish
+        run: |
+          VERSION="$(jq -r .version package.json)"
+          if npm view "@structured-world/vue-privacy@${VERSION}" version >/dev/null 2>&1; then
+            echo "${VERSION} is already on npm; skipping."
+            exit 0
+          fi
+          npm publish --provenance --access public --ignore-scripts

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
-import { initGoogleAnalytics, initGtag, isTagLiveFor } from "../core/gtag";
+import { initGoogleAnalytics, initGtag, isTagLiveFor, loadGtagScript } from "../core/gtag";
 import { storeConsent, setConsentUid } from "../core/storage";
 import { reloadPage } from "../core/page";
 
@@ -1806,6 +1806,56 @@ describe("basic consent mode", () => {
 
       expect(reloadPage).not.toHaveBeenCalled();
       expect(analyticsDisabled()).toBe(true);
+    });
+
+    it("does not reload for a restored refusal while the site's own gtag.js runs", async () => {
+      // The site's own element comes back with every load, so a reload for it would never end.
+      preloadGtagScript(true);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("does not reload for a restored refusal when the site loaded gtag.js through the API", async () => {
+      // Regression: the public loader marked the element it appended as the manager's, so a
+      // site calling it on every start reloaded the page for a stored refusal, again and again.
+      await loadGtagScript(GA_ID);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("reloads once for a restored refusal while a previous manager's tag runs", async () => {
+      // Regression: a remounted manager restored the refusal another tab saved, but never
+      // reloaded for the tag the destroyed manager had loaded, so linked Ads/Floodlight
+      // destinations kept sending.
+      const first = basicManager();
+      await first.init();
+      await first.acceptAll();
+      await settle();
+      first.destroy();
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+
+      const second = basicManager({ reloadOnWithdrawal: true });
+      await second.init();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
     });
 
     it("gives the withdrawal's remote write its own grace period", async () => {
