@@ -116,14 +116,26 @@ function expectInitialisedOnce(updates: GoogleConsentSignals[]): void {
   expect(count("config")).toBe(1);
 }
 
+// Managers keep listeners on the shared window and script-blocker observers on the shared
+// document; every one a test creates is destroyed after it, so a later test's focus event or
+// added script reaches only its own manager.
+const created: ConsentManager[] = [];
+
+function tracked(manager: ConsentManager): ConsentManager {
+  created.push(manager);
+  return manager;
+}
+
 function euManager(config: ConsentConfig = {}): ConsentManager {
-  return new ConsentManager({
-    gaId: GA_ID,
-    geoDetector: {
-      detect: vi.fn().mockResolvedValue({ isEU: true, countryCode: "DE", method: "manual" }),
-    },
-    ...config,
-  });
+  return tracked(
+    new ConsentManager({
+      gaId: GA_ID,
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ isEU: true, countryCode: "DE", method: "manual" }),
+      },
+      ...config,
+    })
+  );
 }
 
 beforeEach(() => {
@@ -172,6 +184,7 @@ beforeEach(() => {
 
 afterEach(() => {
   observer?.disconnect();
+  for (const manager of created.splice(0)) manager.destroy();
 });
 
 describe("Google Analytics lifecycle in ConsentManager", () => {
@@ -232,10 +245,12 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   });
 
   it("grants by a final default outside consent jurisdictions", async () => {
-    const manager = new ConsentManager({
-      gaId: GA_ID,
-      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
-    });
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+      })
+    );
 
     await manager.init();
 
@@ -1287,20 +1302,8 @@ describe("initGoogleAnalytics defaults", () => {
 // until the visitor explicitly allows analytics. A grant implied by the jurisdiction (CCPA,
 // outside consent jurisdictions) is not that consent.
 describe("basic consent mode", () => {
-  // Basic-mode managers listen for focus on the shared window; every one a test creates is
-  // destroyed after it, so a later test's focus event reaches only its own manager.
-  const created: ConsentManager[] = [];
-  afterEach(() => {
-    for (const manager of created.splice(0)) manager.destroy();
-  });
-
-  function tracked(manager: ConsentManager): ConsentManager {
-    created.push(manager);
-    return manager;
-  }
-
   function basicManager(config: ConsentConfig = {}): ConsentManager {
-    return tracked(euManager({ consentMode: "basic", ...config }));
+    return euManager({ consentMode: "basic", ...config });
   }
 
   function ccpaManager(): ConsentManager {
@@ -1623,6 +1626,26 @@ describe("basic consent mode", () => {
       manager.destroy();
     });
 
+    it("reloads for a tag request that timed out but may still run", async () => {
+      // Regression: a timed-out gtag.js stays on the page and may still run, yet the refusal
+      // after it counted no tag and skipped the reload.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        scriptOutcome = "manual";
+        const manager = basicManager({ reloadOnWithdrawal: true });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await manager.rejectAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(reloadPage).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not reload a refusal made before any tag loaded", async () => {
       const manager = basicManager({ reloadOnWithdrawal: true });
       await manager.init();
@@ -1728,6 +1751,73 @@ describe("basic consent mode", () => {
     await initDone;
     expectNothingSentToGoogle();
     manager.destroy();
+  });
+
+  it("follows a refusal another tab saved during the roaming check", async () => {
+    // Regression: init() resumed with the grant it read before the check, wrote it over the
+    // newer refusal and loaded the tag.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+      const manager = basicManager({
+        geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+      });
+      const initDone = manager.init();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      resolveGeo({ isEU: false, method: "manual" });
+      await initDone;
+
+      expectNothingSentToGoogle();
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps stored analytics scripts blocked until the roaming check confirms the grant", async () => {
+    // Regression: the script blocker's first pass ran the stored grant's scripts before the
+    // check found the visitor now in the EU, where a fresh choice is required.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    expect(blocked.isConnected).toBe(true);
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    expect(blocked.isConnected).toBe(true);
+  });
+
+  it("keeps a consent cookie whose name ends in _ga on a refusal", async () => {
+    // Regression: the analytics cookie cleanup matched any name ending in _ga and deleted the
+    // consent cookie holding the refusal it had just saved.
+    const manager = basicManager({ cookie: { name: "privacy_ga" } });
+    await manager.init();
+    await manager.acceptAll();
+
+    await manager.rejectAll();
+
+    expect(cookieStore).toContain("privacy_ga=");
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
   });
 
   it("sends the landing page view on the first grant when page views are tracked manually", async () => {

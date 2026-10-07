@@ -53,6 +53,41 @@ describe("clearAnalyticsCookies", () => {
     expect(writes.some((w) => w.startsWith("site_ga=;") && w.includes("path=/page"))).toBe(true);
   });
 
+  it("deletes on the cookie_path, cookie_prefix and cookie_domain the tag was configured with", () => {
+    // Regression: a cookie_path outside the current route hides the cookies from
+    // document.cookie, so they survived; the tag's own configuration names them.
+    window.dataLayer = [
+      ["set", { cookie_prefix: "site" }],
+      ["config", "G-TEST123", { cookie_path: "/analytics/", cookie_domain: "stats.example.com" }],
+    ];
+
+    clearAnalyticsCookies("G-TEST123");
+
+    const hit = (name: string): boolean =>
+      writes.some(
+        (w) =>
+          w.startsWith(`${name}=;`) &&
+          w.includes("path=/analytics/") &&
+          w.includes("domain=stats.example.com")
+      );
+    expect(hit("site_ga")).toBe(true);
+    expect(hit("site_ga_TEST123")).toBe(true);
+    window.dataLayer = [];
+  });
+
+  it("leaves cookies whose names end like GA's but whose values are not GA's", () => {
+    // Regression: any name ending in _ga was deleted, including a site cookie (or a consent
+    // cookie) that merely shares the suffix.
+    jar = "privacy_ga=%7B%22categories%22%7D; site_ga=GA1.1.1.2; notes_ga_TEST123=hello";
+
+    clearAnalyticsCookies("G-TEST123");
+
+    const deleted = new Set(writes.filter((w) => w.includes("1970")).map((w) => w.split("=")[0]));
+    expect(deleted.has("site_ga")).toBe(true);
+    expect(deleted.has("privacy_ga")).toBe(false);
+    expect(deleted.has("notes_ga_TEST123")).toBe(false);
+  });
+
   it("never targets a bare top-level domain", () => {
     clearAnalyticsCookies("G-TEST123");
 

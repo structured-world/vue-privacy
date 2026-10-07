@@ -127,6 +127,11 @@ export class ConsentManager {
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
   private gaLoaded = false;
+  /**
+   * A gtag.js request was made on this page. One that timed out stays in flight and may still
+   * run, so it counts as a running tag for a withdrawal.
+   */
+  private gaRequested = false;
   /** A consent push found the load in flight; a failure of that attempt retries at once. */
   private gaRetryOnFailure = false;
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
@@ -307,7 +312,15 @@ export class ConsentManager {
       // for GDPR roaming protection. EU users (isEU=true) skip this via fast-path above.
       const needsReconsent = await this.checkRoamingToEU(stored);
       if (superseded()) return;
-      if (!needsReconsent) {
+      // Another tab may have saved a choice, or reset, while the location was checked. That is
+      // the visitor's latest decision: the consent read above must not be written back over it.
+      const current = getStoredConsent(this.config);
+      const changed = current === null || current.timestamp !== stored.timestamp;
+      if (changed && current !== null && (!needsReconsent || current.isEU === true)) {
+        this.applyConsent(current.categories);
+        return;
+      }
+      if (!changed && !needsReconsent) {
         // User is not in EU now — non-EU consent remains valid.
         // Update cookie with fresh geo data from roaming check (for debugging/analytics).
         // This doesn't skip future roaming checks — only isEU=true fast-path does that.
@@ -326,8 +339,9 @@ export class ConsentManager {
         this.applyConsent(stored.categories);
         return;
       }
-      // User is now in EU but consent was given outside EU — fall through to show banner
-      clearConsent(this.config);
+      // Now in the EU with consent given outside it (cleared here), or reset in another tab:
+      // undecided, and decided below like a first visit.
+      if (needsReconsent) clearConsent(this.config);
     }
 
     // Remote fallback: if storage is configured, try to restore consent
@@ -678,7 +692,7 @@ export class ConsentManager {
     if (gaId && this.basicMode) {
       // The tag may already run on the page whatever this instance has sent (an earlier manager
       // instance loaded it before a remount), so it is told about a refusal all the same.
-      const tagRunning = this.gaLoading || this.gaLoaded || isTagLoadedFor(gaId);
+      const tagRunning = this.gaRequested || isTagLoadedFor(gaId);
       if (basicDenied) {
         // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
         // sending cookieless pings; only a reload stops a running tag. A marketing-only
@@ -754,6 +768,7 @@ export class ConsentManager {
    */
   private loadGtag(gaId: string): void {
     this.gaLoading = true;
+    this.gaRequested = true;
     this.gaRetryOnFailure = false;
     loadGtagScript(gaId).then(
       () => {
@@ -909,6 +924,16 @@ export class ConsentManager {
       a.functional === b.functional
       ? stored
       : own;
+  }
+
+  /**
+   * The consent the script blocker may act on: getConsent() once init() has settled, or the
+   * visitor chose or reset, and null before. A stored grant read earlier may still fail the
+   * roaming check, and the scripts it would unblock could not be stopped again.
+   * @internal
+   */
+  getSettledConsent(): StoredConsent | null {
+    return this.consentSettled ? this.getConsent() : null;
   }
 
   /**

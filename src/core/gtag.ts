@@ -294,35 +294,84 @@ export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
   (window as unknown as Record<string, unknown>)[`ga-disable-${gaId}`] = disabled;
 }
 
+/** Values gtag.js stores: `GA1.<n>.<id>.<time>` in `_ga`, `GS1.`/`GS2.` session state in `_ga_<ID>`. */
+const GA_COOKIE_VALUE = /^G[AS]\d\./;
+
+/** cookie_prefix / cookie_path / cookie_domain this page passed to the Google tag for an ID. */
+function configuredCookieSettings(gaId: string): {
+  prefixes: Set<string>;
+  paths: Set<string>;
+  domains: Set<string>;
+} {
+  const settings = {
+    prefixes: new Set([""]),
+    paths: new Set<string>(),
+    domains: new Set<string>(),
+  };
+  if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return settings;
+  for (const entry of window.dataLayer) {
+    const command = commandOf(entry);
+    if (command === null) continue;
+    // `set` applies to every tag on the page, `config` only to the ID it names.
+    const params =
+      command[0] === "set"
+        ? command[1]
+        : command[0] === "config" && command[1] === gaId
+          ? command[2]
+          : null;
+    if (typeof params !== "object" || params === null) continue;
+    const { cookie_prefix, cookie_path, cookie_domain } = params as Record<string, unknown>;
+    if (typeof cookie_prefix === "string") settings.prefixes.add(cookie_prefix);
+    if (typeof cookie_path === "string") settings.paths.add(cookie_path);
+    if (typeof cookie_domain === "string" && cookie_domain !== "auto" && cookie_domain !== "none") {
+      settings.domains.add(cookie_domain);
+    }
+  }
+  return settings;
+}
+
 /**
  * Delete the cookies gtag.js sets for a GA4 measurement ID: `_ga` (client ID) and
  * `_ga_<ID without "G-">` (session state), also under a `cookie_prefix` (`<prefix>_ga`,
- * `<prefix>_ga_<ID>`). Where gtag.js wrote them is not known here (`cookie_domain: 'auto'` picks
- * the highest domain the browser accepts, `cookie_path` may narrow the path), so the deletion is
- * issued for the host and every parent domain, on "/" and every path prefix of this page; the
- * combinations that do not match are no-ops.
+ * `<prefix>_ga_<ID>`). The prefix, path and domain the page configured the tag with are read
+ * from its `set` and `config` commands; beyond them, cookies visible here whose names end that
+ * way are deleted only when their value has GA's format, so a site cookie that merely shares the
+ * suffix (the consent cookie included) is kept. With the default `cookie_domain: 'auto'` the
+ * cookies sit on the highest domain the browser accepts, so the deletion is issued for the host
+ * and every parent domain, on "/" and every path prefix of this page; the combinations that do
+ * not match are no-ops.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
  */
 export function clearAnalyticsCookies(gaId: string): void {
   if (typeof document === "undefined") return;
   const session = `_ga_${gaId.replace(/^G-/, "")}`;
-  const names = new Set(["_ga", session]);
+  const configured = configuredCookieSettings(gaId);
+  const names = new Set<string>();
+  for (const prefix of configured.prefixes) {
+    names.add(`${prefix}_ga`);
+    names.add(`${prefix}${session}`);
+  }
   let jar = "";
   try {
     jar = document.cookie;
   } catch {
-    // A sandboxed document has no readable cookies; the default names are still deleted.
+    // A sandboxed document has no readable cookies; the configured names are still deleted.
   }
   for (const entry of jar.split(";")) {
-    const name = entry.split("=")[0].trim();
-    if (name.endsWith("_ga") || name.endsWith(session)) names.add(name);
+    const separator = entry.indexOf("=");
+    if (separator < 0) continue;
+    const name = entry.slice(0, separator).trim();
+    const value = entry.slice(separator + 1).trim();
+    if ((name.endsWith("_ga") || name.endsWith(session)) && GA_COOKIE_VALUE.test(value)) {
+      names.add(name);
+    }
   }
 
   const labels = typeof location === "undefined" ? [] : location.hostname.split(".");
-  const domains: (string | undefined)[] = [undefined];
+  const domains: (string | undefined)[] = [undefined, ...configured.domains];
   for (let i = 0; i < labels.length - 1; i++) domains.push(labels.slice(i).join("."));
-  const paths = ["/"];
+  const paths = ["/", ...configured.paths];
   const segments = typeof location === "undefined" ? [] : location.pathname.split("/");
   for (let i = 2; i <= segments.length; i++) {
     const path = segments.slice(0, i).join("/");

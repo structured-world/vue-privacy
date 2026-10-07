@@ -224,7 +224,7 @@ interface ConsentConfig {
 | | `'advanced'` (default) | `'basic'` |
 |---|---|---|
 | gtag.js before a choice | loaded, all signals denied | not loaded |
-| Page views and events before a choice | sent as cookieless pings | dropped |
+| Page views and events before a choice | sent as cookieless pings | not sent; events are dropped, the page view tracked last is sent once analytics is allowed (with `sendPageView: false`; otherwise the tag's own page view covers it) |
 | After a refusal | cookieless pings continue | nothing is sent: a loaded tag is switched off (`ga-disable-<ID>`), `_ga` cookies are deleted; products linked to the same tag (Google Ads, Floodlight) stop only on reload, see `reloadOnWithdrawal` |
 | After analytics is allowed | full measurement | gtag.js loads, full measurement |
 | Google's conversion modelling | available | not available for visitors who did not consent |

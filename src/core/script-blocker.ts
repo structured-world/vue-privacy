@@ -102,7 +102,9 @@ function observeNewScripts(
 export function initScriptBlocker(manager: ConsentManager): () => void {
   let observer: MutationObserver | null = null;
 
-  const getCategories = () => manager.getConsent()?.categories ?? null;
+  // Settled consent only: before init() decided, a stored grant may still fail the roaming
+  // check, and a script it unblocked could not be blocked again.
+  const getCategories = () => manager.getSettledConsent()?.categories ?? null;
 
   // Listen for consent changes via public API (no monkey-patching)
   manager.onConsentChange((categories) => {
