@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        # The dev toolchain (vitest 5, jsdom 30, semantic-release plugins) needs Node 22.12+.
+        # The dev toolchain (vitest 5, jsdom 30) needs Node 22.12+.
         node-version: [22.x, 24.x]
 
     steps:

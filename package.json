@@ -91,8 +91,7 @@
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
-    "prepublishOnly": "yarn build",
-    "semantic-release": "semantic-release"
+    "prepublishOnly": "yarn build"
   },
   "peerDependencies": {
     "vue": "^3.3.0",
@@ -108,18 +107,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@semantic-release/changelog": "^7.0.0",
-    "@semantic-release/git": "^11.0.1",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^22.20.5",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vitest/coverage-v8": "^5.0.3",
-    "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "^10.12.0",
     "eslint-plugin-vue": "^10.11.1",
     "jsdom": "^30.1.2",
     "prettier": "^3.9.9",
-    "semantic-release": "^25.0.9",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",
     "vite": "^8.3.2",
