@@ -377,6 +377,35 @@ export interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * How the Google tag for `gaId` relates to consent (Google Consent Mode):
+   * - `'advanced'` (default): gtag.js loads for every visitor with denied defaults, and Google
+   *   receives cookieless pings (page views, events) before any choice and after a refusal.
+   * - `'basic'`: nothing reaches Google (no script, no dataLayer entry, no request) until the
+   *   visitor explicitly allows analytics; a grant implied by the jurisdiction (CCPA, outside
+   *   consent jurisdictions) does not count. Withdrawing analytics switches a loaded tag off
+   *   (`ga-disable-<ID>`) and deletes the `_ga` cookies.
+   *   Choose it when the site promises "Google Analytics only with consent"; Google then
+   *   models no conversions for visitors who did not consent. Requires `gaId` (the manager
+   *   loads the tag); a site that loads gtag itself cannot keep that promise, and the
+   *   constructor throws.
+   * @default 'advanced'
+   */
+  consentMode?: "advanced" | "basic";
+
+  /**
+   * Basic mode only: reload the page when the visitor withdraws analytics after the Google tag
+   * has loaded on it. A withdrawal stops Google Analytics on the spot, but other products linked
+   * to the same Google tag (Google Ads, Floodlight) keep sending cookieless pings until the page
+   * reloads, and a running script cannot be unloaded. The choice is saved first (a remote write
+   * through `storage` is waited for, up to 10 seconds) and the consent callbacks run; the reload follows even if they destroy the manager, since the tag runs
+   * page-wide, and is dropped if they allow analytics again. It drops in-page state, so enable it deliberately. While analytics stays allowed
+   * the tag loads, and linked advertising products follow the ad signals (cookieless pings when
+   * marketing is refused); keep them in a separate tag if refusing marketing must stop them.
+   * @default false
+   */
+  reloadOnWithdrawal?: boolean;
+
+  /**
    * Called when gtag.js fails to load (an ad blocker, a network error). The consent flow is
    * not affected: the banner still shows and choices are saved; the next consent change
    * retries the load.
@@ -396,7 +425,11 @@ export interface ConsentConfig {
   /** Consent version (changing this resets consent for all users) */
   version?: string;
 
-  /** Callback when consent changes */
+  /**
+   * Callback when consent changes. In basic mode it also runs for a choice made in another tab
+   * of the site, once this tab follows it. An error it throws is logged and does not stop the
+   * consent from taking effect.
+   */
   onConsentChange?: (consent: StoredConsent) => void;
 
   /** Callback when banner is shown */

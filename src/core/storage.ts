@@ -221,7 +221,7 @@ export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredCon
  * Store consent in cookie
  */
 export function storeConsent(
-  consent: Omit<StoredConsent, "timestamp" | "version">,
+  consent: Omit<StoredConsent, "timestamp" | "version"> & { timestamp?: number },
   config: Partial<ConsentConfig> = {}
 ): void {
   const cookieConfig: CookieConfigDefaults = {
@@ -232,7 +232,8 @@ export function storeConsent(
 
   const stored: StoredConsent = {
     categories: consent.categories,
-    timestamp: Date.now(),
+    // The caller's own record keeps its time: the page compares its choice to the cookie by it.
+    timestamp: consent.timestamp ?? Date.now(),
     version,
     // Preserve geo data if provided (use !== undefined for consistent handling)
     ...(consent.isEU !== undefined && { isEU: consent.isEU }),

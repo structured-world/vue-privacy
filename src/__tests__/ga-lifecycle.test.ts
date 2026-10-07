@@ -1,13 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
-import { initGoogleAnalytics, initGtag } from "../core/gtag";
-import { storeConsent } from "../core/storage";
+import { initGoogleAnalytics, initGtag, isTagLiveFor } from "../core/gtag";
+import { storeConsent, setConsentUid } from "../core/storage";
+import { reloadPage } from "../core/page";
+
+// jsdom cannot navigate; the reload a withdrawal may trigger is recorded instead.
+vi.mock("../core/page", () => ({ reloadPage: vi.fn() }));
 import type {
   ConsentConfig,
   ConsentStorage,
   GeoDetectionResult,
   GoogleConsentSignals,
+  StoredConsent,
 } from "../core/types";
 
 // Google Consent Mode contract: one `consent default` before the tag loads, one `js` and
@@ -112,14 +117,26 @@ function expectInitialisedOnce(updates: GoogleConsentSignals[]): void {
   expect(count("config")).toBe(1);
 }
 
+// Managers keep listeners on the shared window and script-blocker observers on the shared
+// document; every one a test creates is destroyed after it, so a later test's focus event or
+// added script reaches only its own manager.
+const created: ConsentManager[] = [];
+
+function tracked(manager: ConsentManager): ConsentManager {
+  created.push(manager);
+  return manager;
+}
+
 function euManager(config: ConsentConfig = {}): ConsentManager {
-  return new ConsentManager({
-    gaId: GA_ID,
-    geoDetector: {
-      detect: vi.fn().mockResolvedValue({ isEU: true, countryCode: "DE", method: "manual" }),
-    },
-    ...config,
-  });
+  return tracked(
+    new ConsentManager({
+      gaId: GA_ID,
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ isEU: true, countryCode: "DE", method: "manual" }),
+      },
+      ...config,
+    })
+  );
 }
 
 beforeEach(() => {
@@ -133,7 +150,8 @@ beforeEach(() => {
         .split(";")
         .map((c) => c.trim())
         .filter((c) => c && !c.startsWith(`${name}=`));
-      if (!value.includes("1970")) kept.push(nameValue);
+      // A deletion is an expiry in the past; the value itself may contain "1970" (a timestamp).
+      if (!/;\s*expires=Thu, 01 Jan 1970/i.test(value)) kept.push(nameValue);
       cookieStore = kept.join("; ");
     },
     configurable: true,
@@ -144,6 +162,7 @@ beforeEach(() => {
   // earlier test's dataLayer array.
   delete (window as Partial<Window>).gtag;
   delete window.google_tag_manager;
+  delete (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
   vi.restoreAllMocks();
 
   // jsdom does not fetch scripts; settle each appended gtag.js the way the test asks.
@@ -167,6 +186,7 @@ beforeEach(() => {
 
 afterEach(() => {
   observer?.disconnect();
+  for (const manager of created.splice(0)) manager.destroy();
 });
 
 describe("Google Analytics lifecycle in ConsentManager", () => {
@@ -227,10 +247,12 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
   });
 
   it("grants by a final default outside consent jurisdictions", async () => {
-    const manager = new ConsentManager({
-      gaId: GA_ID,
-      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
-    });
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+      })
+    );
 
     await manager.init();
 
@@ -1275,5 +1297,1674 @@ describe("initGoogleAnalytics defaults", () => {
 
     expect(count("js")).toBe(1);
     expect(count("config")).toBe(1);
+  });
+});
+
+// Basic consent mode: Google receives nothing (no script, no dataLayer entry, no request)
+// until the visitor explicitly allows analytics. A grant implied by the jurisdiction (CCPA,
+// outside consent jurisdictions) is not that consent.
+describe("basic consent mode", () => {
+  function basicManager(config: ConsentConfig = {}): ConsentManager {
+    return euManager({ consentMode: "basic", ...config });
+  }
+
+  function ccpaManager(): ConsentManager {
+    return tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        ccpaEnabled: true,
+        geoDetector: {
+          detect: vi
+            .fn()
+            .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+        },
+      })
+    );
+  }
+
+  /** Nothing reached Google: no gtag.js element and no dataLayer entry. */
+  function expectNothingSentToGoogle(): void {
+    expect(document.querySelectorAll('script[src*="googletagmanager"]')).toHaveLength(0);
+    expect(window.dataLayer).toEqual([]);
+  }
+
+  /** Cookies gtag.js sets for GA_ID once analytics is granted. */
+  function setAnalyticsCookies(): void {
+    document.cookie = "_ga=GA1.1.123.456; path=/";
+    document.cookie = "_ga_TEST123=GS1.1.789; path=/";
+  }
+
+  it("sends nothing to Google for an undecided EU visitor", async () => {
+    await basicManager().init();
+
+    expectNothingSentToGoogle();
+  });
+
+  it("sends nothing to Google for a CCPA visitor granted by jurisdiction", async () => {
+    // The CCPA flow grants silently, but that is not the visitor's consent, and it is not
+    // stored either, so the next page does not take it for one.
+    const manager = ccpaManager();
+    await manager.init();
+
+    expectNothingSentToGoogle();
+    expect(cookieStore).not.toContain("consent_preferences");
+    expect(manager.isCCPAUser()).toBe(true);
+  });
+
+  it("sends nothing to Google outside consent jurisdictions without a choice", async () => {
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+      })
+    );
+    await manager.init();
+
+    expectNothingSentToGoogle();
+  });
+
+  it("sends nothing to Google after a refusal", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    await manager.rejectAll();
+    await manager.savePreferences({ analytics: false, marketing: true });
+
+    expectNothingSentToGoogle();
+  });
+
+  it("loads the tag once with granted defaults when analytics is allowed", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    await manager.acceptAll();
+    await manager.savePreferences({ analytics: true, marketing: false });
+    await settle();
+
+    expect(consentCalls("default")).toEqual([GRANTED]);
+    expect(consentCalls("update")).toEqual([ANALYTICS_ONLY]);
+    expect(order().slice(0, 3)).toEqual(["consent:default", "js", "config"]);
+    expect(count("config")).toBe(1);
+    expect(gtagScripts()).toHaveLength(1);
+  });
+
+  it("loads the tag on the next page from the stored grant", async () => {
+    // The clock is pinned to a timestamp containing "1970": the cookie stub once took any
+    // write mentioning 1970 for a deletion and dropped the stored grant, failing at random.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_791_197_000_000);
+    try {
+      storeConsent(
+        {
+          categories: { analytics: true, marketing: false, functional: true },
+          isEU: true,
+          countryCode: "DE",
+        },
+        {}
+      );
+
+      await basicManager().init();
+      await settle();
+
+      expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
+      expect(count("config")).toBe(1);
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("denies and removes the analytics cookies when analytics is withdrawn", async () => {
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    setAnalyticsCookies();
+
+    await manager.rejectAll();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(cookieStore).not.toMatch(/(^|; )_ga=/);
+    expect(cookieStore).not.toContain("_ga_TEST123=");
+  });
+
+  it("denies and removes the analytics cookies on resetConsent", async () => {
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    setAnalyticsCookies();
+
+    manager.resetConsent();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(cookieStore).not.toMatch(/(^|; )_ga=/);
+    expect(cookieStore).not.toContain("_ga_TEST123=");
+  });
+
+  it("drops tracking calls until analytics is allowed", async () => {
+    const manager = basicManager();
+    await manager.init();
+
+    manager.trackPageView("/before-choice");
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+
+    await manager.acceptAll();
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+  });
+
+  it("drops tracking calls for a CCPA visitor granted by jurisdiction", async () => {
+    const manager = ccpaManager();
+    await manager.init();
+
+    manager.trackPageView("/ccpa");
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+  });
+
+  /** The documented GA switch that stops a loaded tag from measuring for GA_ID. */
+  function analyticsDisabled(): unknown {
+    return (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
+  }
+
+  it("stops a loaded tag from measuring after analytics is withdrawn", async () => {
+    // Regression: the withdrawal only queued a denied update, so the loaded tag kept sending
+    // cookieless pings (enhanced measurement included) for the rest of the page.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    await manager.rejectAll();
+    expect(analyticsDisabled()).toBe(true);
+
+    await manager.acceptAll();
+    expect(analyticsDisabled()).toBe(false);
+  });
+
+  it("does not reload gtag.js on a refusal after a failed load", async () => {
+    // Regression: the grant had sent the defaults, so the refusal went on to load the tag,
+    // and the refusal itself caused a request to Google.
+    scriptOutcome = "error";
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    scriptOutcome = "manual";
+    await manager.rejectAll();
+    manager.resetConsent();
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("does not retry gtag.js for a refusal made while the load is pending", async () => {
+    // Regression: the refusal found the load in flight and scheduled a retry, which loaded the
+    // tag once the first attempt failed.
+    scriptOutcome = "manual";
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    expect(gtagScripts()).toHaveLength(1);
+
+    await manager.rejectAll();
+    settlePendingTag("error");
+    await settle();
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("loads the tag when another tab granted analytics", async () => {
+    // Regression: this tab never loaded the tag, so after the grant in another tab its tracking
+    // calls passed the consent check and were then lost (no gtag on the page).
+    const manager = basicManager();
+    await manager.init();
+    expectNothingSentToGoogle();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackEvent("sign_up");
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(1);
+    expect(consentCalls("default")).toEqual([ANALYTICS_ONLY]);
+    expect(order().indexOf("config")).toBeLessThan(order().indexOf("event"));
+  });
+
+  it("stops the loaded tag when another tab withdrew analytics", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const events = count("event");
+      manager.trackEvent("sign_up");
+
+      expect(count("event")).toBe(events);
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("reloadOnWithdrawal", () => {
+    // Products linked to the same Google tag ignore ga-disable, so a site that needs nothing
+    // sent after a withdrawal opts into a reload, which is the only way to stop a running tag.
+    beforeEach(() => {
+      vi.mocked(reloadPage).mockClear();
+    });
+
+    it("reloads after the choice is saved when analytics is withdrawn from a loaded tag", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      expect(reloadPage).not.toHaveBeenCalled();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+      expect(cookieStore).toContain("consent_preferences=");
+      manager.destroy();
+    });
+
+    it("does not reload when only marketing is withdrawn", async () => {
+      // With analytics still allowed the next page loads the same tag again, so a reload buys
+      // nothing: the denied ad signals already reach the running tag as an update.
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.savePreferences({ analytics: true, marketing: false });
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      expect(consentCalls("update").at(-1)).toEqual(ANALYTICS_ONLY);
+      manager.destroy();
+    });
+
+    it("reloads and denies for a tag an earlier manager loaded", async () => {
+      // Regression: a remounted manager had sent nothing itself, so its refusal neither told
+      // the running tag nor reloaded, and products linked to that tag kept sending.
+      const first = basicManager();
+      await first.init();
+      await first.acceptAll();
+      await settle();
+      first.destroy();
+      cookieStore = "";
+
+      let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+      const second = basicManager({
+        reloadOnWithdrawal: true,
+        geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+      });
+      const initDone = second.init();
+      second.resetConsent();
+      resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+      await initDone;
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      second.destroy();
+    });
+
+    it("reloads once for a resetConsent after a grant", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      manager.resetConsent();
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      manager.destroy();
+    });
+
+    it("reloads for a tag request that timed out but may still run", async () => {
+      // Regression: a timed-out gtag.js stays on the page and may still run, yet the refusal
+      // after it counted no tag and skipped the reload.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        scriptOutcome = "manual";
+        const manager = basicManager({ reloadOnWithdrawal: true });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        await manager.rejectAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(reloadPage).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not reload for a tag request that failed outright", async () => {
+      // Regression: a gtag.js request that fired error (its element removed, nothing left to
+      // run) still counted as a running tag, and the refusal reloaded the page for nothing.
+      scriptOutcome = "error";
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("does not reload for a timed-out tag request that failed later", async () => {
+      // Regression: a request past its timeout counted as possibly running for good; its later
+      // error removed the element, yet the refusal still reloaded the page for nothing.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        scriptOutcome = "manual";
+        const manager = basicManager({ reloadOnWithdrawal: true });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(10_000);
+        gtagScripts()[0].dispatchEvent(new Event("error"));
+
+        await manager.rejectAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(reloadPage).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not reload a refusal made before any tag loaded", async () => {
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("does not reload without the option", async () => {
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("does not reload in advanced mode", async () => {
+      const manager = euManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      manager.destroy();
+    });
+
+    it("waits for the remote write of the withdrawal before reloading", async () => {
+      // Regression: the reload ran right after the choice, and the unload aborted the remote
+      // write, so the remote record kept the withdrawn grant.
+      let finishWrite: () => void = () => {};
+      const set = vi.fn(() => Promise.resolve("uid-1"));
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      set.mockImplementation(
+        () => new Promise<string>((resolve) => (finishWrite = () => resolve("uid-1")))
+      );
+
+      await manager.savePreferences({ analytics: false, marketing: true });
+      await settle();
+      expect(reloadPage).not.toHaveBeenCalled();
+
+      finishWrite();
+      await settle();
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+    });
+
+    it("reloads only after the remote write of the latest withdrawal", async () => {
+      // Regression: withdraw, grant, withdraw again while writes were pending: the first
+      // withdrawal's wait took the second's timer for its own and reloaded before the latest
+      // refusal reached remote storage.
+      let hold = false;
+      const pending: Array<() => void> = [];
+      const set = vi.fn(
+        (_uid: string | null, _consent: StoredConsent, signal?: AbortSignal): Promise<string> =>
+          hold
+            ? new Promise<string>((resolve, reject) => {
+                pending.push(() => resolve("uid-1"));
+                signal?.addEventListener("abort", () => reject(new Error("aborted")));
+              })
+            : Promise.resolve("uid-1")
+      );
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      hold = true;
+
+      await manager.savePreferences({ analytics: false, marketing: true });
+      // The first withdrawal's reload is now waiting for its write.
+      await settle();
+      await manager.acceptAll();
+      await manager.savePreferences({ analytics: false, marketing: true });
+      await settle();
+      expect(reloadPage).not.toHaveBeenCalled();
+
+      for (const finish of pending.splice(0)) finish();
+      await settle();
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+      expect(set.mock.calls.at(-1)?.[1].categories.analytics).toBe(false);
+    });
+
+    it("does not reload for a refusal init() restores while a tag is on the page", async () => {
+      // Regression: the first push of a restored refusal counted as a withdrawal, so a tag on
+      // the page reloaded it, and the same refusal and tag reloaded every load after.
+      markTagRan();
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+      expect(analyticsDisabled()).toBe(true);
+    });
+
+    it("gives the withdrawal's remote write its own grace period", async () => {
+      // Regression: the reload's wait began before the withdrawal's write, behind a superseded
+      // write that ignored its abort; the grace period ran out as the withdrawal write started,
+      // and the reload aborted it, leaving the remote record granted.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        let finishWithdrawal: () => void = () => {};
+        const set = vi.fn(() => Promise.resolve("uid-1"));
+        const manager = basicManager({
+          reloadOnWithdrawal: true,
+          storage: { get: () => Promise.resolve(null), set },
+        });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // A marketing-only change whose write ignores the abort and never settles.
+        set.mockImplementationOnce(() => new Promise<string>(() => {}));
+        await manager.savePreferences({ analytics: true, marketing: false });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(set).toHaveBeenCalledTimes(2);
+        set.mockImplementationOnce(
+          () => new Promise<string>((resolve) => (finishWithdrawal = () => resolve("uid-1")))
+        );
+        await manager.rejectAll();
+
+        await vi.advanceTimersByTimeAsync(10_001);
+        expect(set).toHaveBeenCalledTimes(3);
+        expect(reloadPage).not.toHaveBeenCalled();
+
+        finishWithdrawal();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(reloadPage).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not reload once the pending tag failed while the write was awaited", async () => {
+      // Regression: the reload was decided when the withdrawal found gtag.js in flight; that
+      // request failed while the remote write ran, yet the page still reloaded for nothing.
+      scriptOutcome = "manual";
+      let finishWithdrawal: () => void = () => {};
+      const set = vi.fn(() => Promise.resolve("uid-1"));
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      set.mockImplementationOnce(
+        () => new Promise<string>((resolve) => (finishWithdrawal = () => resolve("uid-1")))
+      );
+
+      await manager.rejectAll();
+      await settle();
+      settlePendingTag("error");
+      finishWithdrawal();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("does not reload when a consent callback allows analytics again", async () => {
+      // Regression: the reload scheduled for the withdrawal still ran after the callback's own
+      // grant restored the tag, and dropped the page state for nothing.
+      let manager: ConsentManager | null = null;
+      manager = basicManager({
+        reloadOnWithdrawal: true,
+        onConsentChange: (consent) => {
+          if (!consent.categories.analytics) void manager?.acceptAll();
+        },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      await settle();
+
+      expect(reloadPage).not.toHaveBeenCalled();
+    });
+
+    it("still reloads when the manager is destroyed before the reload fires", async () => {
+      // Regression: a consent callback that unmounted the app (destroying the manager) cancelled
+      // the reload, yet the page-wide tag and its linked destinations kept running.
+      const manager = basicManager({ reloadOnWithdrawal: true });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      await manager.rejectAll();
+      manager.destroy();
+      await settle();
+
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("stops the tag when another tab resets consent after this tab's grant", async () => {
+    // Regression: the removed cookie fell back to this page's grant, so a reset made in
+    // another tab never stopped the tag here.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    cookieStore = "";
+    window.dispatchEvent(new Event("focus"));
+
+    expect(analyticsDisabled()).toBe(true);
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    manager.destroy();
+  });
+
+  it("keeps this page's grant when the consent cookie cannot be written", async () => {
+    // A blocked cookie is not a reset made elsewhere: the page's own choice stands.
+    Object.defineProperty(document, "cookie", {
+      get: () => "",
+      set: () => {},
+      configurable: true,
+    });
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+    expect(analyticsDisabled()).toBe(false);
+    manager.destroy();
+  });
+
+  it("does not start the tag before the roaming check confirms a stored grant", async () => {
+    // Regression: focus and tracking calls synced with the stored non-EU grant while the
+    // location check was pending, loading the tag for a visitor who needed fresh EU consent.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    window.dispatchEvent(new Event("focus"));
+    manager.trackEvent("sign_up");
+    expectNothingSentToGoogle();
+
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    expectNothingSentToGoogle();
+    manager.destroy();
+  });
+
+  it("hands a cross-tab grant to the listeners after a local reset of the same grant", async () => {
+    // Regression: a local reset kept the categories last handed to the listeners, so the same
+    // grant saved in another tab afterwards counted as delivered and scripts stayed blocked.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      manager.resetConsent();
+      const listener = vi.fn();
+      manager.onConsentChange(listener);
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("loads no tag for a cross-tab grant whose callback destroyed the manager", async () => {
+    // Regression: the sync pushed the grant after the callbacks without checking destroy(), so
+    // a callback that unmounted the app still got gtag.js appended for it.
+    let manager: ConsentManager | null = null;
+    manager = basicManager({ onConsentChange: () => manager?.destroy() });
+    await manager.init();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(0);
+  });
+
+  it("follows a refusal another tab saved in the same millisecond as this tab's grant", async () => {
+    // Regression: a timestamp tie always kept this page's choice, so a withdrawal another tab
+    // wrote over the confirmed grant in the same millisecond left the tag measuring.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      expect(analyticsDisabled()).toBe(true);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("follows a refusal another tab saved during the roaming check", async () => {
+    // Regression: init() resumed with the grant it read before the check, wrote it over the
+    // newer refusal and loaded the tag.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+      const manager = basicManager({
+        geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+      });
+      const initDone = manager.init();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      resolveGeo({ isEU: false, method: "manual" });
+      await initDone;
+
+      expectNothingSentToGoogle();
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps stored analytics scripts blocked until the roaming check confirms the grant", async () => {
+    // Regression: the script blocker's first pass ran the stored grant's scripts before the
+    // check found the visitor now in the EU, where a fresh choice is required.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    expect(blocked.isConnected).toBe(true);
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    expect(blocked.isConnected).toBe(true);
+  });
+
+  it("unblocks an allowed script added while init() was still settling", async () => {
+    // Regression: an allowed script that ran during init() added another consent-gated script;
+    // the observer saw it before consent had settled, and nothing scanned again afterwards.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+    // Registered after the script blocker's own listener, so it runs right after the blocker's
+    // scan, as a script that scan allowed would.
+    let nested: HTMLScriptElement | null = null;
+    manager.onConsentChange(() => {
+      nested = document.createElement("script");
+      nested.type = "text/plain";
+      nested.setAttribute("data-consent-category", "analytics");
+      document.head.appendChild(nested);
+    });
+
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(nested).not.toBeNull();
+    expect(nested!.isConnected).toBe(false);
+  });
+
+  it("keeps a consent cookie whose name ends in _ga on a refusal", async () => {
+    // Regression: the analytics cookie cleanup matched any name ending in _ga and deleted the
+    // consent cookie holding the refusal it had just saved.
+    const manager = basicManager({ cookie: { name: "privacy_ga" } });
+    await manager.init();
+    await manager.acceptAll();
+
+    await manager.rejectAll();
+
+    expect(cookieStore).toContain("privacy_ga=");
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("sends the landing page view on the first grant when page views are tracked manually", async () => {
+    // Regression: SPA integrations track page views themselves (sendPageView: false), and the
+    // landing page tracked before the grant was dropped and never measured.
+    const manager = basicManager({ sendPageView: false });
+    await manager.init();
+    manager.trackPageView("/landing", "Landing");
+    expectNothingSentToGoogle();
+
+    await manager.acceptAll();
+
+    const views = commands().filter((c) => c[0] === "event" && c[1] === "page_view");
+    expect(views).toHaveLength(1);
+    expect((views[0][2] as Record<string, unknown>).page_path).toBe("/landing");
+    expect(order().indexOf("config")).toBeLessThan(order().indexOf("event"));
+    manager.destroy();
+  });
+
+  it("sends only the current page view when a navigation finds a grant from another tab", async () => {
+    // Regression: the view held for a page the visitor had already left was sent before the
+    // current one, adding a page view the visitor never saw with analytics allowed.
+    const manager = basicManager({ sendPageView: false });
+    await manager.init();
+    manager.trackPageView("/landing");
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackPageView("/checkout");
+    await settle();
+
+    const views = commands().filter((c) => c[0] === "event" && c[1] === "page_view");
+    expect(views.map((v) => (v[2] as Record<string, unknown>).page_path)).toEqual(["/checkout"]);
+  });
+
+  it("does not repeat the landing page view when config sends it", async () => {
+    const manager = basicManager({ sendPageView: true });
+    await manager.init();
+    manager.trackPageView("/landing");
+
+    await manager.acceptAll();
+
+    expect(commands().filter((c) => c[0] === "event")).toHaveLength(0);
+    manager.destroy();
+  });
+
+  it("reports the jurisdiction's marketing grant to the preference centre", async () => {
+    // Regression: nothing was stored for the implied CCPA grant, so the preference centre
+    // showed marketing off while marketing scripts already ran.
+    const manager = ccpaManager();
+    await manager.init();
+
+    expect(manager.getConsent()?.categories).toEqual({
+      analytics: false,
+      marketing: true,
+      functional: true,
+    });
+    expect(cookieStore).not.toContain("consent_preferences");
+    expectNothingSentToGoogle();
+    manager.destroy();
+  });
+
+  it("stops the tag when the tab regains focus after a withdrawal in another tab", async () => {
+    // Regression: the sync ran only on a tracking call, so the loaded tag kept sending its
+    // automatic events (scrolls, outbound clicks) after the visitor came back to this tab.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      manager.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops the tag when a window beside the one that withdrew gets focus", async () => {
+    // The consent cookie is the only state the tabs share: a window that stays visible beside
+    // the one that withdrew follows the withdrawal once it is focused (or tracks something).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const thisTab = basicManager();
+      await thisTab.init();
+      await thisTab.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      const otherTab = basicManager();
+      await otherTab.init();
+      await otherTab.rejectAll();
+      // Both managers share this window; what the other tab set here is undone, so only this
+      // tab's own reaction can switch the tag off again.
+      (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = false;
+      const updates = consentCalls("update").length;
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update")).toHaveLength(updates + 1);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unblocks gated scripts when another tab grants their category", async () => {
+    // Regression: a grant found through the cross-tab sync started the Google tag but never
+    // reached the consent listeners, so the script blocker left analytics scripts blocked.
+    const manager = basicManager();
+    await manager.init();
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    await settle();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(blocked.isConnected).toBe(false);
+  });
+
+  it("keeps the tag off when a listener refuses a grant another tab made", async () => {
+    // Regression: a listener that answered the cross-tab grant with a refusal was overridden
+    // by the stale grant: the sync then loaded the tag and let the tracking call through.
+    const manager = basicManager();
+    await manager.init();
+    manager.onConsentChange((categories) => {
+      if (categories.analytics) void manager.rejectAll();
+    });
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    manager.trackEvent("sign_up");
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(0);
+    expect(commands().filter((c) => c[0] === "event")).toHaveLength(0);
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("keeps a refusal another tab saved while the first location lookup ran", async () => {
+    // Regression: outside consent jurisdictions the implied grant (marketing on) was applied
+    // over the refusal another tab saved meanwhile, and released marketing scripts.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "marketing");
+    document.head.appendChild(blocked);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    storeConsent(
+      { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    resolveGeo({ isEU: false, method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(manager.getConsent()?.categories.marketing).toBe(false);
+    expect(blocked.isConnected).toBe(true);
+  });
+
+  it("keeps a refusal another tab saved while the remote record was fetched", async () => {
+    // Regression: the remote record read for the stored ID was applied over the refusal the
+    // other tab saved meanwhile, and its stale grant loaded the tag.
+    setConsentUid("uid-1", {});
+    let resolveRemote: (consent: StoredConsent | null) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      storage: {
+        get: () => new Promise((resolve) => (resolveRemote = resolve)),
+        set: () => Promise.resolve("uid-1"),
+      },
+    });
+    const initDone = manager.init();
+
+    storeConsent(
+      { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    resolveRemote({
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: 1,
+      version: "1",
+    });
+    await initDone;
+    await settle();
+
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+    expectNothingSentToGoogle();
+  });
+
+  it("keeps a remote grant in effect where the consent cookie cannot be written", async () => {
+    // Regression: the restored record was applied but not kept for the page, so where the cookie
+    // write is dropped (a sandboxed frame) the next tracking call found no choice, sent a denied
+    // update and switched the tag off again.
+    Object.defineProperty(document, "cookie", {
+      get: () => "consent_uid=uid-1",
+      set: () => {},
+      configurable: true,
+    });
+    const manager = basicManager({
+      geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      storage: {
+        get: () =>
+          Promise.resolve({
+            categories: { analytics: true, marketing: false, functional: true },
+            timestamp: 1,
+            version: "1",
+          }),
+        set: () => Promise.resolve("uid-1"),
+      },
+    });
+    await manager.init();
+
+    manager.trackEvent("sign_up");
+    expect(count("event")).toBe(1);
+    expect(consentCalls("update")).toEqual([]);
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+  });
+
+  it("ignores a cross-tab grant saved outside the EU once this tab is in the EU", async () => {
+    // Regression: a tab that had not noticed the move into the EU saved a non-EU grant, and this
+    // tab, which detected the EU, started the tag on it; init()'s roaming check rejects it.
+    const manager = basicManager();
+    await manager.init();
+    const listener = vi.fn();
+    manager.onConsentChange(listener);
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+
+    expect(gtagScripts()).toHaveLength(0);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("keeps scripts blocked for a non-EU grant another tab saved while init() found the EU", async () => {
+    // Regression: init() skipped the grant but left it in the cookie, and the scan after init()
+    // read it through getConsent() and ran analytics scripts before the EU visitor chose.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {}
+    );
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+    await settle();
+
+    expect(blocked.isConnected).toBe(true);
+    expect(manager.getConsent()).toBeNull();
+  });
+
+  it("stops the tag after a cross-tab withdrawal even when the consent callback throws", async () => {
+    // Regression: the configured callback ran before the tag was switched off, and its error
+    // ended the sync, leaving the tag measuring under the withdrawn grant.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager({
+        onConsentChange: (consent) => {
+          if (!consent.categories.analytics) throw new Error("callback failed");
+        },
+      });
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a refusal made while the location lookup ran across a millisecond", async () => {
+    // Regression: the page's choice and its cookie took separate timestamps; once the EU was
+    // detected the cookie, not yet carrying a location, was rejected as another tab's record.
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now++);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+    await manager.rejectAll();
+
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+    expect(manager.hasConsent()).toBe(true);
+  });
+
+  it("keeps the choice's timestamp when a page load refreshes its location", async () => {
+    // Regression: the roaming check rewrote the stored choice with a new timestamp, so every
+    // other open tab took it for a new decision and ran the consent callbacks again.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {}
+      );
+      const nonEU = {
+        geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" as const }) },
+      };
+      vi.setSystemTime(1_000_001);
+      const thisTab = basicManager(nonEU);
+      await thisTab.init();
+      const listener = vi.fn();
+      thisTab.onConsentChange(listener);
+
+      vi.setSystemTime(1_000_002);
+      const newTab = basicManager(nonEU);
+      await newTab.init();
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A script-blocker placeholder for gtag.js: inert until its category is allowed. */
+  async function addTagPlaceholder(category: string): Promise<HTMLScriptElement> {
+    // An inert element never loads; the test stub settles only the elements added afterwards.
+    scriptOutcome = "manual";
+    const placeholder = document.createElement("script");
+    placeholder.type = "text/plain";
+    placeholder.setAttribute("data-consent-category", category);
+    placeholder.src = GTAG_SRC;
+    document.head.appendChild(placeholder);
+    await settle();
+    scriptOutcome = "load";
+    return placeholder;
+  }
+
+  it("does not count a consent-blocked placeholder as a tag that may run", async () => {
+    // Regression: the inert placeholder (type="text/plain") counted as a live tag, so with
+    // reloadOnWithdrawal a refusal reloaded the page, which held the same placeholder again.
+    await addTagPlaceholder("analytics");
+
+    expect(isTagLiveFor(GA_ID)).toBe(false);
+  });
+
+  it("loads gtag.js over a placeholder of a category still refused", async () => {
+    // Regression: a placeholder the script blocker keeps inert (its category is refused) counted
+    // as the tag's element, so the grant waited on it instead of loading the tag.
+    const placeholder = await addTagPlaceholder("marketing");
+    const manager = basicManager();
+    await manager.init();
+
+    await manager.savePreferences({ analytics: true, marketing: false });
+    await settle();
+
+    const executable = Array.from(gtagScripts()).filter((script) => script !== placeholder);
+    expect(executable).toHaveLength(1);
+  });
+
+  it("closes the banner when another tab answers it", async () => {
+    // Regression: a choice another tab saved reached the tag and the listeners, but the banner
+    // stayed open here, asking a question already answered.
+    const manager = basicManager();
+    await manager.init();
+    const hide = vi.fn();
+    manager.onHideBanner(hide);
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again when another tab resets the choice", async () => {
+    // Regression: a reset found in the shared cookie stopped the tag but showed no banner, as
+    // a local reset does, so the visitor stayed undecided without being asked.
+    const manager = basicManager();
+    await manager.init();
+    await manager.acceptAll();
+    const show = vi.fn();
+    manager.onShowBanner(show);
+
+    cookieStore = "";
+    window.dispatchEvent(new Event("focus"));
+
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("does not show a banner another tab answered before its component mounted", async () => {
+    // Regression: the pending banner request outlived the answer from another tab, and the
+    // component that mounted afterwards showed the stale banner.
+    const manager = basicManager();
+    await manager.init();
+
+    storeConsent(
+      { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+    const show = vi.fn();
+    manager.onShowBanner(show);
+
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("keeps another tab's withdrawal after the cookie leaves the route's scope", async () => {
+    // Regression: the withdrawal was read from the cookie but this page kept its own grant as
+    // its choice; on a route outside cookie.path the grant came back and analytics resumed.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager({ cookie: { path: "/app/" } });
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        { cookie: { path: "/app/" } }
+      );
+      window.dispatchEvent(new Event("focus"));
+      cookieStore = "";
+      manager.trackEvent("sign_up");
+
+      expect(count("event")).toBe(0);
+      expect(analyticsDisabled()).toBe(true);
+      expect(manager.getConsent()?.categories.analytics).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a choice made before init() when the location turns out to be in the EU", async () => {
+    // Regression: the choice was stored before the location was known, so init()'s roaming
+    // check took it for consent given outside the EU, cleared it and asked again.
+    const manager = basicManager();
+    await manager.acceptAll();
+    await manager.init();
+
+    expect(manager.hasConsent()).toBe(true);
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+    expect(manager.getConsent()?.isEU).toBe(true);
+  });
+
+  it("hands the configured callback its own copy of the categories", async () => {
+    // Regression: the callback got the manager's working object; an edit to it reached the
+    // listeners, so the script blocker ran analytics scripts for a refusal.
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    const manager = basicManager({
+      onConsentChange: (consent) => {
+        consent.categories.analytics = true;
+      },
+    });
+    await manager.init();
+
+    await manager.rejectAll();
+    await settle();
+
+    expect(blocked.isConnected).toBe(true);
+  });
+
+  it("denies the ad signals of an implied grant to a tag already on the page", async () => {
+    // Regression: a jurisdiction's implied grant kept marketing on for Google, so a tag an
+    // earlier instance loaded resumed linked Ads/Floodlight before the visitor chose.
+    markTagRan();
+    const manager = ccpaManager();
+    await manager.init();
+
+    expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    expect(manager.getConsent()?.categories.marketing).toBe(true);
+  });
+
+  it("keeps this page's choice when its cookie is out of the current path's scope", async () => {
+    // Regression: a cookie limited to cookie.path is invisible on other routes; a missing cookie
+    // this page had written was taken for a reset, and the grant was dropped.
+    const manager = basicManager({ cookie: { path: "/app/" } });
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    cookieStore = "";
+    manager.trackEvent("sign_up");
+
+    expect(manager.hasConsent()).toBe(true);
+    expect(commands().filter((c) => c[0] === "event" && c[1] === "sign_up")).toHaveLength(1);
+  });
+
+  it("retries a failed tag load when another tab saves the same grant again", async () => {
+    // Regression: a new record with the same categories was not a new choice, so a load that
+    // failed here was never retried after the visitor granted again in another tab.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      scriptOutcome = "error";
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      scriptOutcome = "load";
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed tag load for a new choice from another tab", async () => {
+    // Regression: after a failed load the tag counted as measuring, so a new choice that kept
+    // analytics allowed (functional changed) synced nothing and the tag never loaded.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      scriptOutcome = "error";
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      expect(gtagScripts()).toHaveLength(0);
+
+      scriptOutcome = "load";
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: false }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+
+      expect(gtagScripts()).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runs the configured consent callback for a choice made in another tab", async () => {
+    // Regression: only listeners registered with onConsentChange() heard a cross-tab choice;
+    // the configured callback kept the app on the previous consent.
+    const onConsentChange = vi.fn();
+    const manager = basicManager({ onConsentChange });
+    await manager.init();
+    onConsentChange.mockClear();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(onConsentChange).toHaveBeenCalledTimes(1);
+    expect(onConsentChange.mock.calls[0][0].categories.analytics).toBe(true);
+  });
+
+  it("notifies listeners again when another tab regrants after a reset", async () => {
+    // Regression: a reset from another tab left the listeners' last grant recorded, so the same
+    // grant made again was taken for one already delivered and gated scripts stayed blocked.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      const listener = vi.fn();
+      manager.onConsentChange(listener);
+      const grant = { analytics: true, marketing: false, functional: true };
+
+      storeConsent({ categories: grant, isEU: true }, {});
+      window.dispatchEvent(new Event("focus"));
+      cookieStore = "";
+      window.dispatchEvent(new Event("focus"));
+      vi.setSystemTime(1_000_001);
+      storeConsent({ categories: grant, isEU: true }, {});
+      window.dispatchEvent(new Event("focus"));
+
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands each listener its own copy of a cross-tab choice", async () => {
+    // Regression: listeners received the parsed cookie's categories object itself; one that
+    // edited it changed the state the sync then applied to the Google tag.
+    const manager = basicManager();
+    await manager.init();
+    manager.onConsentChange((categories) => {
+      categories.analytics = false;
+    });
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(gtagScripts()).toHaveLength(1);
+    expect(analyticsDisabled()).toBe(false);
+  });
+
+  it("stops the tag after a cross-tab withdrawal even when a listener throws", async () => {
+    // Regression: a throwing listener ended the sync before the tag was switched off, so it
+    // kept measuring under the withdrawn grant.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      manager.onConsentChange(() => {
+        throw new Error("listener failed");
+      });
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("notifies listeners once for a restored grant tracked from the consent callback", async () => {
+    // Regression: the callback's tracking call ran the cross-tab sync, which notified the
+    // listeners before applyConsent() notified them again for the same grant.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    let manager: ConsentManager | null = null;
+    manager = basicManager({ onConsentChange: () => manager?.trackEvent("restored") });
+    const listener = vi.fn();
+    manager.onConsentChange(listener);
+
+    await manager.init();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows a marketing withdrawal from another tab while analytics stays refused", async () => {
+    // Regression: with analytics already refused the sync compared nothing else, so the tag
+    // still on the page kept its ad signals granted after another tab withdrew marketing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      vi.setSystemTime(1_000_001);
+      await manager.savePreferences({ analytics: false, marketing: true });
+
+      vi.setSystemTime(1_000_002);
+      storeConsent(
+        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("tracks from a consent callback once a stored grant is confirmed", async () => {
+    // Regression: init() ran the callbacks of a confirmed stored grant while the consent still
+    // counted as unsettled, so an event they tracked was dropped.
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    let manager: ConsentManager | null = null;
+    manager = basicManager({ onConsentChange: () => manager?.trackEvent("restored") });
+
+    await manager.init();
+
+    expect(commands().filter((c) => c[0] === "event" && c[1] === "restored")).toHaveLength(1);
+  });
+
+  it("keeps an Analytics opt-out the site set itself on a grant", async () => {
+    // Regression: the first grant cleared window['ga-disable-<ID>'] unconditionally, overriding
+    // an opt-out the site had set before the manager existed.
+    const gaId = "G-OPTOUT1";
+    const key = `ga-disable-${gaId}`;
+    const flags = window as unknown as Record<string, unknown>;
+    flags[key] = true;
+    try {
+      const manager = basicManager({ gaId });
+      await manager.init();
+      await manager.acceptAll();
+
+      expect(flags[key]).toBe(true);
+    } finally {
+      delete flags[key];
+    }
+  });
+
+  it("follows a marketing-only withdrawal made in another tab", async () => {
+    // Regression: the sync compared analytics alone, so with analytics still allowed the ad
+    // signals stayed granted after another tab withdrew marketing.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+        {}
+      );
+      manager.trackEvent("sign_up");
+
+      expect(consentCalls("update").at(-1)).toEqual(ANALYTICS_ONLY);
+      expect(order().lastIndexOf("consent:update")).toBeLessThan(order().lastIndexOf("event"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("switches off a tag an earlier manager loaded when a fresh manager gets a refusal", async () => {
+    // Regression: the new instance had pushed nothing yet, so its refusal returned before the
+    // disable switch, and the tag the previous instance loaded kept measuring.
+    const first = basicManager();
+    await first.init();
+    await first.acceptAll();
+    first.destroy();
+    // The stored grant is gone (cleared in another tab), so the remounted manager has nothing to
+    // push before the refusal reaches it.
+    cookieStore = "";
+
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const second = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = second.init();
+    second.resetConsent();
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(analyticsDisabled()).toBe(true);
+  });
+
+  it("keeps analytics scripts blocked for a grant implied by the jurisdiction", async () => {
+    // Regression: the implied grant reached the consent listeners (the script blocker among
+    // them, which unblocks exactly the categories it receives) with analytics allowed, so a
+    // blocked analytics script ran before the visitor allowed analytics.
+    const received: boolean[] = [];
+    const listened: boolean[] = [];
+    const manager = tracked(
+      new ConsentManager({
+        gaId: GA_ID,
+        consentMode: "basic",
+        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+        onConsentChange: (consent) => received.push(consent.categories.analytics),
+      })
+    );
+    manager.onConsentChange((categories) => listened.push(categories.analytics));
+
+    await manager.init();
+
+    expect(received).toEqual([false]);
+    expect(listened).toEqual([false]);
+  });
+
+  it("refuses basic mode without a measurement ID", () => {
+    // Regression: without gaId the site loads gtag itself, so nothing the manager does keeps
+    // Google from being contacted before consent or after a refusal; basic mode silently
+    // degraded to sending consent updates to that tag.
+    expect(() => new ConsentManager({ consentMode: "basic" })).toThrow(/gaId/);
+  });
+
+  it("keeps the advanced mode as the default", async () => {
+    // Without the option an undecided EU visitor still gets the denied default and the tag.
+    await euManager().init();
+
+    expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
+    expect(gtagScripts()).toHaveLength(1);
   });
 });

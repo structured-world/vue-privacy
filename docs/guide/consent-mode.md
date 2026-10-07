@@ -63,6 +63,33 @@ gtag('consent', 'update', {
 });
 ```
 
+## Basic and Advanced Mode
+
+The steps above are Google's **advanced** mode, the default: gtag.js loads for every visitor, and before any choice or after a refusal Google receives cookieless pings (no cookies, but the visitor's IP address and browser data), which lets it model conversions.
+
+With `consentMode: 'basic'` nothing reaches Google (no script, no `dataLayer` entry, no request) until the visitor allows analytics. Then the single `consent default` carries the granted signals, gtag.js loads and `js` and `config` follow; later changes are updates as above. Withdrawing analytics sends `consent update` with `analytics_storage: 'denied'`, sets `window['ga-disable-<ID>']` so a tag already on the page stops measuring (a denied tag would otherwise keep sending cookieless pings), deletes the `_ga` and `_ga_<ID>` cookies (also under a `cookie_prefix` or `cookie_path`), and never loads or retries gtag.js. `trackEvent()` drops events until analytics is allowed; `trackPageView()` sends nothing either, but keeps the page view tracked last and sends it once on the grant (with `sendPageView: false`; otherwise the tag's own first page view covers the page); the tag also follows a choice made in another tab, loading after a grant there and stopping after a withdrawal. The consent cookie is the only state the tabs share, so a tab reads it again on the next tracking call and whenever it is shown again or regains focus; a tab that stays visible beside the other window without either keeps its state until then, and one on a route a cookie limited to `cookie.path` does not cover keeps its last known choice. Scripts gated by `data-consent-category` follow such a grant too, a banner the other tab answered closes, and a reset there shows the banner here, as a local reset does. A `window['ga-disable-<ID>']` opt-out the site set itself is kept: a grant lifts only the switch the library set.
+
+```typescript
+createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  consentMode: 'basic',
+});
+```
+
+Basic mode requires `gaId`: the promise holds only for a tag the manager loads itself and can switch off. A site that loads gtag.js with its own snippet contacts Google before any choice, so the manager refuses `consentMode: 'basic'` without `gaId` (the constructor throws).
+
+A withdrawal on the same page stops Google Analytics at once, but a script already running cannot be unloaded: products linked to the same Google tag in Google's tag settings (Google Ads, Floodlight) ignore `ga-disable` and keep sending cookieless pings until the page reloads. A site that links them and promises nothing is sent after a refusal sets `reloadOnWithdrawal: true`: when the visitor withdraws analytics after the tag loaded, the choice is saved and the page reloads. It is off by default because the reload drops in-page state (a half-filled form, SPA state). While analytics stays allowed the tag loads, and linked advertising products follow the ad signals: with marketing refused they send cookieless pings. Keep them in a separate tag if refusing marketing must stop them entirely.
+
+```typescript
+createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  consentMode: 'basic',
+  reloadOnWithdrawal: true,
+});
+```
+
+Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off, so it loads no Google tag and unblocks no `data-consent-category="analytics"` script. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
+
 ## Category Mapping
 
 The library maps user-friendly categories to Google signals:

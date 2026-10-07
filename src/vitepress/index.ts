@@ -74,27 +74,37 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
       // SSR-safe browser check — avoid importing inBrowser from vitepress
       // which is not available as a named export during SSR bundle compilation
       if (typeof window !== "undefined") {
-        // Initialize consent manager
+        // Navigations before init() resolves are not tracked on their own: the page view sent
+        // after init() counts the page in view, and counting it from the watcher too would
+        // report it twice.
+        let initialized = false;
+
+        // Initialize consent manager. The page in view is tracked once init() is done, also when
+        // it failed: a navigation made meanwhile was skipped and is measured only here.
+        // Before user choice: sent under Consent Mode defaults (cookieless).
+        // After explicit denial (analytics: false): events are NOT sent.
+        const trackPageInView = (): void => {
+          const frontmatter = ctx.router?.route.data.frontmatter as
+            | VitePressGA4Frontmatter
+            | undefined;
+          manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
+
+          // Fire ga4Event from frontmatter if defined
+          if (frontmatter?.ga4Event) {
+            manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
+          }
+        };
         manager
           .init()
-          .then(() => {
-            // Track initial page view after init completes.
-            // Before user choice: sent under Consent Mode defaults (cookieless).
-            // After explicit denial (analytics: false): events are NOT sent.
-            nextTick(() => {
-              const frontmatter = ctx.router?.route.data.frontmatter as
-                | VitePressGA4Frontmatter
-                | undefined;
-              manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
-
-              // Fire ga4Event from frontmatter if defined
-              if (frontmatter?.ga4Event) {
-                manager.trackEvent(frontmatter.ga4Event.name, frontmatter.ga4Event.params);
-              }
-            });
-          })
           .catch((err) => {
             console.error("[@structured-world/vue-privacy] Failed to initialize:", err);
+          })
+          .then(() => {
+            initialized = true;
+            return nextTick(trackPageInView);
+          })
+          .catch((err) => {
+            console.error("[@structured-world/vue-privacy] Failed to track the page view:", err);
           });
 
         // Track subsequent SPA navigations via router
@@ -102,6 +112,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
           watch(
             () => ctx.router.route.path,
             (path: string) => {
+              if (!initialized) return;
               // Capture frontmatter BEFORE nextTick to avoid race condition
               // (user might navigate again before nextTick fires)
               const frontmatter = ctx.router.route.data.frontmatter as

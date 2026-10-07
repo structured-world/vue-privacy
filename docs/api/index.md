@@ -61,7 +61,7 @@ await manager.savePreferences({
 
 #### `getConsent(): StoredConsent | null`
 
-Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie; a choice saved later in another tab replaces it.
+Get the visitor's choice (a grant or a refusal), or `null` while the visitor has not chosen. A choice made on this page is returned even if the browser blocks the consent cookie; a choice saved later in another tab replaces it, and a reset in another tab makes the visitor undecided again. With `consentMode: 'basic'`, a CCPA visitor or one outside consent jurisdictions who has not chosen gets the state the jurisdiction implies (analytics off, the other categories on), so the preference centre shows what is in effect; it is not stored and `hasConsent()` stays `false`.
 
 ```typescript
 const consent = manager.getConsent();
@@ -94,7 +94,7 @@ if (manager.isEUUser()) {
 
 Track a page view manually. Use this for SPA navigation with Vue Router or custom routing.
 
-While the visitor has not chosen, the event is sent under the Consent Mode defaults (analytics denied), so Google receives it as a cookieless ping and stores no identifiers. Once the visitor's choice leaves analytics off, the manager sends nothing.
+While the visitor has not chosen, the event is sent under the Consent Mode defaults (analytics denied), so Google receives it as a cookieless ping and stores no identifiers. Once the visitor's choice leaves analytics off, the manager sends nothing. With `consentMode: 'basic'` nothing is sent until the visitor allows analytics; the page view tracked last before that is then sent once, so the page the visitor consented on is counted. With `sendPageView` left on, the tag's own first page view covers it and nothing extra is sent.
 
 ```typescript
 manager.trackPageView("/docs/guide");
