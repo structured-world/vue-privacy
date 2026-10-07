@@ -1729,6 +1729,31 @@ describe("basic consent mode", () => {
       manager.destroy();
     });
 
+    it("waits for the remote write of the withdrawal before reloading", async () => {
+      // Regression: the reload ran right after the choice, and the unload aborted the remote
+      // write, so the remote record kept the withdrawn grant.
+      let finishWrite: () => void = () => {};
+      const set = vi.fn(() => Promise.resolve("uid-1"));
+      const manager = basicManager({
+        reloadOnWithdrawal: true,
+        storage: { get: () => Promise.resolve(null), set },
+      });
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+      set.mockImplementation(
+        () => new Promise<string>((resolve) => (finishWrite = () => resolve("uid-1")))
+      );
+
+      await manager.savePreferences({ analytics: false, marketing: true });
+      await settle();
+      expect(reloadPage).not.toHaveBeenCalled();
+
+      finishWrite();
+      await settle();
+      expect(reloadPage).toHaveBeenCalledTimes(1);
+    });
+
     it("does not reload when a consent callback allows analytics again", async () => {
       // Regression: the reload scheduled for the withdrawal still ran after the callback's own
       // grant restored the tag, and dropped the page state for nothing.
@@ -2198,6 +2223,67 @@ describe("basic consent mode", () => {
 
       expect(analyticsDisabled()).toBe(true);
       expect(errors).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a refusal made while the location lookup ran across a millisecond", async () => {
+    // Regression: the page's choice and its cookie took separate timestamps; once the EU was
+    // detected the cookie, not yet carrying a location, was rejected as another tab's record.
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now++);
+    let resolveGeo: (result: GeoDetectionResult) => void = () => {};
+    const manager = basicManager({
+      geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
+    });
+    const initDone = manager.init();
+    await manager.rejectAll();
+
+    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    await initDone;
+
+    expect(manager.getConsent()?.categories.analytics).toBe(false);
+    expect(manager.hasConsent()).toBe(true);
+  });
+
+  it("keeps this page's choice when its cookie is out of the current path's scope", async () => {
+    // Regression: a cookie limited to cookie.path is invisible on other routes; a missing cookie
+    // this page had written was taken for a reset, and the grant was dropped.
+    const manager = basicManager({ cookie: { path: "/app/" } });
+    await manager.init();
+    await manager.acceptAll();
+    await settle();
+
+    cookieStore = "";
+    manager.trackEvent("sign_up");
+
+    expect(manager.hasConsent()).toBe(true);
+    expect(commands().filter((c) => c[0] === "event" && c[1] === "sign_up")).toHaveLength(1);
+  });
+
+  it("retries a failed tag load when another tab saves the same grant again", async () => {
+    // Regression: a new record with the same categories was not a new choice, so a load that
+    // failed here was never retried after the visitor granted again in another tab.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      scriptOutcome = "error";
+      const manager = basicManager();
+      await manager.init();
+      await manager.acceptAll();
+      await settle();
+
+      scriptOutcome = "load";
+      vi.setSystemTime(1_000_001);
+      storeConsent(
+        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {}
+      );
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+
+      expect(gtagScripts()).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

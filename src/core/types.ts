@@ -396,8 +396,8 @@ export interface ConsentConfig {
    * Basic mode only: reload the page when the visitor withdraws analytics after the Google tag
    * has loaded on it. A withdrawal stops Google Analytics on the spot, but other products linked
    * to the same Google tag (Google Ads, Floodlight) keep sending cookieless pings until the page
-   * reloads, and a running script cannot be unloaded. The choice is saved first and the consent
-   * callbacks run; the reload follows even if they destroy the manager, since the tag runs
+   * reloads, and a running script cannot be unloaded. The choice is saved first (a remote write
+   * through `storage` is waited for, up to 10 seconds) and the consent callbacks run; the reload follows even if they destroy the manager, since the tag runs
    * page-wide, and is dropped if they allow analytics again. It drops in-page state, so enable it deliberately. While analytics stays allowed
    * the tag loads, and linked advertising products follow the ad signals (cookieless pings when
    * marketing is refused); keep them in a separate tag if refusing marketing must stop them.

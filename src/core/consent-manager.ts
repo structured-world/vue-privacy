@@ -114,6 +114,8 @@ export class ConsentManager {
   private tabWatchCleanup: (() => void) | null = null;
   /** Basic mode: tells the other tabs of this site that a choice or a reset was stored. */
   private tabChannel: BroadcastChannel | null = null;
+  /** The timestamp of the record the cross-tab sync last saw (null: none since a reset). */
+  private syncedTimestamp: number | null = null;
   /** The categories the listeners last received, so a sync hands them only a change. */
   private listenedCategories: Omit<ConsentCategories, "necessary"> | null = null;
   private routerCleanup: (() => void) | null = null;
@@ -557,8 +559,10 @@ export class ConsentManager {
   private storeLocationWithChoice(): void {
     const current = this.choiceInEffect();
     if (!current || this.isEU === null) return;
-    storeConsent(this.choiceRecord(current.categories), this.config);
-    if (this.pageChoice) this.pageChoice = this.choiceRecord(current.categories);
+    // The same moment as before: adding the location does not make the choice a newer one.
+    const record = { ...this.choiceRecord(current.categories), timestamp: current.timestamp };
+    storeConsent(record, this.config);
+    if (this.pageChoice) this.pageChoice = record;
   }
 
   /**
@@ -585,12 +589,16 @@ export class ConsentManager {
    * must stay in effect (California Civil Code 1798.135(c)(4)), and a site that needs a refused
    * category asks again in context. Fire-and-forget: the remote push does not block UI.
    */
-  private saveConsentWithRemote(categories: Omit<ConsentCategories, "necessary">): void {
+  private saveConsentWithRemote(
+    categories: Omit<ConsentCategories, "necessary">,
+    // The page's own record when it keeps one, so the cookie carries the same timestamp.
+    record: StoredConsent = this.choiceRecord(categories)
+  ): void {
     // `functional` does not count: rejectAll() keeps it on, and only analytics or marketing
     // is a grant worth a remote identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
-    storeConsent(this.choiceRecord(categories), this.config);
+    storeConsent(record, this.config);
     // Read back: a cookie that took tells a later missing one (another tab's reset) apart from a
     // blocked one (sandboxed frame, disabled cookies), where this page's choice has to stand.
     this.cookieConfirmed = getStoredConsent(this.config) !== null;
@@ -846,8 +854,14 @@ export class ConsentManager {
   private scheduleReload(): void {
     if (this.reloadTimer !== null) return;
     this.reloadTimer = setTimeout(() => {
-      this.reloadTimer = null;
-      reloadPage();
+      // The unload would abort the remote write of this withdrawal, leaving the remote record on
+      // the withdrawn grant; the reload waits for it, as long as a superseded write is waited for.
+      void settledWithin(this.remoteWrite, SUPERSEDED_WRITE_GRACE_MS).then(() => {
+        // A newer grant cancelled the reload while the write was pending.
+        if (this.reloadTimer === null) return;
+        this.reloadTimer = null;
+        reloadPage();
+      });
     }, 0);
   }
 
@@ -992,7 +1006,7 @@ export class ConsentManager {
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
-    this.saveConsentWithRemote(categories);
+    this.saveConsentWithRemote(categories, this.pageChoice);
     this.announceToOtherTabs();
     this.applyConsent(categories);
 
@@ -1041,12 +1055,27 @@ export class ConsentManager {
     return found.timestamp === this.pageChoice?.timestamp ? found : null;
   }
 
+  /**
+   * Whether the consent cookie is visible on the current path. One limited to `cookie.path` is
+   * hidden on other routes of the app, which says nothing about a reset. Path-match per RFC 6265
+   * 5.1.4: the paths are equal, or the cookie path is a prefix that ends with "/" or is followed
+   * by "/" in the request path.
+   */
+  private cookieInScope(): boolean {
+    if (typeof location === "undefined") return true;
+    const cookiePath = this.config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
+    const path = location.pathname;
+    if (path === cookiePath) return true;
+    if (!path.startsWith(cookiePath)) return false;
+    return cookiePath.endsWith("/") || path.charAt(cookiePath.length) === "/";
+  }
+
   /** The newest choice, from the shared cookie or this page; see choiceInEffect(). */
   private latestChoice(): StoredConsent | null {
     const stored = getStoredConsent(this.config);
     const own = this.pageChoice;
     if (own === null) return stored;
-    if (stored === null) return this.cookieConfirmed ? null : own;
+    if (stored === null) return this.cookieConfirmed && this.cookieInScope() ? null : own;
     if (stored.timestamp < own.timestamp) return own;
     if (stored.timestamp > own.timestamp) return stored;
     return sameCategories(stored.categories, own.categories) ? stored : own;
@@ -1123,6 +1152,12 @@ export class ConsentManager {
     // A reset in another tab: the listeners hold nothing now, so the same grant made again later
     // reaches them as new.
     if (consent === null) this.listenedCategories = null;
+    // A record not seen before: another tab saved a choice, possibly the same categories again.
+    // This page's own choice is the baseline until the sync has seen a record.
+    const newRecord =
+      consent !== null &&
+      consent.timestamp !== (this.syncedTimestamp ?? this.pageChoice?.timestamp);
+    this.syncedTimestamp = consent?.timestamp ?? null;
     // A choice made in another tab also reaches the configured callback and the listeners, so the
     // app and the script blocker follow it as well.
     const newChoice =
@@ -1144,9 +1179,10 @@ export class ConsentManager {
     const gaId = this.config.gaId;
     if (gaId && stale) {
       this.pushGoogleConsent(categoriesToGoogleSignals(consent?.categories ?? {}), true);
-    } else if (gaId && allowed && newChoice && !this.gaLoaded && !this.gaLoading) {
-      // The tag counts as measuring after a load that failed; a new choice is the next push that
-      // retries it, as a local one does, but a tracking call alone does not.
+    } else if (gaId && allowed && (newChoice || newRecord) && !this.gaLoaded && !this.gaLoading) {
+      // The tag counts as measuring after a load that failed; a newly saved choice (even with
+      // the same categories) is the next push that retries it, as a local one does, but a
+      // tracking call alone does not.
       this.loadGtag(gaId);
     }
     return allowed;
