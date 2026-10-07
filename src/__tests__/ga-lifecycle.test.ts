@@ -319,9 +319,9 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(showBanner).toHaveBeenCalledTimes(1);
     expect(onGoogleAnalyticsError).toHaveBeenCalledTimes(1);
-    const reported = onGoogleAnalyticsError.mock.calls[0][0] as unknown;
-    expect(reported).toBeInstanceOf(Error);
-    expect((reported as Error).message).toBe(`Failed to load gtag.js for ${GA_ID}`);
+    expect(onGoogleAnalyticsError.mock.calls[0][0]).toEqual(
+      new Error(`Failed to load gtag.js for ${GA_ID}`)
+    );
     expect(gtagScripts()).toHaveLength(0);
 
     scriptOutcome = "load";
@@ -1670,6 +1670,27 @@ describe("basic consent mode", () => {
       expect(reloadPage).not.toHaveBeenCalled();
     });
 
+    it("does not reload for a timed-out tag request that failed later", async () => {
+      // Regression: a request past its timeout counted as possibly running for good; its later
+      // error removed the element, yet the refusal still reloaded the page for nothing.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        scriptOutcome = "manual";
+        const manager = basicManager({ reloadOnWithdrawal: true });
+        await manager.init();
+        await manager.acceptAll();
+        await vi.advanceTimersByTimeAsync(10_000);
+        gtagScripts()[0].dispatchEvent(new Event("error"));
+
+        await manager.rejectAll();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(reloadPage).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("does not reload a refusal made before any tag loaded", async () => {
       const manager = basicManager({ reloadOnWithdrawal: true });
       await manager.init();
@@ -1958,6 +1979,73 @@ describe("basic consent mode", () => {
       manager.destroy();
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  it("stops the tag after a withdrawal in another tab while this one stays visible", async () => {
+    // Regression: with two windows side by side neither focus nor visibilitychange fires in
+    // this one after the other withdraws, and its tag kept sending automatic events (video
+    // progress) that need no interaction.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(1_000_000);
+      const thisTab = basicManager();
+      await thisTab.init();
+      await thisTab.acceptAll();
+
+      vi.setSystemTime(1_000_001);
+      const otherTab = basicManager();
+      await otherTab.init();
+      await otherTab.rejectAll();
+      // Both managers share this window; what the other tab set here is undone, so only this
+      // tab's own reaction can switch the tag off again.
+      (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`] = false;
+      const updates = consentCalls("update").length;
+      await settle();
+
+      expect(analyticsDisabled()).toBe(true);
+      expect(consentCalls("update")).toHaveLength(updates + 1);
+      expect(consentCalls("update").at(-1)).toEqual(DENIED);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unblocks gated scripts when another tab grants their category", async () => {
+    // Regression: a grant found through the cross-tab sync started the Google tag but never
+    // reached the consent listeners, so the script blocker left analytics scripts blocked.
+    const manager = basicManager();
+    await manager.init();
+    const blocked = document.createElement("script");
+    blocked.type = "text/plain";
+    blocked.setAttribute("data-consent-category", "analytics");
+    document.head.appendChild(blocked);
+    await settle();
+
+    storeConsent(
+      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(blocked.isConnected).toBe(false);
+  });
+
+  it("keeps an Analytics opt-out the site set itself on a grant", async () => {
+    // Regression: the first grant cleared window['ga-disable-<ID>'] unconditionally, overriding
+    // an opt-out the site had set before the manager existed.
+    const gaId = "G-OPTOUT1";
+    const key = `ga-disable-${gaId}`;
+    const flags = window as unknown as Record<string, unknown>;
+    flags[key] = true;
+    try {
+      const manager = basicManager({ gaId });
+      await manager.init();
+      await manager.acceptAll();
+
+      expect(flags[key]).toBe(true);
+    } finally {
+      delete flags[key];
     }
   });
 

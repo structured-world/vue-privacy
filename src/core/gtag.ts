@@ -98,6 +98,30 @@ const TAG_LOAD_TIMEOUT_MS = 10_000;
  */
 const stalledTags = new WeakSet<HTMLScriptElement>();
 
+/** gtag.js elements that fired error: they cannot run any more, timed out or not. */
+const failedTags = new WeakSet<HTMLScriptElement>();
+
+function tagElementsFor(gaId: string): HTMLScriptElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLScriptElement>(
+      `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+    )
+  );
+}
+
+/**
+ * Whether the Google tag for this ID runs on the page or still may: it ran, or an element for
+ * it is on the page and has not failed (a request in flight, or one past its timeout that can
+ * still arrive and run).
+ *
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ */
+export function isTagLiveFor(gaId: string): boolean {
+  if (isTagLoadedFor(gaId)) return true;
+  if (typeof document === "undefined") return false;
+  return tagElementsFor(gaId).some((element) => !failedTags.has(element));
+}
+
 /** Commands that produce or configure hits; consent must be settled before them. */
 const MEASUREMENT_COMMANDS = new Set(["js", "config", "event"]);
 
@@ -212,20 +236,6 @@ function settleOnLoad(
 }
 
 /**
- * gtag.js did not load. `mayStillRun` tells a request that timed out, whose element stays on the
- * page and may still run, from one that failed (error event), which cannot run any more.
- */
-export class GtagLoadError extends Error {
-  constructor(
-    gaId: string,
-    readonly mayStillRun: boolean
-  ) {
-    super(`Failed to load gtag.js for ${gaId}`);
-    this.name = "GtagLoadError";
-  }
-}
-
-/**
  * Load Google Analytics gtag.js script
  *
  * An element for this ID that is already on the page counts only once the Google tag ran for
@@ -240,12 +250,8 @@ export function loadGtagScript(gaId: string): Promise<void> {
       return;
     }
 
-    const failure = (mayStillRun: boolean) => new GtagLoadError(gaId, mayStillRun);
-    const matching = Array.from(
-      document.querySelectorAll<HTMLScriptElement>(
-        `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
-      )
-    );
+    const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
+    const matching = tagElementsFor(gaId);
     // Any element for this ID, one given up on as stalled included, may since have run: then
     // the tag is up and another element would only load it twice.
     if (matching.length > 0 && isTagLoadedFor(gaId)) {
@@ -256,17 +262,25 @@ export function loadGtagScript(gaId: string): Promise<void> {
     if (existing) {
       // Its load or error event may already have fired before this call, and a settled script
       // does not fire again; past the timeout it counts as failed, and a retry loads its own.
-      const fail = (mayStillRun: boolean) => {
+      const fail = () => {
         clearTimeout(timer);
         stalledTags.add(existing);
-        reject(failure(mayStillRun));
+        reject(failure());
       };
       const timer = setTimeout(
-        () => (isTagLoadedFor(gaId) ? resolve() : fail(true)),
+        () => (isTagLoadedFor(gaId) ? resolve() : fail()),
         TAG_LOAD_TIMEOUT_MS
       );
       existing.addEventListener("load", () => settleOnLoad(timer, resolve, gaId), { once: true });
-      existing.addEventListener("error", () => fail(false), { once: true });
+      // Also after the timeout: the element then stops counting as a tag that may still run.
+      existing.addEventListener(
+        "error",
+        () => {
+          failedTags.add(existing);
+          fail();
+        },
+        { once: true }
+      );
       return;
     }
 
@@ -280,19 +294,23 @@ export function loadGtagScript(gaId: string): Promise<void> {
         return;
       }
       stalledTags.add(script);
-      reject(failure(true));
+      reject(failure());
     }, TAG_LOAD_TIMEOUT_MS);
     script.onload = () => settleOnLoad(timer, resolve, gaId);
+    // Also after the timeout, when the promise has settled: the element goes either way.
     script.onerror = () => {
       clearTimeout(timer);
       // A failed element would make the next attempt wait on it instead of retrying.
       script.remove();
-      reject(failure(false));
+      reject(failure());
     };
 
     document.head.appendChild(script);
   });
 }
+
+/** IDs whose `ga-disable-<ID>` switch this library turned on (any manager instance). */
+const disabledHere = new Set<string>();
 
 /**
  * Switch Google Analytics measurement for one ID off or back on. A loaded tag under denied
@@ -305,7 +323,16 @@ export function loadGtagScript(gaId: string): Promise<void> {
  */
 export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
   if (typeof window === "undefined") return;
-  (window as unknown as Record<string, unknown>)[`ga-disable-${gaId}`] = disabled;
+  const flags = window as unknown as Record<string, unknown>;
+  const key = `ga-disable-${gaId}`;
+  if (disabled) {
+    if (flags[key] === true) return;
+    flags[key] = true;
+    disabledHere.add(gaId);
+    return;
+  }
+  // Only a switch this library set is lifted: one the site set itself is its own opt-out.
+  if (disabledHere.delete(gaId)) flags[key] = false;
 }
 
 /** Values gtag.js stores: `GA1.<n>.<id>.<time>` in `_ga`, `GS1.`/`GS2.` session state in `_ga_<ID>`. */

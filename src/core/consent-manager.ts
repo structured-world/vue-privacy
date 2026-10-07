@@ -28,10 +28,9 @@ import {
   queueGoogleAnalyticsConfig,
   queueConsentUpdate,
   loadGtagScript,
-  GtagLoadError,
   clearAnalyticsCookies,
   setAnalyticsDisabled,
-  isTagLoadedFor,
+  isTagLiveFor,
   updateConsent as updateGoogleConsent,
   categoriesToGoogleSignals,
   trackPageView as gtagTrackPageView,
@@ -83,6 +82,15 @@ function settledWithin(write: Promise<void>, ms: number): Promise<void> {
   });
 }
 
+function sameCategories(
+  a: Omit<ConsentCategories, "necessary">,
+  b: Omit<ConsentCategories, "necessary">
+): boolean {
+  return (
+    a.analytics === b.analytics && a.marketing === b.marketing && a.functional === b.functional
+  );
+}
+
 /**
  * Consent Manager - orchestrates consent flow
  */
@@ -104,6 +112,10 @@ export class ConsentManager {
   private scriptBlockerCleanup: (() => void) | null = null;
   /** Removes the basic-mode listeners that follow choices made in other tabs. */
   private tabWatchCleanup: (() => void) | null = null;
+  /** Basic mode: tells the other tabs of this site that a choice or a reset was stored. */
+  private tabChannel: BroadcastChannel | null = null;
+  /** The categories the listeners last received, so a sync hands them only a change. */
+  private listenedCategories: Omit<ConsentCategories, "necessary"> | null = null;
   private routerCleanup: (() => void) | null = null;
   /** This manager made its first consent push; every later push is an update. */
   private gaDefaultsSent = false;
@@ -128,11 +140,6 @@ export class ConsentManager {
   private gaLoading = false;
   /** gtag.js loaded; no further attempt is needed. */
   private gaLoaded = false;
-  /**
-   * A gtag.js request timed out: its element stays on the page and may still run, so it counts
-   * as a running tag for a withdrawal. One that failed outright cannot run and does not count.
-   */
-  private gaMayStillRun = false;
   /** A consent push found the load in flight; a failure of that attempt retries at once. */
   private gaRetryOnFailure = false;
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
@@ -470,19 +477,37 @@ export class ConsentManager {
 
   /**
    * Basic mode: a choice made in another tab changes the shared cookie but fires nothing here.
-   * The loaded tag's automatic events (scrolls, outbound clicks) need the visitor on this tab,
-   * so the tag is brought in line whenever the tab is shown again or regains focus.
+   * Tabs of the same origin announce each stored choice or reset on a channel, and this tab
+   * follows at once, also while it stays visible beside the other window (a playing video keeps
+   * sending progress events without any interaction). A subdomain sharing the cookie is on
+   * another origin and no channel reaches it, so the tag is also brought in line whenever the tab
+   * is shown again or regains focus.
    */
   private watchOtherTabs(): void {
     const sync = (): void => {
       if (document.visibilityState !== "hidden") this.syncBasicTag();
     };
+    const announced = (): void => {
+      this.syncBasicTag();
+    };
     window.addEventListener("focus", sync);
     document.addEventListener("visibilitychange", sync);
+    if (typeof BroadcastChannel !== "undefined") {
+      const cookieName = this.config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
+      this.tabChannel = new BroadcastChannel(`vue-privacy:${cookieName}`);
+      this.tabChannel.addEventListener("message", announced);
+    }
     this.tabWatchCleanup = () => {
       window.removeEventListener("focus", sync);
       document.removeEventListener("visibilitychange", sync);
+      this.tabChannel?.close();
+      this.tabChannel = null;
     };
+  }
+
+  /** Tell the other tabs that the stored choice changed; they read it from the shared cookie. */
+  private announceToOtherTabs(): void {
+    this.tabChannel?.postMessage("consent");
   }
 
   /** Rewrite the visitor's choice, if any, with the location detected since it was made. */
@@ -702,8 +727,8 @@ export class ConsentManager {
     if (gaId && this.basicMode) {
       // The tag may already run on the page whatever this instance has sent (an earlier manager
       // instance loaded it before a remount), so it is told about a refusal all the same.
-      const tagRunning =
-        this.gaLoading || this.gaLoaded || this.gaMayStillRun || isTagLoadedFor(gaId);
+      // A request in flight or past its timeout may still run; one that failed cannot.
+      const tagRunning = isTagLiveFor(gaId);
       if (basicDenied) {
         // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
         // sending cookieless pings; only a reload stops a running tag. A marketing-only
@@ -787,7 +812,6 @@ export class ConsentManager {
       },
       (error: unknown) => {
         this.gaLoading = false;
-        if (error instanceof GtagLoadError && error.mayStillRun) this.gaMayStillRun = true;
         // The app that owned this manager is gone; nothing may be reported or appended for it.
         if (this.destroyed) return;
         try {
@@ -827,6 +851,15 @@ export class ConsentManager {
 
     // Notify registered listeners (script blocker, etc.). A callback that reset consent or made
     // another choice replaced these categories; the script blocker must not act on them.
+    if (this.consentEpoch !== epoch) return;
+    this.notifyListeners(categories);
+  }
+
+  /** Hand the categories in effect to the registered listeners (the script blocker first). */
+  private notifyListeners(categories: Omit<ConsentCategories, "necessary">): void {
+    const epoch = this.consentEpoch;
+    // A copy: a listener may edit the object it receives.
+    this.listenedCategories = { ...categories };
     for (const listener of this.consentChangeListeners) {
       if (this.consentEpoch !== epoch) return;
       listener(categories);
@@ -884,6 +917,7 @@ export class ConsentManager {
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
     this.saveConsentWithRemote(categories);
+    this.announceToOtherTabs();
     this.applyConsent(categories);
 
     // The preference centre closes either way; it would cover a banner a callback's reset
@@ -928,13 +962,7 @@ export class ConsentManager {
     if (stored === null) return this.cookieConfirmed ? null : own;
     if (stored.timestamp < own.timestamp) return own;
     if (stored.timestamp > own.timestamp) return stored;
-    const a = stored.categories;
-    const b = own.categories;
-    return a.analytics === b.analytics &&
-      a.marketing === b.marketing &&
-      a.functional === b.functional
-      ? stored
-      : own;
+    return sameCategories(stored.categories, own.categories) ? stored : own;
   }
 
   /**
@@ -960,6 +988,7 @@ export class ConsentManager {
   resetConsent(): void {
     clearConsent(this.config);
     clearConsentUid(this.config);
+    this.announceToOtherTabs();
     this.userId = null;
     this.identityGeneration++;
     this.pageChoice = null;
@@ -1004,6 +1033,15 @@ export class ConsentManager {
     // Until init() settled, a stored grant may still fail the roaming check (a visitor now in
     // the EU needs a fresh choice): nothing starts on the cookie's word alone.
     if (!this.consentSettled) return false;
+    // A choice made in another tab also reaches the listeners, so the script blocker releases
+    // the scripts it grants here as well.
+    if (
+      consent !== null &&
+      (this.listenedCategories === null ||
+        !sameCategories(consent.categories, this.listenedCategories))
+    ) {
+      this.notifyListeners(consent.categories);
+    }
     const allowed = consent !== null && consent.categories.analytics;
     const stale =
       allowed !== this.googleMeasuring ||
