@@ -58,6 +58,19 @@ The modal displays four cookie categories:
 
 Each category shows a name and description, translated to the user's locale.
 
+### Only the categories your site uses
+
+A site that runs analytics only should not offer a "Marketing" toggle that controls nothing. List the optional categories the site uses:
+
+```typescript
+createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  usedCategories: ['analytics'],
+});
+```
+
+The preference centre then shows "Necessary" and "Analytics" only. Every other category is always refused: "Accept all", saved preferences, the grant implied outside consent jurisdictions and a consent stored earlier never turn it on, so its Google signals (`ad_storage`, `ad_user_data`, `ad_personalization` for marketing) stay `denied`. Turning analytics off later is then a full refusal: it is stored like any other choice, replaces the earlier grant and clears `consent_uid`.
+
 The footer offers "Reject all" beside "Accept all", styled the same: refusing every optional category takes one click, as accepting does. "Save preferences" stores the toggles as set.
 
 ## Opening Programmatically

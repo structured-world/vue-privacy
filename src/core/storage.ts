@@ -6,6 +6,7 @@ import type {
   KVStorageOptions,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
+import { limitToUsed } from "./categories";
 
 /** Default total number of fetch attempts for rate-limited requests (initial + retries) */
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -211,7 +212,9 @@ export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredCon
       return null;
     }
 
-    return stored;
+    // A category the site no longer uses was never asked about in its current dialog. When that
+    // leaves nothing granted, the consent manager's restore drops consent_uid too.
+    return { ...stored, categories: limitToUsed(stored.categories, config) };
   } catch {
     return null;
   }

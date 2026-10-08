@@ -168,6 +168,11 @@ interface ConsentConfig {
     functional?: boolean; // Default: true
   };
 
+  // Optional categories the site actually uses (default: all three). The preference centre
+  // shows only these; every other category is always refused, so e.g. ['analytics'] keeps
+  // ad_storage, ad_user_data and ad_personalization denied even after "Accept all".
+  usedCategories?: ('analytics' | 'marketing' | 'functional')[];
+
   // Banner UI
   banner?: {
     title?: string;

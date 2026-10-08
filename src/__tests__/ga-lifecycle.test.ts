@@ -4,6 +4,7 @@ import { ConsentManager } from "../core/consent-manager";
 import { initGoogleAnalytics, initGtag, isTagLiveFor, loadGtagScript } from "../core/gtag";
 import { storeConsent, setConsentUid } from "../core/storage";
 import { reloadPage } from "../core/page";
+import { installCookieJar } from "./helpers/cookie-jar";
 
 // jsdom cannot navigate; the reload a withdrawal may trigger is recorded instead.
 vi.mock("../core/page", () => ({ reloadPage: vi.fn() }));
@@ -141,21 +142,12 @@ function euManager(config: ConsentConfig = {}): ConsentManager {
 
 beforeEach(() => {
   cookieStore = "";
-  Object.defineProperty(document, "cookie", {
-    get: () => cookieStore,
-    set: (value: string) => {
-      const [nameValue] = value.split(";");
-      const [name] = nameValue.split("=");
-      const kept = cookieStore
-        .split(";")
-        .map((c) => c.trim())
-        .filter((c) => c && !c.startsWith(`${name}=`));
-      // A deletion is an expiry in the past; the value itself may contain "1970" (a timestamp).
-      if (!/;\s*expires=Thu, 01 Jan 1970/i.test(value)) kept.push(nameValue);
-      cookieStore = kept.join("; ");
-    },
-    configurable: true,
-  });
+  installCookieJar(
+    () => cookieStore,
+    (jar) => {
+      cookieStore = jar;
+    }
+  );
   document.head.innerHTML = "";
   window.dataLayer = [];
   // Fresh gtag per test: initGtag() keeps an existing function, which would close over an

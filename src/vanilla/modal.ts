@@ -5,6 +5,8 @@
 
 import { getTranslations } from "../i18n/index";
 import { escapeHtml } from "./utils";
+import { usedCategoriesOf } from "../core/categories";
+import { DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption.
@@ -48,6 +50,24 @@ export const MODAL_CSS = `/* Vue Privacy - Vanilla Modal Styles */
 [data-consent-theme="dark"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444}`;
 
 const STYLE_ID = "vue-privacy-vanilla-modal";
+
+/** One optional category with its toggle, which `data-category` ties to the consent key. */
+function optionalCategoryHtml(
+  category: OptionalCategory,
+  text: { name: string; description: string }
+): string {
+  return `
+        <div class="consent-modal__category">
+          <div class="consent-modal__category-header">
+            <h3 class="consent-modal__category-name">${escapeHtml(text.name)}</h3>
+            <label class="consent-toggle">
+              <input type="checkbox" class="consent-toggle__input" data-category="${category}" aria-label="${escapeHtml(text.name)}">
+              <span class="consent-toggle__slider"></span>
+            </label>
+          </div>
+          <p class="consent-modal__category-description">${escapeHtml(text.description)}</p>
+        </div>`;
+}
 
 /**
  * Inject modal CSS into document head (idempotent, SSR-safe)
@@ -164,6 +184,9 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     },
   };
 
+  // Only the categories the site uses are offered
+  const used = usedCategoriesOf(manager.getConfig());
+
   // Build DOM
   const overlayEl = document.createElement("div");
   overlayEl.className = "consent-modal-overlay consent-modal-overlay--hidden";
@@ -188,39 +211,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
           </div>
           <p class="consent-modal__category-description">${escapeHtml(categories.necessary.description)}</p>
         </div>
-        <!-- Analytics -->
-        <div class="consent-modal__category">
-          <div class="consent-modal__category-header">
-            <h3 class="consent-modal__category-name">${escapeHtml(categories.analytics.name)}</h3>
-            <label class="consent-toggle">
-              <input type="checkbox" class="consent-toggle__input" data-category="analytics" aria-label="${escapeHtml(categories.analytics.name)}">
-              <span class="consent-toggle__slider"></span>
-            </label>
-          </div>
-          <p class="consent-modal__category-description">${escapeHtml(categories.analytics.description)}</p>
-        </div>
-        <!-- Marketing -->
-        <div class="consent-modal__category">
-          <div class="consent-modal__category-header">
-            <h3 class="consent-modal__category-name">${escapeHtml(categories.marketing.name)}</h3>
-            <label class="consent-toggle">
-              <input type="checkbox" class="consent-toggle__input" data-category="marketing" aria-label="${escapeHtml(categories.marketing.name)}">
-              <span class="consent-toggle__slider"></span>
-            </label>
-          </div>
-          <p class="consent-modal__category-description">${escapeHtml(categories.marketing.description)}</p>
-        </div>
-        <!-- Functional -->
-        <div class="consent-modal__category">
-          <div class="consent-modal__category-header">
-            <h3 class="consent-modal__category-name">${escapeHtml(categories.functional.name)}</h3>
-            <label class="consent-toggle">
-              <input type="checkbox" class="consent-toggle__input" data-category="functional" aria-label="${escapeHtml(categories.functional.name)}">
-              <span class="consent-toggle__slider"></span>
-            </label>
-          </div>
-          <p class="consent-modal__category-description">${escapeHtml(categories.functional.description)}</p>
-        </div>
+        ${used.map((category) => optionalCategoryHtml(category, categories[category])).join("")}
       </div>
       <div class="consent-modal__footer">
         <button type="button" class="consent-modal__btn consent-modal__btn--reject-all" data-action="reject-all">
@@ -238,12 +229,13 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   container.appendChild(overlayEl);
 
-  // Get toggle inputs
-  const analyticsInput = overlayEl.querySelector('[data-category="analytics"]') as HTMLInputElement;
-  const marketingInput = overlayEl.querySelector('[data-category="marketing"]') as HTMLInputElement;
-  const functionalInput = overlayEl.querySelector(
-    '[data-category="functional"]'
-  ) as HTMLInputElement;
+  // Toggle inputs of the shown (used) categories
+  const inputs = new Map(
+    used.map((category) => [
+      category,
+      overlayEl.querySelector(`[data-category="${category}"]`) as HTMLInputElement,
+    ])
+  );
   const modalEl = overlayEl.querySelector(".consent-modal") as HTMLElement;
 
   // State
@@ -252,26 +244,20 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // Load current consent state into toggles
   function loadCurrentConsent() {
-    const currentConsent = manager.getConsent();
-    if (currentConsent) {
-      analyticsInput.checked = currentConsent.categories.analytics;
-      marketingInput.checked = currentConsent.categories.marketing;
-      functionalInput.checked = currentConsent.categories.functional;
-    } else {
-      // Default values from manager config
-      const defaultCategories = manager.getConfig().categories ?? {};
-      analyticsInput.checked = defaultCategories.analytics ?? false;
-      marketingInput.checked = defaultCategories.marketing ?? false;
-      functionalInput.checked = defaultCategories.functional ?? true;
+    const current = manager.getConsent()?.categories;
+    // Default values from manager config while the visitor has not chosen
+    const defaults = { ...DEFAULT_CONFIG.categories, ...manager.getConfig().categories };
+    for (const [category, input] of inputs) {
+      input.checked = current ? current[category] : defaults[category];
     }
   }
 
-  // Get current toggle values
+  // Get current toggle values; a category that is not shown is refused
   function getCategories() {
     return {
-      analytics: analyticsInput.checked,
-      marketing: marketingInput.checked,
-      functional: functionalInput.checked,
+      analytics: inputs.get("analytics")?.checked ?? false,
+      marketing: inputs.get("marketing")?.checked ?? false,
+      functional: inputs.get("functional")?.checked ?? false,
     };
   }
 
