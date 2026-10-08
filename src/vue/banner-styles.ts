@@ -83,9 +83,11 @@ const BANNER_CSS = `
   color: var(--consent-btn-accept-text, #ffffff);
 }
 
+/* Refusing is as visible as accepting (EDPB Cookie Banner Taskforce report, January 2023,
+   points 9-14): the reject colours default to the accept ones; a site may set its own. */
 .consent-banner__btn--reject {
-  background: var(--consent-btn-reject-bg, #e0e0e0);
-  color: var(--consent-btn-reject-text, #1a1a1a);
+  background: var(--consent-btn-reject-bg, var(--consent-btn-accept-bg, #0066cc));
+  color: var(--consent-btn-reject-text, var(--consent-btn-accept-text, #ffffff));
 }
 
 .consent-banner__btn--customize {
@@ -126,8 +128,6 @@ const BANNER_CSS = `
     --consent-bg: #1a1a1a;
     --consent-text: #ffffff;
     --consent-text-secondary: #a0a0a0;
-    --consent-btn-reject-bg: #333333;
-    --consent-btn-reject-text: #ffffff;
   }
 }
 

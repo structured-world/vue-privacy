@@ -131,6 +131,28 @@ describe("initScriptBlocker with ConsentManager", () => {
     expect(result).not.toBeNull();
   });
 
+  it("keeps functional scripts blocked after rejectAll", async () => {
+    // A chat widget or A/B test tagged functional is optional: "Reject all" must not run it.
+    // The grant an earlier test stored would otherwise be restored by init().
+    document.cookie = "consent_preferences=; max-age=0; path=/";
+    const script = createBlockedScript("functional", "https://example.com/chat.js");
+    document.body.appendChild(script);
+
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+      },
+    });
+
+    await manager.init();
+    await manager.rejectAll();
+
+    expect(
+      document.querySelector('script[data-consent-category="functional"][type="text/plain"]')
+    ).not.toBeNull();
+    manager.destroy();
+  });
+
   it("cleanup disconnects the observer", async () => {
     const manager = new ConsentManager({
       geoDetector: {

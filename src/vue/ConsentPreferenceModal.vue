@@ -23,7 +23,8 @@ const categories = ref({
 // Merged config: manager config overrides > i18n translations
 const modalConfig = computed(() => {
   const locale = consentManager?.getLocale() ?? "en";
-  const t = getTranslations(locale).preferenceCenter;
+  const translations = getTranslations(locale);
+  const t = translations.preferenceCenter;
   const cfg = consentManager?.getConfig().preferenceCenter;
 
   return {
@@ -31,6 +32,13 @@ const modalConfig = computed(() => {
     description: cfg?.description ?? t.description,
     savePreferences: cfg?.savePreferences ?? t.savePreferences,
     acceptAll: cfg?.acceptAll ?? t.acceptAll,
+    // Both buttons refuse the same thing, so they share one label: the banner's, which the
+    // manager resolves to the site's text or the locale's.
+    rejectAll:
+      cfg?.rejectAll ??
+      consentManager?.getConfig().banner?.rejectAll ??
+      t.rejectAll ??
+      translations.banner.rejectAll,
     categories: {
       necessary: {
         name: cfg?.categories?.necessary?.name ?? t.categories.necessary.name,
@@ -98,6 +106,11 @@ async function handleSave() {
 
 async function handleAcceptAll() {
   await consentManager?.acceptAll();
+  emit("close");
+}
+
+async function handleRejectAll() {
+  await consentManager?.rejectAll();
   emit("close");
 }
 
@@ -259,6 +272,14 @@ function handleKeydown(e: KeyboardEvent) {
           </div>
 
           <div class="consent-modal__footer">
+            <!-- Refusing takes one click, as accepting does, and looks the same. -->
+            <button
+              type="button"
+              class="consent-modal__btn consent-modal__btn--reject-all"
+              @click="handleRejectAll"
+            >
+              {{ modalConfig.rejectAll }}
+            </button>
             <button
               type="button"
               class="consent-modal__btn consent-modal__btn--accept-all"

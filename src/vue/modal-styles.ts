@@ -193,7 +193,8 @@ const MODAL_CSS = `
   color: var(--consent-btn-accept-text, #ffffff);
 }
 
-.consent-modal__btn--accept-all {
+.consent-modal__btn--accept-all,
+.consent-modal__btn--reject-all {
   background: transparent;
   color: var(--consent-link, #0066cc);
   border: 1px solid currentColor;

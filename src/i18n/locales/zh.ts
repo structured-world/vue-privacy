@@ -14,6 +14,7 @@ export const zh: Translations = {
     description: "选择您要允许的 Cookie。您可以随时更改这些设置。",
     savePreferences: "保存偏好设置",
     acceptAll: "全部接受",
+    rejectAll: "全部拒绝",
     categories: {
       necessary: {
         name: "严格必要",

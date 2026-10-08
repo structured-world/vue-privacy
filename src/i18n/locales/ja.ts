@@ -15,6 +15,7 @@ export const ja: Translations = {
     description: "許可するCookieを選択してください。これらの設定はいつでも変更できます。",
     savePreferences: "設定を保存",
     acceptAll: "すべて許可",
+    rejectAll: "すべて拒否",
     categories: {
       necessary: {
         name: "必要不可欠",

@@ -16,6 +16,7 @@ export const pt: Translations = {
       "Escolha quais cookies você deseja permitir. Você pode alterar essas configurações a qualquer momento.",
     savePreferences: "Salvar preferências",
     acceptAll: "Aceitar tudo",
+    rejectAll: "Rejeitar tudo",
     categories: {
       necessary: {
         name: "Estritamente necessários",

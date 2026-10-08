@@ -16,6 +16,7 @@ export const ru: Translations = {
       "Выберите, какие файлы cookie вы хотите разрешить. Вы можете изменить эти настройки в любое время.",
     savePreferences: "Сохранить настройки",
     acceptAll: "Принять все",
+    rejectAll: "Отклонить все",
     categories: {
       necessary: {
         name: "Строго необходимые",

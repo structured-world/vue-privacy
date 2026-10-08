@@ -109,11 +109,12 @@ describe("ConsentManager with remote storage", () => {
 
     await manager.rejectAll();
 
+    // Functional is optional too (chat widgets, A/B testing): rejecting all refuses it as well.
     expect(manager.hasConsent()).toBe(true);
     expect(manager.getConsent()?.categories).toEqual({
       analytics: false,
       marketing: false,
-      functional: true,
+      functional: false,
     });
   });
 

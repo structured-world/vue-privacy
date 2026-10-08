@@ -31,5 +31,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Combines every action's version update into one pull request. Ungrouped, each action would
+    # get its own; those touch different files, so a merged one would leave the rest behind main
+    # without a conflict, which Dependabot does not rebase. Security updates are not grouped.
+    groups:
+      actions:
+        patterns:
+          - "*"
     commit-message:
       prefix: "chore(ci)"

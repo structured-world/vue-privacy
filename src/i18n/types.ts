@@ -26,6 +26,8 @@ export interface PreferenceCenterTranslations {
   description: string;
   savePreferences: string;
   acceptAll: string;
+  /** "Reject all" button text; the banner's `rejectAll` when omitted. */
+  rejectAll?: string;
   categories: {
     necessary: CategoryTranslations;
     analytics: CategoryTranslations;
@@ -61,16 +63,4 @@ export interface Translations {
  * Supported locale codes
  */
 export type SupportedLocale =
-  | "en"
-  | "de"
-  | "fr"
-  | "es"
-  | "it"
-  | "pt"
-  | "nl"
-  | "pl"
-  | "ru"
-  | "uk"
-  | "ja"
-  | "zh"
-  | "ko";
+  "en" | "de" | "fr" | "es" | "it" | "pt" | "nl" | "pl" | "ru" | "uk" | "ja" | "zh" | "ko";

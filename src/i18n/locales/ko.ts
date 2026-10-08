@@ -15,6 +15,7 @@ export const ko: Translations = {
     description: "허용할 쿠키를 선택하세요. 이 설정은 언제든지 변경할 수 있습니다.",
     savePreferences: "설정 저장",
     acceptAll: "모두 수락",
+    rejectAll: "모두 거부",
     categories: {
       necessary: {
         name: "필수 쿠키",

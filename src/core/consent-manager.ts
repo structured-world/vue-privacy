@@ -11,7 +11,7 @@ import type {
   GoogleConsentSignals,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { detectLocale } from "../i18n/index";
+import { detectLocale, getTranslations } from "../i18n/index";
 import type { SupportedLocale } from "../i18n/types";
 import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
 import {
@@ -203,7 +203,13 @@ export class ConsentManager {
       ...config,
       locale: this.locale,
       categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
-      banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
+      // Defaults in the visitor's locale, not DEFAULT_CONFIG's English: the components and any
+      // custom UI read getConfig().banner before the translations.
+      banner: {
+        ...getTranslations(this.locale).banner,
+        privacyLink: DEFAULT_CONFIG.banner.privacyLink,
+        ...config.banner,
+      },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
     this.basicMode = config.consentMode === "basic";
@@ -630,8 +636,8 @@ export class ConsentManager {
     // The page's own record when it keeps one, so the cookie carries the same timestamp.
     record: StoredConsent = this.choiceRecord(categories)
   ): void {
-    // `functional` does not count: rejectAll() keeps it on, and only analytics or marketing
-    // is a grant worth a remote identifier.
+    // `functional` does not count: only analytics or marketing is a grant worth a remote
+    // identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     this.storeAndConfirm(record);
@@ -1142,13 +1148,14 @@ export class ConsentManager {
   }
 
   /**
-   * Reject all non-essential cookies
+   * Reject every optional category, functional included: only strictly necessary storage is
+   * exempt from consent (ePrivacy Directive 2002/58/EC, Art. 5(3)).
    */
   async rejectAll(): Promise<void> {
     const categories = {
       analytics: false,
       marketing: false,
-      functional: true,
+      functional: false,
     };
 
     this.choose(categories);

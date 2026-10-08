@@ -16,8 +16,10 @@ import type {
 // Hardcoded color values (#fff, #1a1a1a, etc.) are CSS var() fallbacks for browsers
 // that don't support CSS custom properties or when variables aren't defined.
 // This is intentional and follows CSS best practices for progressive enhancement.
+// The reject colours default to the accept ones, so refusing is as visible as accepting
+// (EDPB Cookie Banner Taskforce report, January 2023, points 9-14).
 export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
-:root,[data-consent-theme="light"]{--consent-bg:#fff;--consent-text:#1a1a1a;--consent-text-secondary:#666;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#e0e0e0;--consent-btn-reject-text:#1a1a1a;--consent-font:system-ui,-apple-system,sans-serif}
+:root,[data-consent-theme="light"]{--consent-bg:#fff;--consent-text:#1a1a1a;--consent-text-secondary:#666;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-font:system-ui,-apple-system,sans-serif}
 .consent-banner{position:fixed;left:0;right:0;z-index:9999;padding:1rem;background:var(--consent-bg,#fff);color:var(--consent-text,#1a1a1a);box-shadow:0 -2px 10px rgba(0,0,0,.1);font-family:var(--consent-font,system-ui,-apple-system,sans-serif);box-sizing:border-box}
 .consent-banner *,.consent-banner *::before,.consent-banner *::after{box-sizing:border-box}
 .consent-banner--bottom{bottom:0}
@@ -33,12 +35,12 @@ export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
 .consent-banner__btn:hover{opacity:.9}
 .consent-banner__btn:focus-visible{outline:2px solid var(--consent-link,#0066cc);outline-offset:2px}
 .consent-banner__btn--accept{background:var(--consent-btn-accept-bg,#0066cc);color:var(--consent-btn-accept-text,#fff)}
-.consent-banner__btn--reject{background:var(--consent-btn-reject-bg,#e0e0e0);color:var(--consent-btn-reject-text,#1a1a1a)}
+.consent-banner__btn--reject{background:var(--consent-btn-reject-bg,var(--consent-btn-accept-bg,#0066cc));color:var(--consent-btn-reject-text,var(--consent-btn-accept-text,#fff))}
 .consent-banner__btn--customize{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
 .consent-banner--hidden{display:none}
 @media(max-width:640px){.consent-banner__actions{flex-direction:column}.consent-banner__btn{width:100%;text-align:center}}
-@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}}
-[data-consent-theme="dark"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-btn-reject-bg:#333;--consent-btn-reject-text:#fff}`;
+@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff}}
+[data-consent-theme="dark"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff}`;
 
 const STYLE_ID = "vue-privacy-vanilla-banner";
 
