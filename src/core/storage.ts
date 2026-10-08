@@ -212,7 +212,8 @@ export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredCon
       return null;
     }
 
-    // A category the site no longer uses was never asked about in its current dialog.
+    // A category the site no longer uses was never asked about in its current dialog. When that
+    // leaves nothing granted, the consent manager's restore drops consent_uid too.
     return { ...stored, categories: limitToUsed(stored.categories, config) };
   } catch {
     return null;
