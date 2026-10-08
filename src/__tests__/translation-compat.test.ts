@@ -34,6 +34,15 @@ describe("preference-centre types written before 'Reject all' existed", () => {
     expect(merged.preferenceCenter.rejectAll).toBe(getTranslations("de").banner.rejectAll);
   });
 
+  it("take a custom banner 'Reject all' text when the preference centre sets none", () => {
+    // The two buttons refuse the same thing, so a site that renamed the banner's keeps one label.
+    const merged = mergeTranslations("en", {
+      banner: { ...getTranslations("en").banner, rejectAll: "Refuse" },
+      preferenceCenter: withoutRejectAll,
+    });
+    expect(merged.preferenceCenter.rejectAll).toBe("Refuse");
+  });
+
   it("type a preference-centre config without the member", () => {
     expect(configWithoutRejectAll.rejectAll).toBeUndefined();
   });

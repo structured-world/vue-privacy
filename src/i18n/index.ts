@@ -65,10 +65,11 @@ export function mergeTranslations(
       savePreferences:
         custom.preferenceCenter?.savePreferences ?? base.preferenceCenter.savePreferences,
       acceptAll: custom.preferenceCenter?.acceptAll ?? base.preferenceCenter.acceptAll,
+      // Both buttons refuse the same thing: a custom banner label carries over to the modal.
       rejectAll:
         custom.preferenceCenter?.rejectAll ??
-        base.preferenceCenter.rejectAll ??
-        base.banner.rejectAll,
+        custom.banner?.rejectAll ??
+        base.preferenceCenter.rejectAll,
       categories: {
         necessary: {
           ...base.preferenceCenter.categories.necessary,
