@@ -9,6 +9,7 @@ import { storeConsent } from "../core/storage";
 import { createModal } from "../vanilla/modal";
 import ConsentPreferenceModal from "../vue/ConsentPreferenceModal.vue";
 import type { ConsentConfig, ConsentStorage } from "../core/types";
+import { installCookieJar } from "./helpers/cookie-jar";
 
 const GA_ID = "G-USED123";
 const ANALYTICS_ONLY = {
@@ -42,20 +43,12 @@ function lastConsentSignals(): unknown {
 
 beforeEach(() => {
   cookieStore = "";
-  Object.defineProperty(document, "cookie", {
-    get: () => cookieStore,
-    set: (value: string) => {
-      const [nameValue] = value.split(";");
-      const [name] = nameValue.split("=");
-      const kept = cookieStore
-        .split(";")
-        .map((c) => c.trim())
-        .filter((c) => c && !c.startsWith(`${name}=`));
-      if (!/;\s*expires=Thu, 01 Jan 1970/i.test(value)) kept.push(nameValue);
-      cookieStore = kept.join("; ");
-    },
-    configurable: true,
-  });
+  installCookieJar(
+    () => cookieStore,
+    (jar) => {
+      cookieStore = jar;
+    }
+  );
   document.head.innerHTML = "";
   document.body.innerHTML = "";
   window.dataLayer = [];
