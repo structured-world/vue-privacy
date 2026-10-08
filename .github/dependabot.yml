@@ -31,9 +31,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # One version-update pull request for every action: separate ones touch different files, so
-    # after one merges the rest are behind main without conflicting, and Dependabot does not
-    # rebase them then. Security updates are not grouped and may still come one by one.
+    # Combines every action's version update into one pull request. Ungrouped, each action would
+    # get its own; those touch different files, so a merged one would leave the rest behind main
+    # without a conflict, which Dependabot does not rebase. Security updates are not grouped.
     groups:
       actions:
         patterns:

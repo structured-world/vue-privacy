@@ -11,7 +11,7 @@ import type {
   GoogleConsentSignals,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { detectLocale } from "../i18n/index";
+import { detectLocale, getTranslations } from "../i18n/index";
 import type { SupportedLocale } from "../i18n/types";
 import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
 import {
@@ -203,9 +203,13 @@ export class ConsentManager {
       ...config,
       locale: this.locale,
       categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
-      // Only the site's own text: the components fall back to the visitor's locale, which the
-      // English defaults would otherwise hide.
-      banner: { ...config.banner },
+      // Defaults in the visitor's locale, not DEFAULT_CONFIG's English: the components and any
+      // custom UI read getConfig().banner before the translations.
+      banner: {
+        ...getTranslations(this.locale).banner,
+        privacyLink: DEFAULT_CONFIG.banner.privacyLink,
+        ...config.banner,
+      },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
     this.basicMode = config.consentMode === "basic";

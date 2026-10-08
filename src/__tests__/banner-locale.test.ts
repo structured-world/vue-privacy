@@ -43,6 +43,18 @@ describe("banner text follows the locale", () => {
     app.unmount();
   });
 
+  it("getConfig() resolves every banner field in the visitor's locale", () => {
+    // A custom UI built from getConfig() gets complete text, translated, and the default link.
+    const de = getTranslations("de").banner;
+    expect(createConsentManager({ locale: "de" }).getConfig().banner).toEqual({
+      ...de,
+      privacyLink: "/privacy",
+    });
+    expect(
+      createConsentManager({ locale: "de", banner: { rejectAll: "Refuse" } }).getConfig().banner
+    ).toEqual({ ...de, privacyLink: "/privacy", rejectAll: "Refuse" });
+  });
+
   it("keeps a site's own banner text", () => {
     const manager = createConsentManager({
       locale: "de",
