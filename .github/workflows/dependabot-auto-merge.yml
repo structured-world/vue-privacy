@@ -6,8 +6,9 @@ name: Dependabot Auto-Merge
 # thread is resolved; a failing pipeline leaves it open. Dependabot rebases a pull request when it
 # conflicts with main, when it is reopened, or on its scheduled run, and the rebase re-arms it
 # through this workflow; nothing rebases one that is merely behind main, so it waits for one of
-# those or for "Update branch". Action updates come as one grouped pull request
-# (.github/dependabot.yml), so they never wait behind each other. npm updates usually conflict
+# those or for "Update branch". Action version updates come as one grouped pull request
+# (.github/dependabot.yml), so they never wait behind each other; a security update may still
+# arrive on its own. npm updates usually conflict
 # with a merged sibling on yarn.lock, but two that touch disjoint entries can leave one behind.
 #
 # `pull_request_target`, not `pull_request`, because of how Dependabot runs are isolated: a

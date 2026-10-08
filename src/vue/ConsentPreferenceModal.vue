@@ -32,7 +32,12 @@ const modalConfig = computed(() => {
     description: cfg?.description ?? t.description,
     savePreferences: cfg?.savePreferences ?? t.savePreferences,
     acceptAll: cfg?.acceptAll ?? t.acceptAll,
-    rejectAll: cfg?.rejectAll ?? t.rejectAll ?? translations.banner.rejectAll,
+    // Both buttons refuse the same thing: a site that renamed the banner's keeps one label.
+    rejectAll:
+      cfg?.rejectAll ??
+      consentManager?.getConfig().banner?.rejectAll ??
+      t.rejectAll ??
+      translations.banner.rejectAll,
     categories: {
       necessary: {
         name: cfg?.categories?.necessary?.name ?? t.categories.necessary.name,

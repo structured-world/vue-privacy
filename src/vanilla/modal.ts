@@ -140,7 +140,12 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   const description = config.description ?? t.description;
   const savePreferencesText = config.savePreferences ?? t.savePreferences;
   const acceptAllText = config.acceptAll ?? t.acceptAll;
-  const rejectAllText = config.rejectAll ?? t.rejectAll ?? translations.banner.rejectAll;
+  // Both buttons refuse the same thing: a site that renamed the banner's keeps one label.
+  const rejectAllText =
+    config.rejectAll ??
+    manager.getConfig().banner?.rejectAll ??
+    t.rejectAll ??
+    translations.banner.rejectAll;
   const categories = {
     necessary: {
       name: config.categories?.necessary?.name ?? t.categories.necessary.name,

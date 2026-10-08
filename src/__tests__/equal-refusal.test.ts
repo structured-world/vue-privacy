@@ -164,6 +164,44 @@ describe("'Reject all' in the preference centre", () => {
     modal.destroy();
   });
 
+  it("vanilla: labels the button with the site's banner text, else the locale's", () => {
+    // Both buttons refuse the same thing, so a site that renamed the banner's keeps one label.
+    const custom = createConsentManager({ euDetection: "never", banner: { rejectAll: "Refuse" } });
+    const customModal = createModal({ manager: custom });
+    custom.showPreferenceCenter();
+    expect(document.querySelector(".consent-modal__btn--reject-all")?.textContent?.trim()).toBe(
+      "Refuse"
+    );
+    customModal.destroy();
+
+    const german = createConsentManager({ locale: "de", euDetection: "never" });
+    const germanModal = createModal({ manager: german });
+    german.showPreferenceCenter();
+    expect(document.querySelector(".consent-modal__btn--reject-all")?.textContent?.trim()).toBe(
+      getTranslations("de").preferenceCenter.rejectAll
+    );
+    germanModal.destroy();
+  });
+
+  it("Vue: labels the button with the site's banner text", async () => {
+    const manager = createConsentManager({
+      euDetection: "never",
+      banner: { rejectAll: "Refuse" },
+    });
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const app = createApp(ConsentPreferenceModal);
+    app.provide("consentManager", manager);
+    app.mount(host);
+    manager.showPreferenceCenter();
+    await nextTick();
+
+    expect(document.querySelector(".consent-modal__btn--reject-all")?.textContent?.trim()).toBe(
+      "Refuse"
+    );
+    app.unmount();
+  });
+
   it("Vue: refuses every optional category and closes", async () => {
     const manager = createConsentManager({ euDetection: "never" });
     await manager.acceptAll();

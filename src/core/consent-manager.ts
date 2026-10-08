@@ -203,7 +203,9 @@ export class ConsentManager {
       ...config,
       locale: this.locale,
       categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
-      banner: { ...DEFAULT_CONFIG.banner, ...config.banner },
+      // Only the site's own text: the components fall back to the visitor's locale, which the
+      // English defaults would otherwise hide.
+      banner: { ...config.banner },
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
     this.basicMode = config.consentMode === "basic";
