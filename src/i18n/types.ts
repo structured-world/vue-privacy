@@ -26,7 +26,8 @@ export interface PreferenceCenterTranslations {
   description: string;
   savePreferences: string;
   acceptAll: string;
-  rejectAll: string;
+  /** "Reject all" button text; the banner's `rejectAll` when omitted. */
+  rejectAll?: string;
   categories: {
     necessary: CategoryTranslations;
     analytics: CategoryTranslations;

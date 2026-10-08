@@ -630,8 +630,8 @@ export class ConsentManager {
     // The page's own record when it keeps one, so the cookie carries the same timestamp.
     record: StoredConsent = this.choiceRecord(categories)
   ): void {
-    // `functional` does not count: rejectAll() keeps it on, and only analytics or marketing
-    // is a grant worth a remote identifier.
+    // `functional` does not count: only analytics or marketing is a grant worth a remote
+    // identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
 
     this.storeAndConfirm(record);
@@ -1142,13 +1142,14 @@ export class ConsentManager {
   }
 
   /**
-   * Reject all non-essential cookies
+   * Reject every optional category, functional included: only strictly necessary storage is
+   * exempt from consent (ePrivacy Directive 2002/58/EC, Art. 5(3)).
    */
   async rejectAll(): Promise<void> {
     const categories = {
       analytics: false,
       marketing: false,
-      functional: true,
+      functional: false,
     };
 
     this.choose(categories);

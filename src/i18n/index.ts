@@ -65,7 +65,10 @@ export function mergeTranslations(
       savePreferences:
         custom.preferenceCenter?.savePreferences ?? base.preferenceCenter.savePreferences,
       acceptAll: custom.preferenceCenter?.acceptAll ?? base.preferenceCenter.acceptAll,
-      rejectAll: custom.preferenceCenter?.rejectAll ?? base.preferenceCenter.rejectAll,
+      rejectAll:
+        custom.preferenceCenter?.rejectAll ??
+        base.preferenceCenter.rejectAll ??
+        base.banner.rejectAll,
       categories: {
         necessary: {
           ...base.preferenceCenter.categories.necessary,

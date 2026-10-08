@@ -135,7 +135,7 @@ describe("translations", () => {
   it.each(LOCALES)("%s has a preference-centre 'Reject all' string", (locale) => {
     const t = getTranslations(locale);
     expect(t.preferenceCenter.rejectAll).toBe(t.banner.rejectAll);
-    expect(t.preferenceCenter.rejectAll.length).toBeGreaterThan(0);
+    expect(t.preferenceCenter.rejectAll).toBeTruthy();
   });
 });
 
@@ -158,7 +158,7 @@ describe("'Reject all' in the preference centre", () => {
     expect(manager.getConsent()?.categories).toEqual({
       analytics: false,
       marketing: false,
-      functional: true,
+      functional: false,
     });
     expect(modal.isVisible()).toBe(false);
     modal.destroy();
@@ -183,7 +183,7 @@ describe("'Reject all' in the preference centre", () => {
     expect(manager.getConsent()?.categories).toEqual({
       analytics: false,
       marketing: false,
-      functional: true,
+      functional: false,
     });
     // Closing: <Transition> plays the leave animation (which jsdom never finishes) on a hidden
     // dialog, while an open one carries no leave class.

@@ -132,14 +132,15 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // Get translations
   const locale = manager.getLocale();
-  const t = getTranslations(locale).preferenceCenter;
+  const translations = getTranslations(locale);
+  const t = translations.preferenceCenter;
   const config = manager.getConfig().preferenceCenter ?? {};
 
   const title = config.title ?? t.title;
   const description = config.description ?? t.description;
   const savePreferencesText = config.savePreferences ?? t.savePreferences;
   const acceptAllText = config.acceptAll ?? t.acceptAll;
-  const rejectAllText = config.rejectAll ?? t.rejectAll;
+  const rejectAllText = config.rejectAll ?? t.rejectAll ?? translations.banner.rejectAll;
   const categories = {
     necessary: {
       name: config.categories?.necessary?.name ?? t.categories.necessary.name,

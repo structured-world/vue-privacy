@@ -31,5 +31,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # One pull request for every action: separate ones touch different files, so after one merges
+    # the rest are behind main without conflicting, and Dependabot does not rebase them then.
+    groups:
+      actions:
+        patterns:
+          - "*"
     commit-message:
       prefix: "chore(ci)"

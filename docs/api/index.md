@@ -39,7 +39,7 @@ await manager.acceptAll();
 
 #### `rejectAll(): Promise<void>`
 
-Reject all non-essential categories. The refusal is stored like a grant, for the consent cookie's lifetime (`cookie.expiry`, 365 days by default), and replaces an earlier grant; the banner does not ask again on every page.
+Reject every optional category (analytics, marketing and functional); only strictly necessary storage stays. The refusal is stored like a grant, for the consent cookie's lifetime (`cookie.expiry`, 365 days by default), and replaces an earlier grant; the banner does not ask again on every page.
 
 ```typescript
 await manager.rejectAll();

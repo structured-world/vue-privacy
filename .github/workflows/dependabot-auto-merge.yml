@@ -3,8 +3,11 @@ name: Dependabot Auto-Merge
 # Arms GitHub auto-merge on every Dependabot pull request. The merge itself happens only once
 # the required status checks on main (the CI pipeline: lint, type check, build, dist
 # verification, tests, docs build) pass on a head that is up to date with main and every review
-# thread is resolved; a failing pipeline leaves it open. A pull request that falls behind main
-# is rebased by Dependabot itself, which then re-arms it through this workflow.
+# thread is resolved; a failing pipeline leaves it open. Dependabot rebases a pull request only
+# when it conflicts with main (or on its scheduled run), which re-arms it through this workflow;
+# one merely behind main waits for that or for "Update branch". npm updates share yarn.lock, so a
+# merged sibling leaves the others conflicting rather than behind; action updates come as one
+# grouped pull request (.github/dependabot.yml).
 #
 # `pull_request_target`, not `pull_request`, because of how Dependabot runs are isolated: a
 # workflow triggered by Dependabot on `pull_request` receives Dependabot secrets rather than
