@@ -1074,6 +1074,12 @@ export class ConsentManager {
 
   /** Apply the consent init() found; see reconcile()'s `restoring`. */
   private restore(final = true): void {
+    // consent_uid is kept for a grant only (saveConsentWithRemote). A restored grant of
+    // categories the site no longer uses is a refusal now: the remote identity goes with it.
+    const restored = this.choiceInEffect();
+    if (restored && !restored.categories.analytics && !restored.categories.marketing) {
+      clearConsentUid(this.config);
+    }
     this.reconcile(final, true);
   }
 

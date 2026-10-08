@@ -164,6 +164,56 @@ describe("usedCategories: restoring", () => {
   });
 });
 
+describe("usedCategories: a restored grant of unused categories only", () => {
+  // consent_uid is kept for a grant only: a restored consent that the limit turns into a full
+  // refusal must not leave the visitor identifiable to the remote store.
+  it("from the cookie clears consent_uid", async () => {
+    storeConsent({
+      categories: { analytics: false, marketing: true, functional: true },
+      isEU: true,
+    });
+    document.cookie = "consent_uid=uid-old; path=/";
+    const m = manager();
+    await m.init();
+
+    expect(m.getConsent()?.categories).toEqual({
+      analytics: false,
+      marketing: false,
+      functional: false,
+    });
+    expect(cookieStore).not.toContain("consent_uid");
+  });
+
+  it("from the remote store clears consent_uid", async () => {
+    document.cookie = "consent_uid=uid-old; path=/";
+    const storage: ConsentStorage = {
+      get: vi.fn().mockResolvedValue({
+        categories: { analytics: false, marketing: true, functional: false },
+        timestamp: Date.now(),
+        version: "1.0",
+      }),
+      set: vi.fn().mockResolvedValue(null),
+    };
+    const m = manager({ storage }, false);
+    await m.init();
+
+    expect(m.getConsent()?.categories.marketing).toBe(false);
+    expect(cookieStore).not.toContain("consent_uid");
+  });
+
+  it("keeps consent_uid when a used category stays granted", async () => {
+    storeConsent({
+      categories: { analytics: true, marketing: true, functional: true },
+      isEU: true,
+    });
+    document.cookie = "consent_uid=uid-old; path=/";
+    const m = manager();
+    await m.init();
+
+    expect(cookieStore).toContain("consent_uid=uid-old");
+  });
+});
+
 describe("usedCategories: preference centres", () => {
   function shownCategories(): string[] {
     return Array.from(
