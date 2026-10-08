@@ -14,6 +14,9 @@ export interface ConsentCategories {
   necessary: true;
 }
 
+/** An optional consent category: every category except the always-on `necessary`. */
+export type OptionalCategory = Exclude<keyof ConsentCategories, "necessary">;
+
 /**
  * Google Consent Mode v2 signals
  * @see https://developers.google.com/tag-platform/security/guides/consent
@@ -338,6 +341,14 @@ export interface ConsentConfig {
 
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;
+
+  /**
+   * The optional categories the site actually uses. The preference centres show only these
+   * (besides `necessary`), and every other category is always refused: no choice, implied
+   * grant or stored consent turns it on, so its Google signals stay denied.
+   * @default ["analytics", "marketing", "functional"]
+   */
+  usedCategories?: OptionalCategory[];
 
   /** Banner UI configuration */
   banner?: Partial<BannerConfig>;

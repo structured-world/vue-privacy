@@ -74,6 +74,7 @@ export {
 export type {
   ConsentConfig,
   ConsentCategories,
+  OptionalCategory,
   StoredConsent,
   ConsentStorage,
   KVStorageOptions,

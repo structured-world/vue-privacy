@@ -38,6 +38,7 @@ import {
   trackEvent as gtagTrackEvent,
 } from "./gtag";
 import { createGeoDetector } from "../geo/index";
+import { limitToUsed } from "./categories";
 import { reloadPage } from "./page";
 
 /**
@@ -542,7 +543,7 @@ export class ConsentManager {
       // Persisted before it is applied, so geo-detection is not repeated on the next visit and
       // an opt-out a consent callback makes in response is the last choice written. Basic mode
       // keeps it unstored: a stored grant is the visitor's consent there, and this one is not.
-      if (!this.basicMode) this.saveConsentWithRemote(grantedCategories);
+      if (!this.basicMode) this.saveConsentWithRemote(this.choiceRecord(grantedCategories));
       this.impliedChoice = this.impliedRecord(grantedCategories);
       this.restore();
       this.config.onCCPAUser?.();
@@ -593,13 +594,15 @@ export class ConsentManager {
 
   /**
    * A choice with the location it was made in, so EU/CCPA status can be restored on reload.
-   * `?? undefined` omits a location that was not detected rather than storing null.
+   * Every record the manager acts on is built here, so a category the site does not use
+   * (usedCategories) is refused in all of them. `?? undefined` omits a location that was not
+   * detected rather than storing null.
    */
   private choiceRecord(categories: Omit<ConsentCategories, "necessary">): StoredConsent {
     return {
       // Its own copy: the object passed in also goes to the consent callbacks, and an edit they
       // make to it must not change the choice kept for this page.
-      categories: { ...categories },
+      categories: limitToUsed(categories, this.config),
       timestamp: Date.now(),
       version: this.config.version ?? DEFAULT_CONFIG.version,
       isEU: this.isEU ?? undefined,
@@ -631,11 +634,9 @@ export class ConsentManager {
    * must stay in effect (California Civil Code 1798.135(c)(4)), and a site that needs a refused
    * category asks again in context. Fire-and-forget: the remote push does not block UI.
    */
-  private saveConsentWithRemote(
-    categories: Omit<ConsentCategories, "necessary">,
-    // The page's own record when it keeps one, so the cookie carries the same timestamp.
-    record: StoredConsent = this.choiceRecord(categories)
-  ): void {
+  private saveConsentWithRemote(record: StoredConsent): void {
+    // The record's categories, never the caller's: only they are limited to the used ones.
+    const { categories } = record;
     // `functional` does not count: only analytics or marketing is a grant worth a remote
     // identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
@@ -1184,7 +1185,7 @@ export class ConsentManager {
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.
-    this.saveConsentWithRemote(categories, this.pageChoice);
+    this.saveConsentWithRemote(this.pageChoice);
     this.reconcile();
 
     // The preference centre closes either way; it would cover a banner a callback's reset

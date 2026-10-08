@@ -16,6 +16,9 @@ interface ConsentConfig {
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;
 
+  /** Optional categories the site uses; the rest are never offered or granted. Default: all three */
+  usedCategories?: OptionalCategory[]; // 'analytics' | 'marketing' | 'functional'
+
   /** Banner UI configuration */
   banner?: Partial<BannerConfig>;
 

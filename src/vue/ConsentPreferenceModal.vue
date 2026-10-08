@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "
 import type { ConsentManager } from "../core/consent-manager";
 import type { ConsentCategories } from "../core/types";
 import { getTranslations } from "../i18n/index";
+import { limitToUsed, usedCategoriesOf } from "../core/categories";
 import { injectModalStyles } from "./modal-styles";
 
 const emit = defineEmits<{
@@ -19,6 +20,9 @@ const categories = ref({
   marketing: false,
   functional: true,
 });
+
+// Only the categories the site uses are offered; the manager refuses the rest on save.
+const usedCategories = computed(() => usedCategoriesOf(consentManager?.getConfig() ?? {}));
 
 // Merged config: manager config overrides > i18n translations
 const modalConfig = computed(() => {
@@ -100,8 +104,10 @@ onUnmounted(() => {
 });
 
 async function handleSave() {
-  await consentManager?.savePreferences(categories.value);
-  emit("save", categories.value);
+  // A category the dialog does not show is refused, in what is saved and what is emitted alike.
+  const saved = limitToUsed(categories.value, consentManager?.getConfig() ?? {});
+  await consentManager?.savePreferences(saved);
+  emit("save", saved);
 }
 
 async function handleAcceptAll() {
@@ -207,66 +213,25 @@ function handleKeydown(e: KeyboardEvent) {
               </p>
             </div>
 
-            <!-- Analytics -->
-            <div class="consent-modal__category">
+            <!-- The optional categories the site uses -->
+            <div v-for="category in usedCategories" :key="category" class="consent-modal__category">
               <div class="consent-modal__category-header">
                 <h3 class="consent-modal__category-name">
-                  {{ modalConfig.categories.analytics.name }}
+                  {{ modalConfig.categories[category].name }}
                 </h3>
                 <label class="consent-toggle">
                   <input
-                    v-model="categories.analytics"
+                    v-model="categories[category]"
                     type="checkbox"
                     class="consent-toggle__input"
-                    :aria-label="modalConfig.categories.analytics.name"
+                    :data-category="category"
+                    :aria-label="modalConfig.categories[category].name"
                   />
                   <span class="consent-toggle__slider"></span>
                 </label>
               </div>
               <p class="consent-modal__category-description">
-                {{ modalConfig.categories.analytics.description }}
-              </p>
-            </div>
-
-            <!-- Marketing -->
-            <div class="consent-modal__category">
-              <div class="consent-modal__category-header">
-                <h3 class="consent-modal__category-name">
-                  {{ modalConfig.categories.marketing.name }}
-                </h3>
-                <label class="consent-toggle">
-                  <input
-                    v-model="categories.marketing"
-                    type="checkbox"
-                    class="consent-toggle__input"
-                    :aria-label="modalConfig.categories.marketing.name"
-                  />
-                  <span class="consent-toggle__slider"></span>
-                </label>
-              </div>
-              <p class="consent-modal__category-description">
-                {{ modalConfig.categories.marketing.description }}
-              </p>
-            </div>
-
-            <!-- Functional -->
-            <div class="consent-modal__category">
-              <div class="consent-modal__category-header">
-                <h3 class="consent-modal__category-name">
-                  {{ modalConfig.categories.functional.name }}
-                </h3>
-                <label class="consent-toggle">
-                  <input
-                    v-model="categories.functional"
-                    type="checkbox"
-                    class="consent-toggle__input"
-                    :aria-label="modalConfig.categories.functional.name"
-                  />
-                  <span class="consent-toggle__slider"></span>
-                </label>
-              </div>
-              <p class="consent-modal__category-description">
-                {{ modalConfig.categories.functional.description }}
+                {{ modalConfig.categories[category].description }}
               </p>
             </div>
           </div>
