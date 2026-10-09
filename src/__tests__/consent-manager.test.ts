@@ -614,7 +614,8 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
 
-  it("applies consent with fail-safe when geo detection fails for legacy cookie", async () => {
+  it("keeps a legacy cookie's consent when geo detection fails with geoFailure 'grant'", async () => {
+    // The default ('require-consent') asks again instead; see consent-jurisdiction.test.ts.
     // Legacy cookie WITHOUT isEU field (pre-roaming-protection format)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
@@ -631,7 +632,7 @@ describe("ConsentManager.getGeoResult()", () => {
     };
 
     const showBanner = vi.fn();
-    const manager = new ConsentManager({ version: "1.0", geoDetector });
+    const manager = new ConsentManager({ version: "1.0", geoDetector, geoFailure: "grant" });
     manager.onShowBanner(showBanner);
     await manager.init();
 

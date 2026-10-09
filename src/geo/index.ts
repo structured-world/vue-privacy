@@ -4,11 +4,14 @@ import type {
   GeoDetectionLogEntry,
   GeoDetectionResultWithLog,
 } from "../core/types";
+import { TIMEZONE_COUNTRIES, requiresConsent } from "./jurisdictions";
 
 /**
  * Cloudflare geo-detection using headers
  *
- * Requires Cloudflare Worker or Transform Rule to set X-Is-EU-Country header
+ * Requires a Cloudflare Worker or Transform Rule to set `CF-IPCountry` (and optionally
+ * `X-Is-EU-Country`) on the response. Cloudflare's EU flag covers EU members only, so `false`
+ * without a country is not an answer for the EEA or the UK and counts as a failure.
  */
 export class CloudflareGeoDetector implements GeoDetector {
   private headerName: string;
@@ -31,17 +34,16 @@ export class CloudflareGeoDetector implements GeoDetector {
 
       const isEUHeader = response.headers.get(this.headerName);
       const countryCode = response.headers.get("CF-IPCountry") ?? undefined;
+      const inEU = isEUHeader?.toLowerCase() === "true";
 
-      if (isEUHeader !== null) {
-        return {
-          isEU: isEUHeader.toLowerCase() === "true",
-          countryCode,
-          method: "cloudflare",
-        };
-      }
-
-      // Header not present - Cloudflare not configured
-      throw new Error("Cloudflare header not present");
+      // Neither a country nor a positive EU flag: Cloudflare is not configured, or its flag
+      // cannot tell a visitor in Norway or the UK from one in the US.
+      if (!countryCode && !inEU) throw new Error("Cloudflare headers not present");
+      return {
+        isEU: requiresConsent(countryCode, inEU),
+        countryCode,
+        method: "cloudflare",
+      };
     } catch {
       throw new Error("Cloudflare geo-detection failed");
     }
@@ -65,13 +67,15 @@ export class IPAPIGeoDetector implements GeoDetector {
     try {
       const response = await fetch(this.apiUrl);
       const data = (await response.json()) as {
-        in_eu?: boolean;
         country_code?: string;
         region?: string;
       };
+      // `in_eu` is false for the EEA EFTA states and the UK; the country decides instead. An
+      // error body (rate limit, invalid request) carries no country and is no answer.
+      if (!data.country_code) throw new Error("No country in the response");
 
       return {
-        isEU: data.in_eu === true,
+        isEU: requiresConsent(data.country_code, false),
         countryCode: data.country_code,
         region: data.region ?? undefined,
         method: "api",
@@ -104,9 +108,12 @@ export class WorkerGeoDetector implements GeoDetector {
         countryCode?: string;
         region?: string;
       };
+      const inEU = data.isEU === true;
+      // Like Cloudflare's, the endpoint's EU flag says nothing about the EEA or the UK.
+      if (!data.countryCode && !inEU) throw new Error("No country in the response");
 
       return {
-        isEU: data.isEU === true,
+        isEU: requiresConsent(data.countryCode, inEU),
         countryCode: data.countryCode ?? undefined,
         region: data.region ?? undefined,
         method: "worker",
@@ -117,70 +124,40 @@ export class WorkerGeoDetector implements GeoDetector {
   }
 }
 
+/** Zones that carry no location: privacy-hardened browsers report UTC wherever they are. */
+const LOCATIONLESS_ZONE = /^(?:Etc\/.*|UTC|UCT|GMT|Universal|Zulu|Greenwich)$/;
+
 /**
- * Fallback detector that uses browser timezone heuristics
+ * Fallback detector that uses the browser's time zone
  *
- * Not 100% accurate but works without external requests
+ * A zone of a consent country gives that country; any other zone a visitor outside them. Not
+ * fully accurate (a traveller keeps a home zone) but works without external requests.
  */
 export class TimezoneGeoDetector implements GeoDetector {
-  // EU timezones (not exhaustive but covers most)
-  private euTimezones = new Set([
-    "Europe/Amsterdam",
-    "Europe/Andorra",
-    "Europe/Athens",
-    "Europe/Berlin",
-    "Europe/Bratislava",
-    "Europe/Brussels",
-    "Europe/Bucharest",
-    "Europe/Budapest",
-    "Europe/Copenhagen",
-    "Europe/Dublin",
-    "Europe/Helsinki",
-    "Europe/Lisbon",
-    "Europe/Ljubljana",
-    "Europe/Luxembourg",
-    "Europe/Madrid",
-    "Europe/Malta",
-    "Europe/Monaco",
-    "Europe/Oslo",
-    "Europe/Paris",
-    "Europe/Prague",
-    "Europe/Riga",
-    "Europe/Rome",
-    "Europe/San_Marino",
-    "Europe/Sarajevo",
-    "Europe/Skopje",
-    "Europe/Sofia",
-    "Europe/Stockholm",
-    "Europe/Tallinn",
-    "Europe/Tirane",
-    "Europe/Vaduz",
-    "Europe/Vatican",
-    "Europe/Vienna",
-    "Europe/Vilnius",
-    "Europe/Warsaw",
-    "Europe/Zagreb",
-    "Atlantic/Canary",
-    "Atlantic/Faroe",
-    "Atlantic/Madeira",
-  ]);
-
   async detect(): Promise<GeoDetectionResult> {
+    let timezone: string | undefined;
     try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const isEU = this.euTimezones.has(timezone);
-
-      return {
-        isEU,
-        method: "fallback",
-      };
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     } catch {
-      // If we can't determine, assume EU for safety
-      return {
-        isEU: true,
-        method: "fallback",
-      };
+      // Leaves the zone unknown, a failure below.
     }
+    if (!timezone || LOCATIONLESS_ZONE.test(timezone)) {
+      throw new Error("Timezone geo-detection failed");
+    }
+    const countryCode = TIMEZONE_COUNTRIES[timezone];
+    if (countryCode === undefined) return { isEU: false, method: "fallback" };
+    return { isEU: requiresConsent(countryCode, false), countryCode, method: "fallback" };
+  }
+}
+
+/** Every detection method failed; `log` holds each attempt. */
+export class GeoDetectionError extends Error {
+  readonly log: GeoDetectionLogEntry[];
+
+  constructor(message: string, log: GeoDetectionLogEntry[]) {
+    super(message);
+    this.name = "GeoDetectionError";
+    this.log = log;
   }
 }
 
@@ -277,14 +254,25 @@ export class AutoGeoDetector implements GeoDetector {
 
     // Fallback to timezone heuristics
     const tzStart = Date.now();
-    const result = await this.timezone.detect();
-    log.push({
-      method: "fallback",
-      status: "success",
-      result: { isEU: result.isEU },
-      duration: Date.now() - tzStart,
-    });
-    return { ...result, log };
+    try {
+      const result = await this.timezone.detect();
+      log.push({
+        method: "fallback",
+        status: "success",
+        result: { isEU: result.isEU, countryCode: result.countryCode },
+        duration: Date.now() - tzStart,
+      });
+      return { ...result, log };
+    } catch (e) {
+      log.push({
+        method: "fallback",
+        status: "failed",
+        error: e instanceof Error ? e.message : "Unknown error",
+        duration: Date.now() - tzStart,
+      });
+    }
+    // The manager's geoFailure option decides; the log stays readable on the error.
+    throw new GeoDetectionError("All geo-detection methods failed", log);
   }
 }
 

@@ -37,7 +37,8 @@ import {
   trackPageView as gtagTrackPageView,
   trackEvent as gtagTrackEvent,
 } from "./gtag";
-import { createGeoDetector } from "../geo/index";
+import { createGeoDetector, GeoDetectionError } from "../geo/index";
+import { requiresConsent, DEFAULT_CONSENT_JURISDICTIONS } from "../geo/jurisdictions";
 import { limitToUsed } from "./categories";
 import { reloadPage } from "./page";
 
@@ -500,27 +501,40 @@ export class ConsentManager {
     return true;
   }
 
-  /** Detect if user is in EU (skip if already detected in roaming check or remote storage). */
+  /**
+   * Detect whether the visitor is in a consent jurisdiction (skip if already detected in the
+   * roaming check or for remote storage).
+   */
   private async detectJurisdiction(): Promise<void> {
     if (this.isEU !== null) return;
     try {
       await this.performGeoDetection();
-    } catch {
-      // Geo detection failed: assume non-EU to avoid blocking site usage.
-      // This is a fail-open strategy - if we can't determine location, we grant
-      // consent by default (same behavior as non-EU, non-CCPA users).
-      // This prioritizes user experience over strict compliance in edge cases.
-      this.isEU = false;
-      this.geoDetectionLog = [
-        {
-          method: "fallback",
-          status: "failed",
-          result: { isEU: false },
-          duration: 0,
-          error: "Geo detection failed; defaulting to non-EU",
-        },
-      ];
+    } catch (error) {
+      this.applyGeoFailure(error, "");
     }
+  }
+
+  /**
+   * A lookup failed: `geoFailure` decides whether the visitor counts as in a consent
+   * jurisdiction. By default they do, since a failure is no evidence of being outside one
+   * (ePrivacy Directive 2002/58/EC, Art. 5(3): storage needs prior consent).
+   */
+  private applyGeoFailure(error: unknown, where: string): void {
+    const required = this.config.geoFailure !== "grant";
+    this.isEU = required;
+    const attempts = error instanceof GeoDetectionError ? error.log : [];
+    this.geoDetectionLog = [
+      ...attempts,
+      {
+        method: "fallback",
+        status: "failed",
+        result: { isEU: required },
+        duration: 0,
+        error: `Geo detection failed${where}; ${
+          required ? "asking for consent" : "granting as outside consent jurisdictions"
+        }`,
+      },
+    ];
   }
 
   /** An undecided visitor: ask in the EU, apply the jurisdiction's grant elsewhere. */
@@ -706,13 +720,26 @@ export class ConsentManager {
       this.config.geoDetector ??
       createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
 
-    const geoResult = await detector.detect();
-    this.isEU = geoResult.isEU;
+    const detected = await detector.detect();
+    // The country decides against the configured jurisdictions; a detector's own flag stands
+    // only when it reports no country.
+    const isEU = requiresConsent(
+      detected.countryCode,
+      detected.isEU,
+      this.config.consentJurisdictions ?? DEFAULT_CONSENT_JURISDICTIONS
+    );
+    const geoResult = { ...detected, isEU };
+    this.isEU = isEU;
     this.geoResult = geoResult;
 
-    // Store detection log if available (from AutoGeoDetector)
+    // Store detection log if available (from AutoGeoDetector); the attempt that answered shows
+    // the decision for the configured jurisdictions, as getGeoResult() does.
     if ("log" in geoResult && geoResult.log) {
-      this.geoDetectionLog = geoResult.log;
+      this.geoDetectionLog = geoResult.log.map((entry) =>
+        entry.status === "success" && entry.result
+          ? { ...entry, result: { ...entry.result, isEU } }
+          : entry
+      );
     } else {
       // Single-method detector: create simple log entry
       this.geoDetectionLog = [
@@ -733,9 +760,9 @@ export class ConsentManager {
   }
 
   /**
-   * Check if user has roamed to EU and needs re-consent.
-   * Called when stored consent was given outside EU (isEU=false or undefined).
-   * Returns true if user is now in EU and needs to re-consent.
+   * Check if the visitor is now in a consent jurisdiction and needs to be asked again.
+   * Called when stored consent was given outside them (isEU=false or undefined).
+   * Returns true if the visitor needs to re-consent.
    */
   private async checkRoamingToEU(stored: StoredConsent): Promise<boolean> {
     try {
@@ -747,15 +774,15 @@ export class ConsentManager {
       }
 
       return false;
-    } catch {
-      // Geo detection failed — keep existing consent (fail-safe).
-      // Design choice: preserve user experience over strict GDPR enforcement in edge cases.
-      // If a user with non-EU consent roams to EU but geo detection fails (network error,
-      // blocked API, etc.), we keep their existing consent rather than forcing re-consent.
-      // This is acceptable because: (1) geo detection failures are rare edge cases,
-      // (2) the user already made a consent choice, and (3) forcing banner on transient
-      // network errors would be poor UX. On next successful page load with working geo
-      // detection, the roaming check will properly trigger re-consent if needed.
+    } catch (error) {
+      if (this.config.geoFailure !== "grant") {
+        // A failed lookup is no evidence the visitor is still outside: the choice made there
+        // does not stand, and the visitor is asked. Answering stores the choice as made in a
+        // consent jurisdiction, so later visits skip this check.
+        this.applyGeoFailure(error, " in roaming check");
+        return true;
+      }
+      // geoFailure 'grant': keep the existing choice; the next successful lookup re-checks.
       // Restore stored geo data if available
       if (stored.isEU !== undefined) {
         this.isEU = stored.isEU;
@@ -1458,10 +1485,16 @@ export class ConsentManager {
   }
 
   /**
-   * Check if user is detected as EU
+   * Whether the visitor is in a consent jurisdiction (see `consentJurisdictions`), or null
+   * before detection ran.
    */
-  isEUUser(): boolean | null {
+  isConsentRequired(): boolean | null {
     return this.isEU;
+  }
+
+  /** Alias of {@link isConsentRequired}: "EU" here means every consent jurisdiction. */
+  isEUUser(): boolean | null {
+    return this.isConsentRequired();
   }
 
   /**

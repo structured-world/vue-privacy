@@ -1,4 +1,7 @@
 import type { SupportedLocale } from "../i18n/types";
+import type { ConsentJurisdiction } from "../geo/jurisdictions";
+
+export type { ConsentJurisdiction } from "../geo/jurisdictions";
 
 /**
  * Consent categories that can be managed
@@ -148,7 +151,10 @@ export interface StoredConsent {
   timestamp: number;
   /** Version of the consent configuration */
   version: string;
-  /** Whether user was in EU when consent was given */
+  /**
+   * Whether the choice was made in a consent jurisdiction (see
+   * {@link ConsentConfig.consentJurisdictions}); such a choice stands wherever the visitor goes
+   */
   isEU?: boolean;
   /** Geo-detection method used when consent was given */
   geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
@@ -208,7 +214,11 @@ export interface KVStorageOptions {
  * Geo-detection result
  */
 export interface GeoDetectionResult {
-  /** Whether the user is in the EU */
+  /**
+   * Whether the visitor is in a consent jurisdiction. With `countryCode` set the consent manager
+   * decides from the country and its `consentJurisdictions` instead; a detector that cannot
+   * tell throws, and the manager applies `geoFailure`.
+   */
   isEU: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
@@ -248,7 +258,7 @@ export interface GeoDetectionResultWithLog extends GeoDetectionResult {
  * Geo-detection provider interface
  */
 export interface GeoDetector {
-  /** Detect if user is in the EU */
+  /** Detect the visitor's country, and whether it requires consent; throw when unknown */
   detect(): Promise<GeoDetectionResult | GeoDetectionResultWithLog>;
 }
 
@@ -484,6 +494,24 @@ export interface ConsentConfig {
 
   /** URL for Worker-based geo detection (e.g. "/api/geo"). Used by "worker" and "auto" modes. */
   geoUrl?: string;
+
+  /**
+   * Jurisdictions whose visitors are asked for consent; elsewhere every category is granted.
+   * `EEA`: the EU member states (outermost regions and Åland included), Iceland, Liechtenstein
+   * and Norway. `UK`: the United Kingdom. `CH`: Switzerland. The visitor's country decides;
+   * a detector that reports none decides itself.
+   * @default ["EEA", "UK"]
+   */
+  consentJurisdictions?: ConsentJurisdiction[];
+
+  /**
+   * What a failed geo lookup means (a blocked IP API, a browser reporting UTC):
+   * - `'require-consent'` (default): the visitor is asked, since a failure is no evidence of
+   *   being outside a consent jurisdiction. A choice stored outside them is asked again too.
+   * - `'grant'`: the visitor is treated as outside consent jurisdictions.
+   * @default 'require-consent'
+   */
+  geoFailure?: "require-consent" | "grant";
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;

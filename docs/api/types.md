@@ -30,8 +30,22 @@ interface ConsentConfig {
     path?: string; // Default: '/'
   };
 
-  /** EU detection mode */
-  euDetection?: "auto" | "cloudflare" | "api" | "always" | "never";
+  /** Region detection mode */
+  euDetection?: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+
+  /**
+   * Jurisdictions whose visitors are asked for consent, decided from the country.
+   * EEA: EU members (outermost regions and Åland included), IS, LI, NO. UK: GB. CH: Switzerland.
+   * @default ["EEA", "UK"]
+   */
+  consentJurisdictions?: ConsentJurisdiction[]; // 'EEA' | 'UK' | 'CH'
+
+  /**
+   * A failed geo lookup: 'require-consent' asks the visitor (a choice stored outside
+   * consent jurisdictions is asked again too); 'grant' treats them as outside.
+   * @default 'require-consent'
+   */
+  geoFailure?: "require-consent" | "grant";
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;

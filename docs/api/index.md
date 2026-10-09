@@ -80,15 +80,19 @@ if (manager.hasConsent()) {
 }
 ```
 
-#### `isEUUser(): boolean`
+#### `isConsentRequired(): boolean | null`
 
-Check if user is detected as EU.
+Whether the visitor is in a consent jurisdiction (`consentJurisdictions`, EEA and UK by default), so the banner asks before anything is granted; `null` before detection ran. A failed lookup counts as `true` unless `geoFailure: 'grant'`.
 
 ```typescript
-if (manager.isEUUser()) {
+if (manager.isConsentRequired()) {
   // Show GDPR-specific content
 }
 ```
+
+#### `isEUUser(): boolean | null`
+
+Alias of `isConsentRequired()`: "EU" here means every consent jurisdiction, the EEA and the UK included.
 
 #### `trackPageView(path, title?): void`
 

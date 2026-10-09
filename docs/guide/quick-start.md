@@ -139,9 +139,9 @@ await manager.rejectAll();
 ## What Happens
 
 1. **Google Analytics loads** — `gtag.js` injected with Consent Mode v2 defaults
-2. **EU detection** — checks if user is in the EU (Cloudflare → IP API → timezone)
-3. **Consent defaults** — EU users start with `denied`, non-EU with `granted`
-4. **Banner display** — shows only for EU users without stored consent
+2. **Region detection** — finds the visitor's country (Cloudflare → IP API → timezone) and whether it is a [consent jurisdiction](/guide/eu-detection) (EEA and UK by default)
+3. **Consent defaults** — visitors there (or whose lookup failed) start with `denied`, others with `granted`
+4. **Banner display** — shows only for visitors in consent jurisdictions without stored consent
 5. **User choice** — consent stored in cookie, Google Consent Mode signals updated
 6. **Page tracking** — automatic in VitePress and Quasar; use `trackPageView()` with Vue Router (see example above)
 
