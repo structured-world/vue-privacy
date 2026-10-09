@@ -639,21 +639,6 @@ function setCommandFields(options: GoogleAnalyticsOptions): Record<string, unkno
   return Object.keys(fields).length > 0 ? fields : null;
 }
 
-/** Whether a `set` command with exactly these fields is already in the dataLayer. */
-function isSetQueued(fields: Record<string, unknown>): boolean {
-  const wanted = JSON.stringify(fields);
-  return window.dataLayer.some((entry) => {
-    const command = commandOf(entry);
-    if (command === null || command[0] !== "set") return false;
-    try {
-      return JSON.stringify(command[1]) === wanted;
-    } catch {
-      // Another integration's `set` may hold a cycle or a BigInt; it is not ours either way.
-      return false;
-    }
-  });
-}
-
 /**
  * Queue `set`, `js` and `config` right after the consent defaults, as Google's own snippet does:
  * the dataLayer is processed in order once gtag.js runs, so every later event follows `config`
@@ -662,7 +647,9 @@ function isSetQueued(fields: Record<string, unknown>): boolean {
  * `set` goes ahead of every measurement command already queued (a site's own snippet, a Tag
  * Manager `gtm.js` event): `url_passthrough` has to precede every `config`, and
  * `ads_data_redaction` every Ads or Floodlight hit. It is sent also when `config` for this ID is
- * already queued, since it needs no second `config`; the same fields are not queued twice.
+ * already queued, since it needs no second `config`. A matching `set` already in the queue does
+ * not replace it: that one may sit after a queued event, and moving the page's own commands
+ * would reorder its later overrides. A repeated `set` with the same fields changes nothing.
  *
  * @param gaId - Google Analytics measurement ID
  * @param sendPageView - Whether `config` sends the automatic page_view
@@ -676,7 +663,7 @@ export function queueGoogleAnalyticsConfig(
   if (typeof window === "undefined") return;
   initGtag();
   const settings = setCommandFields(options);
-  if (settings !== null && !isSetQueued(settings)) {
+  if (settings !== null) {
     window.gtag("set", settings);
     moveAheadOfQueuedMeasurement();
   }

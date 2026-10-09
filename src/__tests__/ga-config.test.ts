@@ -154,13 +154,13 @@ describe("googleAnalytics option", () => {
     expect(argsOf("config")[0][2]).toEqual({ send_page_view: false });
   });
 
-  it("sends the configuration once per page across manager instances", async () => {
-    // A remount creates a second manager; the page keeps one set, one js and one config.
+  it("queues config once per page across manager instances", async () => {
+    // A remount creates a second manager: a second config would count a second page view. The
+    // tag already runs, so its update and its set (the same fields, changing nothing) apply live.
     await manager({ googleAnalytics: MINIMISED }).init();
     await manager({ googleAnalytics: MINIMISED }).init();
 
-    expect(argsOf("set")).toHaveLength(1);
-    expect(argsOf("config")).toHaveLength(1);
+    expect(order()).toEqual(["consent:default", "set", "js", "config", "consent:update", "set"]);
   });
 
   it("sends the set fields when the site's own snippet already queued config", async () => {
@@ -198,17 +198,19 @@ describe("googleAnalytics option", () => {
     expect(labels).toEqual(["consent:default", "set", "gtm.js", "js", "config"]);
   });
 
-  it("still sends its set fields beside another integration's unserialisable set", async () => {
-    // The duplicate check serialises queued `set` commands; one holding a cycle must neither
-    // throw out of the consent flow nor count as ours.
-    const cyclic: Record<string, unknown> = {};
-    cyclic.self = cyclic;
-    window.dataLayer.push(["set", cyclic]);
+  it("puts its set fields ahead of a queued event even when the same set follows that event", async () => {
+    // Regression: an identical `set` the page queued after `gtm.js` counted as already sent, so
+    // nothing preceded the event and the container could fire tags before redaction applied.
+    window.dataLayer.push({ event: "gtm.js" }, ["set", { ads_data_redaction: true }]);
 
-    await manager({ googleAnalytics: { urlPassthrough: true } }).init();
+    await manager({ googleAnalytics: { adsDataRedaction: true } }).init();
 
-    expect(order()).toEqual(["set", "consent:default", "set", "js", "config"]);
-    expect(argsOf("set").map((c) => c[1])).toEqual([cyclic, { url_passthrough: true }]);
+    const labels = window.dataLayer.map((entry) => {
+      const command = Array.from(entry as ArrayLike<unknown>);
+      if (command.length === 0) return String((entry as { event: string }).event);
+      return String(command[0]) + (command[0] === "consent" ? `:${command[1]}` : "");
+    });
+    expect(labels).toEqual(["consent:default", "set", "gtm.js", "set", "js", "config"]);
   });
 
   it("sends nothing in basic mode until the visitor allows analytics", async () => {
