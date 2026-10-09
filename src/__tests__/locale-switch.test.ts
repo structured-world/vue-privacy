@@ -80,6 +80,28 @@ describe("setLocale", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("reports a switch to the listeners registered when it happened, exactly once each", () => {
+    // A listener may (un)subscribe others while being notified, as a component that re-renders
+    // and mounts or unmounts another one does.
+    const manager = createConsentManager({ locale: "en" });
+    const late = vi.fn();
+    const second = vi.fn();
+    let stopSecond = () => {};
+    manager.onLocaleChange(() => {
+      stopSecond();
+      manager.onLocaleChange(late);
+    });
+    stopSecond = manager.onLocaleChange(second);
+
+    manager.setLocale("de");
+    expect(second).toHaveBeenCalledExactlyOnceWith("de");
+    expect(late).not.toHaveBeenCalled();
+
+    manager.setLocale("ro");
+    expect(second).toHaveBeenCalledOnce();
+    expect(late).toHaveBeenCalledExactlyOnceWith("ro");
+  });
+
   it("keeps notifying the other listeners when one throws", () => {
     const manager = createConsentManager({ locale: "en" });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -328,7 +328,9 @@ export class ConsentManager {
     this.locale = locale;
     this.config.locale = locale;
     this.config.banner = this.localizedBanner();
-    for (const listener of [...this.localeChangeListeners]) {
+    // Subscribing and unsubscribing replace the array, so a listener that does either while this
+    // runs leaves this round's list as it was.
+    for (const listener of this.localeChangeListeners) {
       try {
         listener(locale);
       } catch (error) {
@@ -344,7 +346,7 @@ export class ConsentManager {
    * @returns a function that unregisters the listener
    */
   onLocaleChange(listener: (locale: SupportedLocale) => void): () => void {
-    this.localeChangeListeners.push(listener);
+    this.localeChangeListeners = [...this.localeChangeListeners, listener];
     return () => {
       this.localeChangeListeners = this.localeChangeListeners.filter((l) => l !== listener);
     };
