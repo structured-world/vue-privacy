@@ -89,6 +89,16 @@ function settledWithin(write: Promise<void>, ms: number): Promise<void> {
 
 type Categories = Omit<ConsentCategories, "necessary">;
 
+/**
+ * A geo detector's own answer to "does this visitor need to be asked": `consentRequired`, or
+ * `isEU` from a custom detector written for an earlier version; undefined when it gave neither.
+ */
+function detectorAnswer(consentRequired: unknown, isEU: unknown): boolean | undefined {
+  if (typeof consentRequired === "boolean") return consentRequired;
+  if (typeof isEU === "boolean") return isEU;
+  return undefined;
+}
+
 function sameCategories(a: Categories, b: Categories): boolean {
   return (
     a.analytics === b.analytics && a.marketing === b.marketing && a.functional === b.functional
@@ -699,12 +709,7 @@ export class ConsentManager {
     const { isEU, ...detected } = (await detector.detect()) as GeoDetectionResultWithLog & {
       isEU?: unknown;
     };
-    const answer =
-      typeof detected.consentRequired === "boolean"
-        ? detected.consentRequired
-        : typeof isEU === "boolean"
-          ? isEU
-          : undefined;
+    const answer = detectorAnswer(detected.consentRequired, isEU);
     // Neither an answer nor a country: nothing tells where the visitor is (geoFailure decides).
     if (answer === undefined && knownCountry(detected.countryCode) === undefined) {
       throw new Error("Geo detector gave neither consentRequired nor a country");

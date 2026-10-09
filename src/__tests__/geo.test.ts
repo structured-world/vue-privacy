@@ -286,8 +286,9 @@ describe("consent jurisdictions in the detectors", () => {
   });
 
   it("timezone: UTC says nothing about the location and is a failure", async () => {
-    // Privacy-hardened browsers report UTC everywhere, the EU included.
-    for (const zone of ["UTC", "Etc/UTC", "Etc/GMT"]) {
+    // Privacy-hardened browsers report UTC everywhere, the EU included. CET, MET, EET and WET
+    // span several countries, consent countries among them, and name none.
+    for (const zone of ["UTC", "Etc/UTC", "Etc/GMT", "CET", "MET", "EET", "WET"]) {
       useTimezone(zone);
       await expect(new TimezoneGeoDetector().detect()).rejects.toThrow(
         "Timezone geo-detection failed"

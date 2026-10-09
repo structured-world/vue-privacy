@@ -22,7 +22,7 @@ createConsentPlugin({
 
 Everywhere else every category is granted without a banner; US states with privacy laws are handled by `ccpaEnabled`. A choice made in a consent jurisdiction is stored as such and stands wherever the visitor goes; one made outside is checked against the current location on each visit.
 
-The consent cookie (`consent_preferences`) is strictly necessary storage, set without consent to remember the choice (refusals included), so it holds only what that needs: the categories, the time and configuration version of the choice, and `consentRequired`. The country, region and detection method are never stored; cookies written by earlier versions with them are rewritten without them on the next page load.
+The consent cookie (`consent_preferences`) is strictly necessary storage, set without consent to remember the choice (refusals included), so it holds only what that needs: the categories, the time and configuration version of the choice, and `consentRequired`. The country, region and detection method are never stored; cookies written by earlier versions with them are rewritten without them on the next page load, keeping what is left of their lifetime; one past its lifetime, or one for another consent `version`, is deleted instead.
 
 `manager.isConsentRequired()` tells which applies to the visitor. `isEUUser()` is an alias: "EU" there means every consent jurisdiction.
 
@@ -108,7 +108,7 @@ const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 // Europe/London -> GB, Atlantic/Azores -> PT, Indian/Reunion -> RE
 ```
 
-Any other zone counts as outside consent jurisdictions. `UTC` and `Etc/*` carry no location (privacy-hardened browsers report UTC everywhere) and count as a failure. A traveller keeps the home time zone, so this is a heuristic.
+Any other zone counts as outside consent jurisdictions. `UTC` and `Etc/*` carry no location (privacy-hardened browsers report UTC everywhere), and the generic `CET`, `MET`, `EET` and `WET` span several countries without naming one; all count as a failure. A traveller keeps the home time zone, so this is a heuristic.
 
 ## Custom Detector
 

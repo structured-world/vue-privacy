@@ -95,10 +95,11 @@ describe("the consent cookie", () => {
   it("rewrites a cookie of an earlier version without its location, keeping the choice", async () => {
     // Cookies already on visitors' devices carry the location (and the flag as isEU); they are
     // cleaned on the first page load, with the same timestamp, so other tabs see no new choice.
+    const timestamp = Date.now() - 1000;
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: false, marketing: false, functional: true },
-        timestamp: 42,
+        timestamp,
         version: "1.0",
         isEU: true,
         geoMethod: "worker",
@@ -114,12 +115,74 @@ describe("the consent cookie", () => {
     expect(consentWrites()).toEqual([
       {
         categories: { analytics: false, marketing: false, functional: true },
-        timestamp: 42,
+        timestamp,
         version: "1.0",
         consentRequired: true,
       },
     ]);
     expect(manager.getConsent()?.categories.analytics).toBe(false);
+  });
+
+  it("deletes a cookie of an earlier version and configuration that still holds a location", async () => {
+    // Regression: a cookie for another consent version is no consent, so it was neither
+    // restored nor rewritten; a visitor outside consent jurisdictions is granted without a
+    // write, and the location travelled with every request until the cookie expired.
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "0.9",
+        isEU: false,
+        countryCode: "US",
+        region: "California",
+      })
+    )}`;
+
+    await started({
+      geoDetector: detecting({ consentRequired: false, countryCode: "US", method: "api" }),
+    });
+
+    expect(cookieStore).not.toContain("consent_preferences=");
+  });
+
+  it("keeps the remaining lifetime of a migrated cookie", async () => {
+    // Regression: the rewrite set the full lifetime again, keeping a choice made 300 days ago
+    // for another 365 days.
+    const day = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: false, marketing: false, functional: true },
+        timestamp: now - 300 * day,
+        version: "1.0",
+        isEU: true,
+      })
+    )}`;
+
+    await started({ geoDetector: { detect: vi.fn() } });
+
+    const write = writes.find((w) => w.startsWith("consent_preferences="));
+    const expires = Date.parse(/expires=([^;]+)/.exec(write ?? "")?.[1] ?? "");
+    expect(Math.abs(expires - (now + 65 * day))).toBeLessThan(day);
+  });
+
+  it("deletes a migrated cookie whose lifetime has run out", async () => {
+    // A choice older than the configured lifetime is not kept: the visitor is asked again.
+    cookieStore = `consent_preferences=${encodeURIComponent(
+      JSON.stringify({
+        categories: { analytics: false, marketing: false, functional: true },
+        timestamp: Date.now() - 400 * 24 * 60 * 60 * 1000,
+        version: "1.0",
+        isEU: true,
+      })
+    )}`;
+
+    const manager = await started({
+      geoDetector: detecting({ consentRequired: true, countryCode: "DE", method: "api" }),
+    });
+
+    expect(cookieStore).not.toContain("consent_preferences=");
+    expect(manager.getConsent()).toBeNull();
   });
 
   it("leaves a cookie of the current format as it is on load", async () => {

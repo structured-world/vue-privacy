@@ -128,8 +128,11 @@ export class WorkerGeoDetector implements GeoDetector {
   }
 }
 
-/** Zones that carry no location: privacy-hardened browsers report UTC wherever they are. */
-const LOCATIONLESS_ZONE = /^(?:Etc\/.*|UTC|UCT|GMT|Universal|Zulu|Greenwich)$/;
+/**
+ * Zones that name no country: UTC, which privacy-hardened browsers report wherever they are, and
+ * the generic CET, MET, EET and WET, which span several countries, consent countries among them.
+ */
+const LOCATIONLESS_ZONE = /^(?:Etc\/.*|UTC|UCT|GMT|Universal|Zulu|Greenwich|CET|MET|EET|WET)$/;
 
 /**
  * Fallback detector that uses the browser's time zone
@@ -169,6 +172,37 @@ export class GeoDetectionError extends Error {
   }
 }
 
+/** Run one detection method and log its outcome; null when it failed. */
+async function attempt(
+  method: GeoDetectionLogEntry["method"],
+  detector: GeoDetector,
+  log: GeoDetectionLogEntry[]
+): Promise<GeoDetectionResult | null> {
+  const start = Date.now();
+  try {
+    const result = await detector.detect();
+    log.push({
+      method,
+      status: "success",
+      result: {
+        consentRequired: result.consentRequired,
+        countryCode: result.countryCode,
+        region: result.region,
+      },
+      duration: Date.now() - start,
+    });
+    return result;
+  } catch (e) {
+    log.push({
+      method,
+      status: "failed",
+      error: e instanceof Error ? e.message : "Unknown error",
+      duration: Date.now() - start,
+    });
+    return null;
+  }
+}
+
 /**
  * Auto-detection chain:
  * Cloudflare headers → Worker /api/geo (if geoUrl set) → IP API → Timezone
@@ -190,106 +224,24 @@ export class AutoGeoDetector implements GeoDetector {
 
   async detect(): Promise<GeoDetectionResultWithLog> {
     const log: GeoDetectionLogEntry[] = [];
-
-    // Try Cloudflare headers first (fastest, most reliable if available)
-    const cfStart = Date.now();
-    try {
-      const result = await this.cloudflare.detect();
-      log.push({
-        method: "cloudflare",
-        status: "success",
-        result: {
-          consentRequired: result.consentRequired,
-          countryCode: result.countryCode,
-          region: result.region,
-        },
-        duration: Date.now() - cfStart,
-      });
-      return { ...result, log };
-    } catch (e) {
-      log.push({
-        method: "cloudflare",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-        duration: Date.now() - cfStart,
-      });
-    }
-
-    // Try Worker /api/geo (free, no rate limits, accurate)
-    if (this.worker) {
-      const workerStart = Date.now();
-      try {
-        const result = await this.worker.detect();
-        log.push({
-          method: "worker",
-          status: "success",
-          result: {
-            consentRequired: result.consentRequired,
-            countryCode: result.countryCode,
-            region: result.region,
-          },
-          duration: Date.now() - workerStart,
-        });
-        return { ...result, log };
-      } catch (e) {
-        log.push({
-          method: "worker",
-          status: "failed",
-          error: e instanceof Error ? e.message : "Unknown error",
-          duration: Date.now() - workerStart,
-        });
+    // In order: Cloudflare headers (fastest), the Worker /api/geo (free, no rate limits; when
+    // geoUrl is set), the IP API (external, rate-limited), then the browser time zone. The first
+    // that answers wins.
+    const chain: Array<[GeoDetectionLogEntry["method"], GeoDetector | null]> = [
+      ["cloudflare", this.cloudflare],
+      ["worker", this.worker],
+      ["api", this.ipapi],
+      ["fallback", this.timezone],
+    ];
+    for (const [method, detector] of chain) {
+      if (detector === null) {
+        // Worker skipped (not a failure, just not configured)
+        log.push({ method, status: "skipped", duration: 0 });
+        continue;
       }
-    } else {
-      // Worker skipped (not a failure, just not configured)
-      log.push({
-        method: "worker",
-        status: "skipped",
-        duration: 0,
-      });
-    }
-
-    // Try IP API (external service, rate-limited)
-    const apiStart = Date.now();
-    try {
-      const result = await this.ipapi.detect();
-      log.push({
-        method: "api",
-        status: "success",
-        result: {
-          consentRequired: result.consentRequired,
-          countryCode: result.countryCode,
-          region: result.region,
-        },
-        duration: Date.now() - apiStart,
-      });
-      return { ...result, log };
-    } catch (e) {
-      log.push({
-        method: "api",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-        duration: Date.now() - apiStart,
-      });
-    }
-
-    // Fallback to timezone heuristics
-    const tzStart = Date.now();
-    try {
-      const result = await this.timezone.detect();
-      log.push({
-        method: "fallback",
-        status: "success",
-        result: { consentRequired: result.consentRequired, countryCode: result.countryCode },
-        duration: Date.now() - tzStart,
-      });
-      return { ...result, log };
-    } catch (e) {
-      log.push({
-        method: "fallback",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-        duration: Date.now() - tzStart,
-      });
+      // One method at a time: a later one runs only when the earlier ones failed.
+      const result = await attempt(method, detector, log);
+      if (result !== null) return { ...result, log };
     }
     // The manager's geoFailure option decides; the log stays readable on the error.
     throw new GeoDetectionError("All geo-detection methods failed", log);
@@ -313,11 +265,11 @@ export function createGeoDetector(
       return new IPAPIGeoDetector();
     case "always":
       return {
-        detect: async () => ({ consentRequired: true, method: "manual" as const }),
+        detect: () => Promise.resolve({ consentRequired: true, method: "manual" as const }),
       };
     case "never":
       return {
-        detect: async () => ({ consentRequired: false, method: "manual" as const }),
+        detect: () => Promise.resolve({ consentRequired: false, method: "manual" as const }),
       };
     case "auto":
     default:

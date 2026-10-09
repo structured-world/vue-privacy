@@ -198,11 +198,11 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
 const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
 
 /**
- * The consent cookie of this configuration's version, as stored, or null. `outdated`: it was
- * written by an earlier version, with the location (`countryCode`, `region`, `geoMethod`) or with
+ * The consent cookie, as stored, whatever its version, or null. `outdated`: it was written by an
+ * earlier version, with the location (`countryCode`, `region`, `geoMethod`) or with
  * `consentRequired` under its earlier name `isEU`; those are not kept.
  */
-function readConsentCookie(
+function parseConsentCookie(
   config: Partial<ConsentConfig>
 ): { consent: StoredConsent; outdated: boolean } | null {
   const raw = getCookie(config.cookie?.name ?? DEFAULT_CONFIG.cookie.name);
@@ -214,8 +214,6 @@ function readConsentCookie(
     return null;
   }
   const stored = parsed as unknown as StoredConsent & { isEU?: boolean };
-  // A different version: the consent no longer applies.
-  if (stored.version !== (config.version ?? DEFAULT_CONFIG.version)) return null;
   const consentRequired = stored.consentRequired ?? stored.isEU;
   return {
     consent: {
@@ -232,21 +230,42 @@ function readConsentCookie(
  * Get stored consent from cookie
  */
 export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredConsent | null {
-  const read = readConsentCookie(config);
-  if (read === null) return null;
+  const read = parseConsentCookie(config);
+  // A different version: the consent no longer applies.
+  if (read === null || read.consent.version !== (config.version ?? DEFAULT_CONFIG.version)) {
+    return null;
+  }
   // A category the site no longer uses was never asked about in its current dialog. When that
   // leaves nothing granted, the consent manager's restore drops consent_uid too.
   return { ...read.consent, categories: limitToUsed(read.consent.categories, config) };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Rewrite a consent cookie an earlier version wrote, keeping the choice and its timestamp (the
- * other open tabs see no new decision) and dropping what it no longer holds. A cookie already in
- * the current format is left alone: rewriting it would restart its lifetime on every visit.
+ * other open tabs see no new decision) and dropping what it no longer holds. The rewrite keeps
+ * what is left of the lifetime counted from the choice; one past it, or one for another consent
+ * version (no consent any more), is deleted instead. A cookie already in the current format is
+ * left alone: rewriting it would restart its lifetime on every visit.
  */
 export function migrateConsentCookie(config: Partial<ConsentConfig> = {}): void {
-  const read = readConsentCookie(config);
-  if (read?.outdated) storeConsent(read.consent, config);
+  const read = parseConsentCookie(config);
+  if (!read?.outdated) return;
+  if (read.consent.version !== (config.version ?? DEFAULT_CONFIG.version)) {
+    clearConsent(config);
+    return;
+  }
+  const lifetime = config.cookie?.expiry ?? DEFAULT_CONFIG.cookie.expiry;
+  const { timestamp } = read.consent;
+  const remaining = Number.isFinite(timestamp)
+    ? lifetime - (Date.now() - timestamp) / DAY_MS
+    : lifetime;
+  if (remaining <= 0) {
+    clearConsent(config);
+    return;
+  }
+  storeConsent(read.consent, { ...config, cookie: { ...config.cookie, expiry: remaining } });
 }
 
 /**
