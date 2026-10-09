@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createApp } from "vue";
 import { ConsentManager } from "../core/consent-manager";
+import { useConsent } from "../vue/index";
 import { storeConsent } from "../core/storage";
 import { installCookieJar } from "./helpers/cookie-jar";
 import type { ConsentConfig, GeoDetectionResult } from "../core/types";
@@ -112,6 +114,53 @@ describe("consent jurisdictions", () => {
 
     const granted = await started({ geoDetector: detecting(empty), geoFailure: "grant" });
     expect(granted.showBanner).not.toHaveBeenCalled();
+  });
+
+  it("shows the configured decision in the attempt log of a chained detector", async () => {
+    // The chain decided with the default jurisdictions; with CH configured the attempt that
+    // answered reports the manager's decision, as getGeoResult() does. Failed attempts stay.
+    const failed = {
+      method: "cloudflare" as const,
+      status: "failed" as const,
+      error: "no headers",
+      duration: 3,
+    };
+    const answered = {
+      method: "api" as const,
+      status: "success" as const,
+      result: { consentRequired: false, countryCode: "CH" },
+      duration: 5,
+    };
+    const { manager } = await started({
+      consentJurisdictions: ["EEA", "UK", "CH"],
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({
+          consentRequired: false,
+          countryCode: "CH",
+          method: "api",
+          log: [failed, answered],
+        }),
+      },
+    });
+
+    expect(manager.getGeoDetectionLog()).toEqual([
+      failed,
+      { ...answered, result: { consentRequired: true, countryCode: "CH" } },
+    ]);
+  });
+
+  it("exposes isConsentRequired() and its alias through useConsent()", async () => {
+    // The Vue composable hands the decision to templates; both names give the same answer.
+    const { manager } = await started({
+      geoDetector: detecting({ consentRequired: false, countryCode: "NO", method: "api" }),
+    });
+    const app = createApp({});
+    app.provide("consentManager", manager);
+
+    const consent = app.runWithContext(() => useConsent());
+
+    expect(consent.isConsentRequired()).toBe(true);
+    expect(consent.isEUUser()).toBe(true);
   });
 
   it("keeps isEUUser() as an alias of isConsentRequired()", async () => {
