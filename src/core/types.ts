@@ -109,7 +109,10 @@ type ReservedGoogleAnalyticsField = keyof GoogleAnalyticsConfigFields | "send_pa
  * consent flow.
  */
 export interface GoogleAnalyticsOptions {
-  /** Fields of the `config` call for `gaId` */
+  /**
+   * Fields of the `config` call for `gaId`. A page whose own snippet already queued `config` for
+   * that ID keeps its call (a second one would count a second page view): set the fields there.
+   */
   config?: GoogleAnalyticsConfigFields;
   /**
    * Custom parameters merged into the `config` call (custom dimensions, undocumented fields).
@@ -118,7 +121,10 @@ export interface GoogleAnalyticsOptions {
   customParameters?: Record<string, unknown> & {
     [K in ReservedGoogleAnalyticsField]?: never;
   };
-  /** Fields passed through `gtag('set', ...)` before `config`; they apply to every Google tag */
+  /**
+   * Fields passed through `gtag('set', ...)` ahead of the queued measurement commands; they apply
+   * to every Google tag, one the site configured itself included
+   */
   set?: GoogleAnalyticsFields;
   /**
    * While `ad_storage` is denied, strip ad click identifiers from Google Ads and Floodlight

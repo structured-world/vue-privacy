@@ -264,10 +264,18 @@ export function updateConsent(signals: Partial<GoogleConsentSignals>): void {
  */
 export function queueConsentUpdate(signals: GoogleConsentSignals): void {
   updateConsent(signals);
+  moveAheadOfQueuedMeasurement();
+}
+
+/**
+ * Until the Google tag runs, move the command gtag() just pushed ahead of the measurement
+ * commands queued after the last consent default, so they are processed under it while the
+ * default still comes first.
+ */
+function moveAheadOfQueuedMeasurement(): void {
   if (typeof window === "undefined" || isGoogleTagLoaded()) return;
-  const queue = window.dataLayer;
   let lastDefault = -1;
-  queue.forEach((entry, i) => {
+  window.dataLayer.forEach((entry, i) => {
     if (isConsentDefault(entry)) lastDefault = i;
   });
   moveAheadOfMeasurement(lastDefault + 1);
@@ -631,11 +639,30 @@ function setCommandFields(options: GoogleAnalyticsOptions): Record<string, unkno
   return Object.keys(fields).length > 0 ? fields : null;
 }
 
+/** Whether a `set` command with exactly these fields is already in the dataLayer. */
+function isSetQueued(fields: Record<string, unknown>): boolean {
+  const wanted = JSON.stringify(fields);
+  return window.dataLayer.some((entry) => {
+    const command = commandOf(entry);
+    if (command === null || command[0] !== "set") return false;
+    try {
+      return JSON.stringify(command[1]) === wanted;
+    } catch {
+      // Another integration's `set` may hold a cycle or a BigInt; it is not ours either way.
+      return false;
+    }
+  });
+}
+
 /**
  * Queue `set`, `js` and `config` right after the consent defaults, as Google's own snippet does:
  * the dataLayer is processed in order once gtag.js runs, so every later event follows `config`
- * whether the script is still loading, failed and is retried, or already ran. `set` goes first:
- * `url_passthrough` has to precede every `config` command.
+ * whether the script is still loading, failed and is retried, or already ran.
+ *
+ * `set` goes ahead of every measurement command already queued (a site's own snippet, a Tag
+ * Manager `gtm.js` event): `url_passthrough` has to precede every `config`, and
+ * `ads_data_redaction` every Ads or Floodlight hit. It is sent also when `config` for this ID is
+ * already queued, since it needs no second `config`; the same fields are not queued twice.
  *
  * @param gaId - Google Analytics measurement ID
  * @param sendPageView - Whether `config` sends the automatic page_view
@@ -648,6 +675,11 @@ export function queueGoogleAnalyticsConfig(
 ): void {
   if (typeof window === "undefined") return;
   initGtag();
+  const settings = setCommandFields(options);
+  if (settings !== null && !isSetQueued(settings)) {
+    window.gtag("set", settings);
+    moveAheadOfQueuedMeasurement();
+  }
   // Once per page: a retried initialisation would otherwise queue a second `config`, and
   // both are processed (two page views) once the tag loads.
   const queued = window.dataLayer.some((entry) => {
@@ -655,8 +687,6 @@ export function queueGoogleAnalyticsConfig(
     return command !== null && command[0] === "config" && command[1] === gaId;
   });
   if (queued) return;
-  const settings = setCommandFields(options);
-  if (settings !== null) window.gtag("set", settings);
   window.gtag("js", new Date());
   // send_page_view last: the SPA integrations turn it off, and no field may turn it back on.
   window.gtag("config", gaId, {

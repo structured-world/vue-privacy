@@ -96,11 +96,11 @@ interface ConsentConfig {
 
 ```typescript
 interface GoogleAnalyticsOptions {
-  /** Fields of the gtag('config', gaId, ...) call */
+  /** Fields of the gtag('config', gaId, ...) call; a config the page's own snippet queued for gaId is kept */
   config?: GoogleAnalyticsConfigFields;
   /** Custom parameters merged into the config call; documented names are rejected here */
   customParameters?: Record<string, unknown>;
-  /** Fields of gtag('set', ...), sent before config; they apply to every Google tag */
+  /** Fields of gtag('set', ...), ahead of queued measurement commands; they apply to every Google tag */
   set?: GoogleAnalyticsFields;
   /** gtag('set', 'ads_data_redaction', ...): strip ad click IDs while ad_storage is denied */
   adsDataRedaction?: boolean;

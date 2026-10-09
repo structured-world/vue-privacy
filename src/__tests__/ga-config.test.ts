@@ -163,6 +163,54 @@ describe("googleAnalytics option", () => {
     expect(argsOf("config")).toHaveLength(1);
   });
 
+  it("sends the set fields when the site's own snippet already queued config", async () => {
+    // Regression: an existing `config` for the ID returned before `set`, so
+    // ads_data_redaction, url_passthrough and every set field were dropped silently. They go
+    // ahead of the snippet's queued commands, so its config and hits are processed under them.
+    window.dataLayer.push(
+      ["consent", "default", { analytics_storage: "denied" }],
+      ["js", new Date()],
+      ["config", GA_ID, {}]
+    );
+
+    await manager({ googleAnalytics: MINIMISED }).init();
+
+    expect(order()).toEqual(["consent:default", "consent:update", "set", "js", "config"]);
+    expect(argsOf("set")[0][1]).toMatchObject({
+      ads_data_redaction: true,
+      url_passthrough: true,
+    });
+    expect(argsOf("config")).toHaveLength(1);
+  });
+
+  it("puts the set fields ahead of a Tag Manager event queued before the manager", async () => {
+    // Regression: `set` was appended after a queued `gtm.js` event, so the container could fire
+    // Ads or Floodlight tags before ads_data_redaction and url_passthrough applied.
+    window.dataLayer.push({ event: "gtm.js" });
+
+    await manager({ googleAnalytics: MINIMISED }).init();
+
+    const labels = window.dataLayer.map((entry) => {
+      const command = Array.from(entry as ArrayLike<unknown>);
+      if (command.length === 0) return String((entry as { event: string }).event);
+      return String(command[0]) + (command[0] === "consent" ? `:${command[1]}` : "");
+    });
+    expect(labels).toEqual(["consent:default", "set", "gtm.js", "js", "config"]);
+  });
+
+  it("still sends its set fields beside another integration's unserialisable set", async () => {
+    // The duplicate check serialises queued `set` commands; one holding a cycle must neither
+    // throw out of the consent flow nor count as ours.
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    window.dataLayer.push(["set", cyclic]);
+
+    await manager({ googleAnalytics: { urlPassthrough: true } }).init();
+
+    expect(order()).toEqual(["set", "consent:default", "set", "js", "config"]);
+    expect(argsOf("set").map((c) => c[1])).toEqual([cyclic, { url_passthrough: true }]);
+  });
+
   it("sends nothing in basic mode until the visitor allows analytics", async () => {
     const instance = manager({ consentMode: "basic", googleAnalytics: MINIMISED });
 
