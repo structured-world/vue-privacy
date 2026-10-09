@@ -1,4 +1,4 @@
-import type { GoogleConsentSignals, ConsentCategories } from "./types";
+import type { GoogleConsentSignals, ConsentCategories, GoogleAnalyticsOptions } from "./types";
 import { deleteCookie } from "./storage";
 
 declare global {
@@ -426,25 +426,33 @@ interface CookieSettings {
   domains: Set<string>;
 }
 
-/** cookie_prefix / cookie_path / cookie_domain this page passed to the Google tag for an ID. */
-function configuredCookieSettings(gaId: string): CookieSettings {
+function addCookieSettings(settings: CookieSettings, params: unknown): void {
+  if (typeof params !== "object" || params === null) return;
+  const { cookie_prefix, cookie_path, cookie_domain } = params as Record<string, unknown>;
+  if (typeof cookie_prefix === "string") settings.prefixes.add(cookie_prefix);
+  if (typeof cookie_path === "string") settings.paths.add(cookie_path);
+  if (typeof cookie_domain === "string" && cookie_domain !== "auto" && cookie_domain !== "none") {
+    settings.domains.add(cookie_domain);
+  }
+}
+
+/**
+ * cookie_prefix / cookie_path / cookie_domain the Google tag for an ID was or will be configured
+ * with: from this page's `set` and `config` commands, and from the options a consent manager
+ * holds, which name the cookies an earlier page set before anything was queued on this one.
+ */
+function configuredCookieSettings(gaId: string, options: GoogleAnalyticsOptions): CookieSettings {
   const settings: CookieSettings = {
     prefixes: new Set([""]),
     paths: new Set<string>(),
     domains: new Set<string>(),
   };
+  addCookieSettings(settings, options.set);
+  addCookieSettings(settings, options.config);
   if (typeof window === "undefined" || !Array.isArray(window.dataLayer)) return settings;
   for (const entry of window.dataLayer) {
     const command = commandOf(entry);
-    if (command === null) continue;
-    const params = paramsFor(command, gaId);
-    if (typeof params !== "object" || params === null) continue;
-    const { cookie_prefix, cookie_path, cookie_domain } = params as Record<string, unknown>;
-    if (typeof cookie_prefix === "string") settings.prefixes.add(cookie_prefix);
-    if (typeof cookie_path === "string") settings.paths.add(cookie_path);
-    if (typeof cookie_domain === "string" && cookie_domain !== "auto" && cookie_domain !== "none") {
-      settings.domains.add(cookie_domain);
-    }
+    if (command !== null) addCookieSettings(settings, paramsFor(command, gaId));
   }
   return settings;
 }
@@ -461,10 +469,11 @@ function configuredCookieSettings(gaId: string): CookieSettings {
  * not match are no-ops.
  *
  * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param options - The tag configuration the manager sends, whose cookie settings count too
  */
-export function clearAnalyticsCookies(gaId: string): void {
+export function clearAnalyticsCookies(gaId: string, options: GoogleAnalyticsOptions = {}): void {
   if (typeof document === "undefined") return;
-  const configured = configuredCookieSettings(gaId);
+  const configured = configuredCookieSettings(gaId, options);
   const paths = analyticsCookiePaths(configured);
   const domains = analyticsCookieDomains(configured);
   for (const name of analyticsCookieNames(gaId, configured)) {
@@ -583,12 +592,14 @@ export function trackEvent(eventName: string, params?: Record<string, unknown>):
  * @param defaults - Default consent signals, or `true` to deny all / `false` to grant all
  * @param sendPageView - Whether to send automatic page_view (false for SPA)
  * @param waitForUpdate - See {@link setConsentDefaults}; pass `0` when the defaults are final
+ * @param options - `config` and `set` fields for the tag, see {@link GoogleAnalyticsOptions}
  */
 export async function initGoogleAnalytics(
   gaId: string,
   defaults: boolean | GoogleConsentSignals = true,
   sendPageView = true,
-  waitForUpdate = 500
+  waitForUpdate = 500,
+  options: GoogleAnalyticsOptions = {}
 ): Promise<void> {
   initGtag();
 
@@ -608,19 +619,33 @@ export async function initGoogleAnalytics(
     sendInitialConsent(defaults, waitForUpdate);
   }
 
-  queueGoogleAnalyticsConfig(gaId, sendPageView);
+  queueGoogleAnalyticsConfig(gaId, sendPageView, options);
   await loadGtagScript(gaId);
 }
 
+/** The fields of the `set` command sent before `config`, or null when there are none. */
+function setCommandFields(options: GoogleAnalyticsOptions): Record<string, unknown> | null {
+  const fields: Record<string, unknown> = { ...options.set };
+  if (options.adsDataRedaction !== undefined) fields.ads_data_redaction = options.adsDataRedaction;
+  if (options.urlPassthrough !== undefined) fields.url_passthrough = options.urlPassthrough;
+  return Object.keys(fields).length > 0 ? fields : null;
+}
+
 /**
- * Queue `js` and `config` right after the consent defaults, as Google's own snippet does: the
- * dataLayer is processed in order once gtag.js runs, so every later event follows `config`
- * whether the script is still loading, failed and is retried, or already ran.
+ * Queue `set`, `js` and `config` right after the consent defaults, as Google's own snippet does:
+ * the dataLayer is processed in order once gtag.js runs, so every later event follows `config`
+ * whether the script is still loading, failed and is retried, or already ran. `set` goes first:
+ * `url_passthrough` has to precede every `config` command.
  *
  * @param gaId - Google Analytics measurement ID
  * @param sendPageView - Whether `config` sends the automatic page_view
+ * @param options - `config` and `set` fields for the tag
  */
-export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean): void {
+export function queueGoogleAnalyticsConfig(
+  gaId: string,
+  sendPageView: boolean,
+  options: GoogleAnalyticsOptions = {}
+): void {
   if (typeof window === "undefined") return;
   initGtag();
   // Once per page: a retried initialisation would otherwise queue a second `config`, and
@@ -630,8 +655,13 @@ export function queueGoogleAnalyticsConfig(gaId: string, sendPageView: boolean):
     return command !== null && command[0] === "config" && command[1] === gaId;
   });
   if (queued) return;
+  const settings = setCommandFields(options);
+  if (settings !== null) window.gtag("set", settings);
   window.gtag("js", new Date());
+  // send_page_view last: the SPA integrations turn it off, and no field may turn it back on.
   window.gtag("config", gaId, {
+    ...options.customParameters,
+    ...options.config,
     send_page_view: sendPageView,
   });
 }

@@ -3,12 +3,17 @@
  * string), behaving like a browser's for the library's use: a write replaces the cookie of the
  * same name, a write that expires in the past deletes it, and attributes (path, expiry,
  * SameSite) are dropped from what is read back. A test may also set the jar directly, as
- * another tab's write would.
+ * another tab's write would. `observe` receives every raw write, attributes included.
  */
-export function installCookieJar(read: () => string, write: (jar: string) => void): void {
+export function installCookieJar(
+  read: () => string,
+  write: (jar: string) => void,
+  observe?: (value: string) => void
+): void {
   Object.defineProperty(document, "cookie", {
     get: read,
     set: (value: string) => {
+      observe?.(value);
       const [nameValue] = value.split(";");
       const [name] = nameValue.split("=");
       const kept = read()

@@ -170,8 +170,16 @@ Initialize Google Analytics with Consent Mode: `consent default`, `js` and `conf
 ```typescript
 import { initGoogleAnalytics } from "@structured-world/vue-privacy";
 
-// Args: gaId, defaults, sendPageView, waitForUpdate
+// Args: gaId, defaults, sendPageView, waitForUpdate, options
 await initGoogleAnalytics("G-XXXXXXXXXX", true, false);
+```
+
+`options` takes the same block as `ConsentConfig.googleAnalytics` ([GoogleAnalyticsOptions](./types#googleanalyticsoptions)): its `set` fields go out before `config`, its `config` fields into the `config` call.
+
+```typescript
+await initGoogleAnalytics("G-XXXXXXXXXX", true, true, 500, {
+  config: { allow_google_signals: false, cookie_expires: 7776000 },
+});
 ```
 
 Or, instead of the call above, per-signal defaults, e.g. for a returning visitor who allowed analytics only. The choice is already final, so `waitForUpdate` is `0`:

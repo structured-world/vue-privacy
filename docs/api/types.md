@@ -47,6 +47,12 @@ interface ConsentConfig {
   sendPageView?: boolean;
 
   /**
+   * Google tag configuration for gaId, sent once after the consent default
+   * and before the tag loads (in basic mode, once analytics is allowed).
+   */
+  googleAnalytics?: GoogleAnalyticsOptions;
+
+  /**
    * 'advanced': gtag.js loads for every visitor with denied defaults;
    * Google receives cookieless pings before any choice and after a refusal.
    * 'basic': nothing reaches Google until the visitor allows analytics;
@@ -85,6 +91,58 @@ interface ConsentConfig {
   onBannerHide?: () => void;
 }
 ```
+
+## GoogleAnalyticsOptions
+
+```typescript
+interface GoogleAnalyticsOptions {
+  /** Fields of the gtag('config', gaId, ...) call */
+  config?: GoogleAnalyticsConfigFields;
+  /** Custom parameters merged into the config call; documented names are rejected here */
+  customParameters?: Record<string, unknown>;
+  /** Fields of gtag('set', ...), sent before config; they apply to every Google tag */
+  set?: GoogleAnalyticsFields;
+  /** gtag('set', 'ads_data_redaction', ...): strip ad click IDs while ad_storage is denied */
+  adsDataRedaction?: boolean;
+  /** gtag('set', 'url_passthrough', ...): carry click IDs in link URLs while consent is denied */
+  urlPassthrough?: boolean;
+}
+
+/** Fields Google documents for both set and config */
+interface GoogleAnalyticsFields {
+  allow_google_signals?: boolean;
+  allow_ad_personalization_signals?: boolean;
+  campaign_content?: string;
+  campaign_id?: string;
+  campaign_medium?: string;
+  campaign_name?: string;
+  campaign_source?: string;
+  campaign_term?: string;
+  client_id?: string;
+  content_group?: string;
+  cookie_domain?: string; // 'auto' (default), 'none' or a domain
+  cookie_expires?: number; // seconds; 0 = session cookies
+  cookie_flags?: string; // e.g. 'SameSite=None;Secure'
+  cookie_path?: string;
+  cookie_prefix?: string;
+  cookie_update?: boolean;
+  ignore_referrer?: boolean;
+  language?: string;
+  page_location?: string;
+  page_referrer?: string;
+  page_title?: string;
+  screen_resolution?: string; // e.g. '800x600'
+  user_id?: string;
+  user_properties?: Record<string, string | number>;
+}
+
+interface GoogleAnalyticsConfigFields extends GoogleAnalyticsFields {
+  /** Only true: Google keeps debug mode on for false as well */
+  debug_mode?: true;
+}
+```
+
+`send_page_view` is not a field here: `sendPageView` sets it, and the SPA integrations turn it off.
 
 ## ConsentCategories
 

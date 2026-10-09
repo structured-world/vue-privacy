@@ -33,6 +33,106 @@ export interface GoogleConsentSignals {
 }
 
 /**
+ * Google tag fields for a GA4 stream, valid in both `gtag('set', ...)` and
+ * `gtag('config', ...)`. Names are case-sensitive.
+ * @see https://developers.google.com/analytics/devguides/collection/ga4/reference/config
+ */
+export interface GoogleAnalyticsFields {
+  /** `false` turns off Google signals (reporting based on advertising identifiers) */
+  allow_google_signals?: boolean;
+  /** `false` turns off advertising personalisation */
+  allow_ad_personalization_signals?: boolean;
+  /** Overrides `utm_content` */
+  campaign_content?: string;
+  /** Overrides `utm_id` */
+  campaign_id?: string;
+  /** Overrides `utm_medium` */
+  campaign_medium?: string;
+  /** Overrides `utm_campaign` */
+  campaign_name?: string;
+  /** Overrides `utm_source` */
+  campaign_source?: string;
+  /** Overrides `utm_term` */
+  campaign_term?: string;
+  /** Pseudonymous browser identifier; random per browser by default */
+  client_id?: string;
+  /** Content group of the page, e.g. `/news/sports` */
+  content_group?: string;
+  /** `'auto'` (default: the highest domain the browser accepts), `'none'`, or a domain */
+  cookie_domain?: string;
+  /** Lifetime of the `_ga*` cookies in seconds (default two years); `0` makes them session cookies */
+  cookie_expires?: number;
+  /** Extra cookie attributes separated by semicolons, e.g. `SameSite=None;Secure` */
+  cookie_flags?: string;
+  /** Path the `_ga*` cookies are set on (default `/`) */
+  cookie_path?: string;
+  /** Prefix prepended to the `_ga*` cookie names */
+  cookie_prefix?: string;
+  /** `false`: the cookie lifetime counts from the first visit instead of every page load */
+  cookie_update?: boolean;
+  /** `true`: the referrer is not reported as a traffic source */
+  ignore_referrer?: boolean;
+  /** Language preference (default `navigator.language`) */
+  language?: string;
+  /** Full page URL (default `document.location`) */
+  page_location?: string;
+  /** Referring URL (default `document.referrer`) */
+  page_referrer?: string;
+  /** Page title (default `document.title`) */
+  page_title?: string;
+  /** Screen size as `<width>x<height>`, e.g. `800x600` */
+  screen_resolution?: string;
+  /** The site's own user identifier; never personal data */
+  user_id?: string;
+  /** User-scoped custom dimensions, e.g. `{ favorite_color: "blue" }` */
+  user_properties?: Record<string, string | number>;
+}
+
+/**
+ * Fields of the `gtag('config', gaId, ...)` call. `send_page_view` is set by
+ * {@link ConsentConfig.sendPageView}, which the SPA integrations turn off.
+ */
+export interface GoogleAnalyticsConfigFields extends GoogleAnalyticsFields {
+  /**
+   * Show this stream's events in DebugView. Only `true` is accepted: Google keeps debug mode on
+   * for `false` too, and turns it off only when the field is absent.
+   */
+  debug_mode?: true;
+}
+
+/** Names the typed blocks own; a custom parameter must not reuse them. */
+type ReservedGoogleAnalyticsField = keyof GoogleAnalyticsConfigFields | "send_page_view";
+
+/**
+ * How the Google tag for `gaId` is configured: data minimisation (signals, ad personalisation,
+ * cookie lifetime and scope) and other documented fields, without calling `gtag()` outside the
+ * consent flow.
+ */
+export interface GoogleAnalyticsOptions {
+  /** Fields of the `config` call for `gaId` */
+  config?: GoogleAnalyticsConfigFields;
+  /**
+   * Custom parameters merged into the `config` call (custom dimensions, undocumented fields).
+   * Documented fields belong in `config`, where their names and types are checked.
+   */
+  customParameters?: Record<string, unknown> & {
+    [K in ReservedGoogleAnalyticsField]?: never;
+  };
+  /** Fields passed through `gtag('set', ...)` before `config`; they apply to every Google tag */
+  set?: GoogleAnalyticsFields;
+  /**
+   * While `ad_storage` is denied, strip ad click identifiers from Google Ads and Floodlight
+   * requests (`gtag('set', 'ads_data_redaction', ...)`).
+   */
+  adsDataRedaction?: boolean;
+  /**
+   * While consent is denied, carry ad click, client and session identifiers between pages in
+   * link URLs instead of cookies (`gtag('set', 'url_passthrough', ...)`).
+   */
+  urlPassthrough?: boolean;
+}
+
+/**
  * Stored consent state
  */
 export interface StoredConsent {
@@ -388,6 +488,13 @@ export interface ConsentConfig {
    * @default true
    */
   sendPageView?: boolean;
+
+  /**
+   * Configuration of the Google tag for `gaId`: `config` and `set` fields, Consent Mode's
+   * `ads_data_redaction` and `url_passthrough`. Sent once, after the consent default and before
+   * the tag loads; in basic mode, only once the visitor allows analytics.
+   */
+  googleAnalytics?: GoogleAnalyticsOptions;
 
   /**
    * How the Google tag for `gaId` relates to consent (Google Consent Mode):
