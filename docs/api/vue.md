@@ -25,17 +25,24 @@ Composable for accessing consent state and methods.
 ```typescript
 import { useConsent } from "@structured-world/vue-privacy/vue";
 
-const { consent, isEU, hasConsent, acceptAll, rejectAll, resetConsent, savePreferences } =
-  useConsent();
+const {
+  getConsent,
+  isConsentRequired,
+  hasConsent,
+  acceptAll,
+  rejectAll,
+  resetConsent,
+  savePreferences,
+} = useConsent();
 ```
 
 ### Returns
 
-| Property          | Type                            | Description                                                   |
-| ----------------- | ------------------------------- | ------------------------------------------------------------- |
-| `consent`         | `Ref<StoredConsent \| null>`    | Current consent state                                         |
-| `isEU`            | `Ref<boolean>`                  | Whether user is in EU                                         |
-| `hasConsent`      | `Ref<boolean>`                  | Whether the visitor's choice (a grant or a refusal) is stored |
+| Property            | Type                            | Description                                                         |
+| ------------------- | ------------------------------- | ------------------------------------------------------------------- |
+| `getConsent`        | `() => StoredConsent \| null`   | Current consent state                                               |
+| `isConsentRequired` | `() => boolean \| null`         | Whether the visitor is in a consent jurisdiction (`isEUUser` alias) |
+| `hasConsent`        | `() => boolean`                 | Whether the visitor's choice (a grant or a refusal) is stored       |
 | `acceptAll`       | `() => Promise<void>`           | Accept all categories                                         |
 | `rejectAll`       | `() => Promise<void>`           | Reject non-essential                                          |
 | `resetConsent`    | `() => void`                    | Clear consent and show banner                                 |

@@ -22,10 +22,10 @@ const ANALYTICS_ONLY = {
 let cookieStore = "";
 const created: ConsentManager[] = [];
 
-function manager(config: ConsentConfig = {}, isEU = true): ConsentManager {
+function manager(config: ConsentConfig = {}, consentRequired = true): ConsentManager {
   const m = new ConsentManager({
     gaId: GA_ID,
-    geoDetector: { detect: vi.fn().mockResolvedValue({ isEU, method: "manual" }) },
+    geoDetector: { detect: vi.fn().mockResolvedValue({ consentRequired, method: "manual" }) },
     usedCategories: ["analytics"],
     ...config,
   });
@@ -150,7 +150,7 @@ describe("usedCategories: restoring", () => {
   it("a stored grant of an unused category is restored with that category off", async () => {
     storeConsent({
       categories: { analytics: true, marketing: true, functional: true },
-      isEU: true,
+      consentRequired: true,
     });
     const m = manager();
     await m.init();
@@ -170,7 +170,7 @@ describe("usedCategories: a restored grant of unused categories only", () => {
   it("from the cookie clears consent_uid", async () => {
     storeConsent({
       categories: { analytics: false, marketing: true, functional: true },
-      isEU: true,
+      consentRequired: true,
     });
     document.cookie = "consent_uid=uid-old; path=/";
     const m = manager();
@@ -204,7 +204,7 @@ describe("usedCategories: a restored grant of unused categories only", () => {
   it("keeps consent_uid when a used category stays granted", async () => {
     storeConsent({
       categories: { analytics: true, marketing: true, functional: true },
-      isEU: true,
+      consentRequired: true,
     });
     document.cookie = "consent_uid=uid-old; path=/";
     const m = manager();

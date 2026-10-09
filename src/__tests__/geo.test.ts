@@ -29,7 +29,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: "DE",
       region: undefined,
       method: "worker",
@@ -47,7 +47,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "US",
       region: undefined,
       method: "worker",
@@ -64,7 +64,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "US",
       region: "California",
       method: "worker",
@@ -85,7 +85,7 @@ describe("WorkerGeoDetector", () => {
     await expect(detector.detect()).rejects.toThrow("Worker geo-detection failed");
   });
 
-  it("treats missing or non-boolean isEU as false", async () => {
+  it("decides from the country when the endpoint gives no isEU flag", async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ countryCode: "XX" }),
@@ -94,7 +94,7 @@ describe("WorkerGeoDetector", () => {
     const detector = new WorkerGeoDetector("/api/geo");
     const result = await detector.detect();
 
-    expect(result.isEU).toBe(false);
+    expect(result.consentRequired).toBe(false);
   });
 
   it("handles missing countryCode gracefully", async () => {
@@ -107,7 +107,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: undefined,
       region: undefined,
       method: "worker",
@@ -134,13 +134,13 @@ describe("consent jurisdictions in the detectors", () => {
         json: async () => ({ in_eu: false, country_code: country }),
       });
       const result = await new IPAPIGeoDetector().detect();
-      expect({ country, isEU: result.isEU }).toEqual({ country, isEU: true });
+      expect({ country, required: result.consentRequired }).toEqual({ country, required: true });
     }
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ in_eu: false, country_code: "US" }),
     });
-    expect((await new IPAPIGeoDetector().detect()).isEU).toBe(false);
+    expect((await new IPAPIGeoDetector().detect()).consentRequired).toBe(false);
   });
 
   it("IP API: a response without a country code is a failure, not a visitor outside", async () => {
@@ -163,7 +163,7 @@ describe("consent jurisdictions in the detectors", () => {
 
     const result = await new CloudflareGeoDetector().detect();
 
-    expect(result).toEqual({ isEU: true, countryCode: "GB", method: "cloudflare" });
+    expect(result).toEqual({ consentRequired: true, countryCode: "GB", method: "cloudflare" });
   });
 
   it("Cloudflare: an EU flag of false without a country is a failure", async () => {
@@ -185,7 +185,7 @@ describe("consent jurisdictions in the detectors", () => {
     });
 
     expect(await new CloudflareGeoDetector().detect()).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: undefined,
       method: "cloudflare",
     });
@@ -196,7 +196,7 @@ describe("consent jurisdictions in the detectors", () => {
       ok: true,
       json: async () => ({ isEU: false, countryCode: "NO" }),
     });
-    expect((await new WorkerGeoDetector("/api/geo").detect()).isEU).toBe(true);
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(true);
 
     mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ isEU: false }) });
     await expect(new WorkerGeoDetector("/api/geo").detect()).rejects.toThrow(
@@ -224,7 +224,7 @@ describe("consent jurisdictions in the detectors", () => {
       const result = await new TimezoneGeoDetector().detect();
       expect({ zone, ...result }).toEqual({
         zone,
-        isEU: true,
+        consentRequired: true,
         countryCode: country,
         method: "fallback",
       });
@@ -236,11 +236,14 @@ describe("consent jurisdictions in the detectors", () => {
     // the table with no rule behind them.
     for (const zone of ["Europe/Sarajevo", "Europe/Monaco", "Europe/Vatican", "America/New_York"]) {
       useTimezone(zone);
-      expect(await new TimezoneGeoDetector().detect()).toEqual({ isEU: false, method: "fallback" });
+      expect(await new TimezoneGeoDetector().detect()).toEqual({
+        consentRequired: false,
+        method: "fallback",
+      });
     }
     useTimezone("Europe/Zurich");
     expect(await new TimezoneGeoDetector().detect()).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "CH",
       method: "fallback",
     });
@@ -281,7 +284,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("worker");
-    expect(result.isEU).toBe(true);
+    expect(result.consentRequired).toBe(true);
   });
 
   it("skips worker when geoUrl is not provided", async () => {
@@ -297,7 +300,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("api");
-    expect(result.isEU).toBe(false);
+    expect(result.consentRequired).toBe(false);
   });
 
   it("falls through to ipapi when worker also fails", async () => {
@@ -315,7 +318,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("api");
-    expect(result.isEU).toBe(true);
+    expect(result.consentRequired).toBe(true);
   });
 });
 
@@ -337,7 +340,7 @@ describe("AutoGeoDetector detection log", () => {
     expect(result.log!.length).toBe(1);
     expect(result.log![0].method).toBe("cloudflare");
     expect(result.log![0].status).toBe("success");
-    expect(result.log![0].result).toEqual({ isEU: true, countryCode: "DE" });
+    expect(result.log![0].result).toEqual({ consentRequired: true, countryCode: "DE" });
     expect(result.log![0].duration).toBeGreaterThanOrEqual(0);
   });
 
@@ -364,7 +367,7 @@ describe("AutoGeoDetector detection log", () => {
     // Second entry: worker succeeded
     expect(result.log![1].method).toBe("worker");
     expect(result.log![1].status).toBe("success");
-    expect(result.log![1].result).toEqual({ isEU: true, countryCode: "FR" });
+    expect(result.log![1].result).toEqual({ consentRequired: true, countryCode: "FR" });
   });
 
   it("includes skipped entry when geoUrl not provided", async () => {
@@ -451,9 +454,9 @@ describe("createGeoDetector", () => {
 
   it("returns manual detectors for always/never modes", async () => {
     const always = createGeoDetector("always");
-    expect((await always.detect()).isEU).toBe(true);
+    expect((await always.detect()).consentRequired).toBe(true);
 
     const never = createGeoDetector("never");
-    expect((await never.detect()).isEU).toBe(false);
+    expect((await never.detect()).consentRequired).toBe(false);
   });
 });

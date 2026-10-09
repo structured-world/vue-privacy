@@ -65,19 +65,19 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
-  consent,        // Ref<StoredConsent | null>
-  isEU,           // Ref<boolean>
-  hasConsent,     // Ref<boolean>
-  acceptAll,      // () => Promise<void>
-  rejectAll,      // () => Promise<void>
-  resetConsent,   // () => void
-  savePreferences // (categories) => Promise<void>
+  getConsent,        // () => StoredConsent | null
+  isConsentRequired, // () => boolean | null (isEUUser is an alias)
+  hasConsent,        // () => boolean
+  acceptAll,         // () => Promise<void>
+  rejectAll,         // () => Promise<void>
+  resetConsent,      // () => void
+  savePreferences    // (categories) => Promise<void>
 } = useConsent();
 </script>
 
 <template>
-  <div v-if="hasConsent">
-    <p>Analytics: {{ consent?.categories.analytics ? 'Yes' : 'No' }}</p>
+  <div v-if="hasConsent()">
+    <p>Analytics: {{ getConsent()?.categories.analytics ? 'Yes' : 'No' }}</p>
     <button @click="resetConsent">Manage Cookies</button>
   </div>
 </template>

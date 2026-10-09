@@ -110,7 +110,7 @@ Any other zone counts as outside consent jurisdictions. `UTC` and `Etc/*` carry 
 
 ## Custom Detector
 
-Implement your own detection logic. Return the country code when you have it: the library decides from it against `consentJurisdictions`. Without a country, `isEU` is your answer to "does this visitor need to be asked"; throw when you cannot tell, and `geoFailure` applies.
+Implement your own detection logic. Return the country code when you have it: the library decides from it against `consentJurisdictions`. Without a country, `consentRequired` is your answer to "does this visitor need to be asked"; throw when you cannot tell, and `geoFailure` applies.
 
 ```typescript
 import type { GeoDetector } from '@structured-world/vue-privacy';
@@ -121,7 +121,7 @@ const myDetector: GeoDetector = {
     if (!response.ok) throw new Error('geo lookup failed');
     const data = await response.json();
     return {
-      isEU: false, // decided from countryCode
+      consentRequired: false, // decided from countryCode
       countryCode: data.country,
       method: 'manual' as const,
     };

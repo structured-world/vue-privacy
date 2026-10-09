@@ -226,19 +226,26 @@ interface GoogleConsentSignals {
 
 ```typescript
 interface GeoDetector {
-  /** Detect if user is in the EU */
+  /** Detect the visitor's country and whether it requires consent; throw when unknown */
   detect(): Promise<GeoDetectionResult>;
 }
 
 interface GeoDetectionResult {
-  /** Whether the user is in the EU */
-  isEU: boolean;
+  /**
+   * Whether the visitor is in a consent jurisdiction. With countryCode set the manager
+   * decides from the country and consentJurisdictions instead.
+   */
+  consentRequired: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
+  /** Region/state (e.g. "California") */
+  region?: string;
   /** Detection method used */
-  method: "cloudflare" | "api" | "fallback" | "manual";
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
 }
 ```
+
+`StoredConsent.consentRequired` records whether the choice was made in a consent jurisdiction. Consent cookies written by earlier versions carry the same flag as `isEU` and are read as `consentRequired`.
 
 ## Built-in Geo Detectors
 

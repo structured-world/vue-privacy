@@ -155,7 +155,7 @@ export interface StoredConsent {
    * Whether the choice was made in a consent jurisdiction (see
    * {@link ConsentConfig.consentJurisdictions}); such a choice stands wherever the visitor goes
    */
-  isEU?: boolean;
+  consentRequired?: boolean;
   /** Geo-detection method used when consent was given */
   geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
   /** Country code detected when consent was given */
@@ -219,7 +219,7 @@ export interface GeoDetectionResult {
    * decides from the country and its `consentJurisdictions` instead; a detector that cannot
    * tell throws, and the manager applies `geoFailure`.
    */
-  isEU: boolean;
+  consentRequired: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
   /** Region/state code (e.g., "California", "CA" for US states) */
@@ -238,7 +238,7 @@ export interface GeoDetectionLogEntry {
   /** Status of this detection attempt */
   status: "success" | "failed" | "skipped";
   /** Result if successful */
-  result?: { isEU: boolean; countryCode?: string; region?: string };
+  result?: { consentRequired: boolean; countryCode?: string; region?: string };
   /** Error message if failed */
   error?: string;
   /** Duration of the attempt in milliseconds */

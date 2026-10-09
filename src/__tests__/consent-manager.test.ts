@@ -2,10 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 
-function createMockGeoDetector(isEU = false, countryCode?: string, region?: string) {
+function createMockGeoDetector(consentRequired = false, countryCode?: string, region?: string) {
   return {
     detect: vi.fn().mockResolvedValue({
-      isEU,
+      consentRequired,
       countryCode,
       region,
       method: "manual" as const,
@@ -83,7 +83,9 @@ describe("ConsentManager with remote storage", () => {
 
     const manager = new ConsentManager({
       storage: mockStorage,
-      geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" }) },
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" }),
+      },
       version: "1.0",
     });
 
@@ -309,7 +311,7 @@ describe("ConsentManager with remote storage", () => {
     // Banner should be shown for GDPR disclosure
     expect(showBanner).toHaveBeenCalledTimes(1);
 
-    // isEU should reflect current location
+    // consentRequired should reflect current location
     expect(manager.isEUUser()).toBe(true);
   });
 
@@ -432,7 +434,7 @@ describe("ConsentManager.getGeoResult()", () => {
   it("returns full geo result for EU user after init", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "DE",
         method: "cloudflare" as const,
       }),
@@ -443,7 +445,7 @@ describe("ConsentManager.getGeoResult()", () => {
 
     const result = manager.getGeoResult();
     expect(result).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: "DE",
       method: "cloudflare",
     });
@@ -452,7 +454,7 @@ describe("ConsentManager.getGeoResult()", () => {
   it("returns full geo result for non-EU user after init", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
         method: "api" as const,
       }),
@@ -463,7 +465,7 @@ describe("ConsentManager.getGeoResult()", () => {
 
     const result = manager.getGeoResult();
     expect(result).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "US",
       method: "api",
     });
@@ -476,7 +478,7 @@ describe("ConsentManager.getGeoResult()", () => {
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: true,
+        consentRequired: true,
         geoMethod: "cloudflare",
         countryCode: "DE",
       })
@@ -485,7 +487,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // Mock geo detector to verify it's NOT called (EU consent fast-path)
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
         method: "api" as const,
       }),
@@ -497,13 +499,13 @@ describe("ConsentManager.getGeoResult()", () => {
     // Geo detection should NOT be called for EU consent (fast-path optimization)
     expect(geoDetector.detect).not.toHaveBeenCalled();
 
-    // isEU should be restored from cookie
+    // consentRequired should be restored from cookie
     expect(manager.isEUUser()).toBe(true);
 
     // geoResult should be reconstructed from stored data
     const geoResult = manager.getGeoResult();
     expect(geoResult).not.toBeNull();
-    expect(geoResult!.isEU).toBe(true);
+    expect(geoResult!.consentRequired).toBe(true);
     expect(geoResult!.method).toBe("cloudflare");
     expect(geoResult!.countryCode).toBe("DE");
   });
@@ -521,7 +523,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // Mock geo detector to return non-EU (consent should be kept)
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
         method: "api" as const,
       }),
@@ -532,26 +534,26 @@ describe("ConsentManager.getGeoResult()", () => {
 
     // Geo detection should have run to check for roaming
     expect(geoDetector.detect).toHaveBeenCalled();
-    // isEU should now reflect current location
+    // consentRequired should now reflect current location
     expect(manager.isEUUser()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("US");
   });
 
   it("clears consent and shows banner when user with legacy cookie roams to EU", async () => {
-    // Legacy cookie WITHOUT isEU field (pre-roaming-protection format)
+    // Legacy cookie WITHOUT consentRequired field (pre-roaming-protection format)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: true, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        // No isEU field — legacy cookie, triggers roaming check
+        // No consentRequired field — legacy cookie, triggers roaming check
       })
     )}`;
 
     // User is now in EU (roaming scenario)
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "DE",
         method: "cloudflare" as const,
       }),
@@ -569,26 +571,26 @@ describe("ConsentManager.getGeoResult()", () => {
     // Banner should be shown for GDPR disclosure
     expect(showBanner).toHaveBeenCalledTimes(1);
 
-    // isEU should reflect current location
+    // consentRequired should reflect current location
     expect(manager.isEUUser()).toBe(true);
     expect(manager.getGeoResult()?.countryCode).toBe("DE");
   });
 
   it("keeps consent when user with legacy cookie stays outside EU", async () => {
-    // Legacy cookie WITHOUT isEU field (pre-roaming-protection format)
+    // Legacy cookie WITHOUT consentRequired field (pre-roaming-protection format)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        // No isEU field — legacy cookie, triggers roaming check
+        // No consentRequired field — legacy cookie, triggers roaming check
       })
     )}`;
 
     // User is still outside EU
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "CA",
         method: "api" as const,
       }),
@@ -609,20 +611,20 @@ describe("ConsentManager.getGeoResult()", () => {
     // Banner should NOT be shown
     expect(showBanner).not.toHaveBeenCalled();
 
-    // isEU should reflect current location
+    // consentRequired should reflect current location
     expect(manager.isEUUser()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
 
   it("keeps a legacy cookie's consent when geo detection fails with geoFailure 'grant'", async () => {
     // The default ('require-consent') asks again instead; see consent-jurisdiction.test.ts.
-    // Legacy cookie WITHOUT isEU field (pre-roaming-protection format)
+    // Legacy cookie WITHOUT consentRequired field (pre-roaming-protection format)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        // No isEU field — legacy cookie, triggers roaming check
+        // No consentRequired field — legacy cookie, triggers roaming check
       })
     )}`;
 
@@ -649,7 +651,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // Banner should NOT be shown (fail-safe behavior)
     expect(showBanner).not.toHaveBeenCalled();
 
-    // isEU is null because: legacy cookie has no isEU field to restore from,
+    // consentRequired is null because: legacy cookie has no such field to restore from,
     // and geo detection failed. The roaming check returned false (fail-safe),
     // consent was applied, and init() returned early without running main geo flow.
     expect(manager.isEUUser()).toBeNull();
@@ -660,14 +662,14 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(log.some((entry) => entry.status === "failed")).toBe(true);
   });
 
-  it("clears consent and shows banner when user with isEU=false roams to EU", async () => {
-    // User gave consent with explicit isEU=false (e.g., CCPA in California)
+  it("clears consent and shows banner when user with consentRequired=false roams to EU", async () => {
+    // User gave consent with explicit consentRequired=false (e.g., CCPA in California)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: true, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: false,
+        consentRequired: false,
         geoMethod: "api",
         countryCode: "US",
         region: "California",
@@ -677,7 +679,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // User has now traveled to EU
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "DE",
         method: "cloudflare" as const,
       }),
@@ -697,19 +699,19 @@ describe("ConsentManager.getGeoResult()", () => {
     // Banner should be shown
     expect(showBanner).toHaveBeenCalledTimes(1);
 
-    // isEU should reflect current location
+    // consentRequired should reflect current location
     expect(manager.isEUUser()).toBe(true);
     expect(manager.getGeoResult()?.countryCode).toBe("DE");
   });
 
-  it("keeps consent when user with isEU=false stays outside EU", async () => {
-    // User gave consent with explicit isEU=false (e.g., CCPA in California)
+  it("keeps consent when user with consentRequired=false stays outside EU", async () => {
+    // User gave consent with explicit consentRequired=false (e.g., CCPA in California)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: true, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: false,
+        consentRequired: false,
         geoMethod: "api",
         countryCode: "US",
         region: "California",
@@ -719,7 +721,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // User is still outside EU (traveled to Canada)
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "CA",
         method: "api" as const,
       }),
@@ -739,7 +741,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // Banner should NOT be shown
     expect(showBanner).not.toHaveBeenCalled();
 
-    // isEU should reflect current location
+    // consentRequired should reflect current location
     expect(manager.isEUUser()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
@@ -754,7 +756,7 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
   it("returns log entry when geo detection runs", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "DE",
         method: "cloudflare" as const,
       }),
@@ -767,7 +769,7 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
     expect(log.length).toBe(1);
     expect(log[0].method).toBe("cloudflare");
     expect(log[0].status).toBe("success");
-    expect(log[0].result).toEqual({ isEU: true, countryCode: "DE" });
+    expect(log[0].result).toEqual({ consentRequired: true, countryCode: "DE" });
   });
 
   it("restores log entry from cookie with geo data", async () => {
@@ -776,7 +778,7 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: true,
+        consentRequired: true,
         geoMethod: "worker",
         countryCode: "FR",
       })
@@ -789,7 +791,7 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
     expect(log.length).toBe(1);
     expect(log[0].method).toBe("worker");
     expect(log[0].status).toBe("success");
-    expect(log[0].result).toEqual({ isEU: true, countryCode: "FR" });
+    expect(log[0].result).toEqual({ consentRequired: true, countryCode: "FR" });
   });
 });
 
@@ -797,7 +799,7 @@ describe("ConsentManager geo data persistence", () => {
   it("stores geo data in cookie when accepting consent", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "IT",
         method: "api" as const,
       }),
@@ -813,7 +815,7 @@ describe("ConsentManager geo data persistence", () => {
     );
     const stored = JSON.parse(cookieValue);
 
-    expect(stored.isEU).toBe(true);
+    expect(stored.consentRequired).toBe(true);
     expect(stored.geoMethod).toBe("api");
     expect(stored.countryCode).toBe("IT");
   });
@@ -821,7 +823,7 @@ describe("ConsentManager geo data persistence", () => {
   it("stores geo data when saving preferences", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: true,
+        consentRequired: true,
         countryCode: "ES",
         method: "worker" as const,
       }),
@@ -836,7 +838,7 @@ describe("ConsentManager geo data persistence", () => {
     );
     const stored = JSON.parse(cookieValue);
 
-    expect(stored.isEU).toBe(true);
+    expect(stored.consentRequired).toBe(true);
     expect(stored.geoMethod).toBe("worker");
     expect(stored.countryCode).toBe("ES");
   });
@@ -844,10 +846,10 @@ describe("ConsentManager geo data persistence", () => {
   it("stores geo data for non-EU user who explicitly saves preferences", async () => {
     // Non-EU users normally get automatic "accept all" without storing consent.
     // But if they visit preference center and save custom preferences,
-    // the geo data (isEU=false) should be persisted.
+    // the geo data (consentRequired=false) should be persisted.
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
         method: "api" as const,
       }),
@@ -865,7 +867,7 @@ describe("ConsentManager geo data persistence", () => {
     const stored = JSON.parse(cookieValue);
 
     // Geo data should be stored even for non-EU users
-    expect(stored.isEU).toBe(false);
+    expect(stored.consentRequired).toBe(false);
     expect(stored.geoMethod).toBe("api");
     expect(stored.countryCode).toBe("US");
   });
@@ -889,8 +891,8 @@ describe("ConsentManager.trackEvent()", () => {
   });
 
   it("does not send event when analytics consent is denied", async () => {
-    // Pre-set consent with analytics=false and isEU=true (EU consent is valid everywhere)
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: false, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0", isEU: true }))}`;
+    // Pre-set consent with analytics=false and consentRequired=true (EU consent is valid everywhere)
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify({ categories: { analytics: false, marketing: false, functional: true }, timestamp: Date.now(), version: "1.0", consentRequired: true }))}`;
 
     const manager = new ConsentManager({ version: "1.0" });
     await manager.init();
@@ -1441,17 +1443,17 @@ describe("ConsentManager CCPA flow", () => {
     });
     expect(stored.region).toBe("California");
     expect(stored.countryCode).toBe("US");
-    expect(stored.isEU).toBe(false);
+    expect(stored.consentRequired).toBe(false);
   });
 
   it("runs geo detection for GDPR roaming check when CCPA consent exists", async () => {
-    // Pre-fill cookie with CCPA consent (isEU=false)
+    // Pre-fill cookie with CCPA consent (consentRequired=false)
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: true, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: false,
+        consentRequired: false,
         geoMethod: "worker",
         countryCode: "US",
         region: "California",
@@ -1491,17 +1493,17 @@ describe("ConsentManager region persistence", () => {
 
     expect(stored.region).toBe("California");
     expect(stored.countryCode).toBe("US");
-    expect(stored.isEU).toBe(false);
+    expect(stored.consentRequired).toBe(false);
   });
 
-  it("restores region from geo detection when consent has isEU=false", async () => {
-    // Cookie with isEU=false triggers roaming check
+  it("restores region from geo detection when consent has consentRequired=false", async () => {
+    // Cookie with consentRequired=false triggers roaming check
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
-        isEU: false,
+        consentRequired: false,
         geoMethod: "worker",
         countryCode: "US",
         region: "Virginia",

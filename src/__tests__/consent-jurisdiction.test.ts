@@ -43,10 +43,10 @@ async function started(config: ConsentConfig): Promise<{
 
 describe("consent jurisdictions", () => {
   it("asks a visitor whose country requires consent, whatever the detector's EU flag", async () => {
-    // Regression: a detector answering isEU: false for Norway (ipapi's in_eu, Cloudflare's flag,
+    // Regression: a detector answering consentRequired:false for Norway (ipapi's in_eu, Cloudflare's flag,
     // a custom detector) granted every category silently.
     const { manager, showBanner } = await started({
-      geoDetector: detecting({ isEU: false, countryCode: "NO", method: "api" }),
+      geoDetector: detecting({ consentRequired: false, countryCode: "NO", method: "api" }),
     });
 
     expect(showBanner).toHaveBeenCalledTimes(1);
@@ -58,7 +58,7 @@ describe("consent jurisdictions", () => {
     // The wrong-result direction: a detector's stale `true` for a non-consent country does not
     // stand once the country is known.
     const { manager, showBanner } = await started({
-      geoDetector: detecting({ isEU: true, countryCode: "US", method: "api" }),
+      geoDetector: detecting({ consentRequired: true, countryCode: "US", method: "api" }),
     });
 
     expect(showBanner).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ describe("consent jurisdictions", () => {
   });
 
   it("asks a visitor in Switzerland only when CH is configured", async () => {
-    const swiss = { isEU: false, countryCode: "CH", method: "api" as const };
+    const swiss = { consentRequired: false, countryCode: "CH", method: "api" as const };
 
     const byDefault = await started({ geoDetector: detecting(swiss) });
     expect(byDefault.showBanner).not.toHaveBeenCalled();
@@ -76,20 +76,24 @@ describe("consent jurisdictions", () => {
       consentJurisdictions: ["EEA", "UK", "CH"],
     });
     expect(withCH.showBanner).toHaveBeenCalledTimes(1);
-    expect(withCH.manager.getGeoResult()?.isEU).toBe(true);
+    expect(withCH.manager.getGeoResult()?.consentRequired).toBe(true);
   });
 
   it("follows the detector's answer when it gives no country", async () => {
-    const asked = await started({ geoDetector: detecting({ isEU: true, method: "manual" }) });
+    const asked = await started({
+      geoDetector: detecting({ consentRequired: true, method: "manual" }),
+    });
     expect(asked.showBanner).toHaveBeenCalledTimes(1);
 
-    const notAsked = await started({ geoDetector: detecting({ isEU: false, method: "manual" }) });
+    const notAsked = await started({
+      geoDetector: detecting({ consentRequired: false, method: "manual" }),
+    });
     expect(notAsked.showBanner).not.toHaveBeenCalled();
   });
 
   it("keeps isEUUser() as an alias of isConsentRequired()", async () => {
     const { manager } = await started({
-      geoDetector: detecting({ isEU: false, countryCode: "GB", method: "api" }),
+      geoDetector: detecting({ consentRequired: false, countryCode: "GB", method: "api" }),
     });
 
     expect(manager.isEUUser()).toBe(true);
@@ -99,13 +103,66 @@ describe("consent jurisdictions", () => {
   it("stores the choice of a visitor asked by country as given in a consent jurisdiction", async () => {
     // The stored flag lets a later visit skip the roaming check, as for a choice made in the EU.
     const { manager } = await started({
-      geoDetector: detecting({ isEU: false, countryCode: "IS", method: "api" }),
+      geoDetector: detecting({ consentRequired: false, countryCode: "IS", method: "api" }),
     });
 
     await manager.rejectAll();
 
-    expect(manager.getConsent()?.isEU).toBe(true);
+    expect(manager.getConsent()?.consentRequired).toBe(true);
     expect(manager.getConsent()?.countryCode).toBe("IS");
+  });
+});
+
+/** A consent cookie as earlier versions wrote it, with the location flag under `isEU`. */
+function legacyCookie(isEU: boolean): string {
+  return `consent_preferences=${encodeURIComponent(
+    JSON.stringify({
+      categories: { analytics: true, marketing: false, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      isEU,
+      countryCode: isEU ? "DE" : "US",
+    })
+  )}`;
+}
+
+describe("consent cookies written before consentRequired", () => {
+  it("restores a choice made in a consent jurisdiction without asking again", async () => {
+    // The flag was renamed; a visitor's stored choice must survive the upgrade.
+    cookieStore = legacyCookie(true);
+    const detect = vi.fn();
+
+    const { manager, showBanner } = await started({ geoDetector: { detect } });
+
+    expect(detect).not.toHaveBeenCalled();
+    expect(showBanner).not.toHaveBeenCalled();
+    expect(manager.isConsentRequired()).toBe(true);
+    expect(manager.getConsent()?.consentRequired).toBe(true);
+    expect(manager.getConsent()).not.toHaveProperty("isEU");
+  });
+
+  it("checks the location of a choice made outside, as before", async () => {
+    cookieStore = legacyCookie(false);
+    const detect = vi.fn().mockResolvedValue({ consentRequired: false, countryCode: "NO" });
+
+    const { showBanner } = await started({ geoDetector: { detect } });
+
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes the flag under its new name only", async () => {
+    storeConsent(
+      {
+        categories: { analytics: false, marketing: false, functional: false },
+        consentRequired: true,
+      },
+      { version: "1.0" }
+    );
+
+    const raw = JSON.parse(decodeURIComponent(cookieStore.split("=").slice(1).join("=")));
+    expect(raw.consentRequired).toBe(true);
+    expect(raw).not.toHaveProperty("isEU");
   });
 });
 
@@ -137,7 +194,7 @@ describe("geoFailure", () => {
     storeConsent(
       {
         categories: { analytics: true, marketing: true, functional: true },
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
       },
       { version: "1.0" }
@@ -154,7 +211,7 @@ describe("geoFailure", () => {
     storeConsent(
       {
         categories: { analytics: true, marketing: false, functional: true },
-        isEU: false,
+        consentRequired: false,
         countryCode: "US",
       },
       { version: "1.0" }

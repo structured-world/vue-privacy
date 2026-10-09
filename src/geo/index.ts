@@ -21,9 +21,8 @@ export class CloudflareGeoDetector implements GeoDetector {
   }
 
   async detect(): Promise<GeoDetectionResult> {
-    if (typeof document === "undefined") {
-      return { isEU: false, method: "cloudflare" };
-    }
+    // Without a page (server rendering) there is no response to read: no answer.
+    if (typeof document === "undefined") throw new Error("Cloudflare geo-detection failed");
 
     try {
       // Try to get the header by making a HEAD request to current page
@@ -40,7 +39,7 @@ export class CloudflareGeoDetector implements GeoDetector {
       // cannot tell a visitor in Norway or the UK from one in the US.
       if (!countryCode && !inEU) throw new Error("Cloudflare headers not present");
       return {
-        isEU: requiresConsent(countryCode, inEU),
+        consentRequired: requiresConsent(countryCode, inEU),
         countryCode,
         method: "cloudflare",
       };
@@ -75,7 +74,7 @@ export class IPAPIGeoDetector implements GeoDetector {
       if (!data.country_code) throw new Error("No country in the response");
 
       return {
-        isEU: requiresConsent(data.country_code, false),
+        consentRequired: requiresConsent(data.country_code, false),
         countryCode: data.country_code,
         region: data.region ?? undefined,
         method: "api",
@@ -103,6 +102,7 @@ export class WorkerGeoDetector implements GeoDetector {
     try {
       const response = await fetch(this.geoUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // The endpoint's own response format (vue-privacy-worker): `isEU` is Cloudflare's EU flag.
       const data = (await response.json()) as {
         isEU?: boolean;
         countryCode?: string;
@@ -113,7 +113,7 @@ export class WorkerGeoDetector implements GeoDetector {
       if (!data.countryCode && !inEU) throw new Error("No country in the response");
 
       return {
-        isEU: requiresConsent(data.countryCode, inEU),
+        consentRequired: requiresConsent(data.countryCode, inEU),
         countryCode: data.countryCode ?? undefined,
         region: data.region ?? undefined,
         method: "worker",
@@ -145,8 +145,12 @@ export class TimezoneGeoDetector implements GeoDetector {
       throw new Error("Timezone geo-detection failed");
     }
     const countryCode = TIMEZONE_COUNTRIES[timezone];
-    if (countryCode === undefined) return { isEU: false, method: "fallback" };
-    return { isEU: requiresConsent(countryCode, false), countryCode, method: "fallback" };
+    if (countryCode === undefined) return { consentRequired: false, method: "fallback" };
+    return {
+      consentRequired: requiresConsent(countryCode, false),
+      countryCode,
+      method: "fallback",
+    };
   }
 }
 
@@ -190,7 +194,11 @@ export class AutoGeoDetector implements GeoDetector {
       log.push({
         method: "cloudflare",
         status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
+        result: {
+          consentRequired: result.consentRequired,
+          countryCode: result.countryCode,
+          region: result.region,
+        },
         duration: Date.now() - cfStart,
       });
       return { ...result, log };
@@ -211,7 +219,11 @@ export class AutoGeoDetector implements GeoDetector {
         log.push({
           method: "worker",
           status: "success",
-          result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
+          result: {
+            consentRequired: result.consentRequired,
+            countryCode: result.countryCode,
+            region: result.region,
+          },
           duration: Date.now() - workerStart,
         });
         return { ...result, log };
@@ -239,7 +251,11 @@ export class AutoGeoDetector implements GeoDetector {
       log.push({
         method: "api",
         status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
+        result: {
+          consentRequired: result.consentRequired,
+          countryCode: result.countryCode,
+          region: result.region,
+        },
         duration: Date.now() - apiStart,
       });
       return { ...result, log };
@@ -259,7 +275,7 @@ export class AutoGeoDetector implements GeoDetector {
       log.push({
         method: "fallback",
         status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode },
+        result: { consentRequired: result.consentRequired, countryCode: result.countryCode },
         duration: Date.now() - tzStart,
       });
       return { ...result, log };
@@ -293,11 +309,11 @@ export function createGeoDetector(
       return new IPAPIGeoDetector();
     case "always":
       return {
-        detect: async () => ({ isEU: true, method: "manual" as const }),
+        detect: async () => ({ consentRequired: true, method: "manual" as const }),
       };
     case "never":
       return {
-        detect: async () => ({ isEU: false, method: "manual" as const }),
+        detect: async () => ({ consentRequired: false, method: "manual" as const }),
       };
     case "auto":
     default:

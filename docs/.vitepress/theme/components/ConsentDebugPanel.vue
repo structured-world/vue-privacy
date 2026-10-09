@@ -12,7 +12,7 @@ import type {
 const expanded = ref(false);
 const initialized = ref(false);
 const hasConsent = ref(false);
-const isEU = ref<boolean | null>(null);
+const consentRequired = ref<boolean | null>(null);
 const geoResult = ref<GeoDetectionResult | null>(null);
 const geoLog = ref<GeoDetectionLogEntry[]>([]);
 const consent = ref<StoredConsent | null>(null);
@@ -42,7 +42,7 @@ function refresh() {
   if (!consentApi) return;
   initialized.value = consentApi.manager.isInitialized();
   hasConsent.value = consentApi.hasConsent();
-  isEU.value = consentApi.isEUUser();
+  consentRequired.value = consentApi.isConsentRequired();
   geoResult.value = consentApi.getGeoResult();
   geoLog.value = consentApi.manager.getGeoDetectionLog();
   consent.value = consentApi.getConsent();
@@ -141,9 +141,17 @@ onMounted(() => {
             <span :class="hasConsent ? 'val-yes' : 'val-no'">{{ hasConsent ? "Yes" : "No" }}</span>
           </div>
           <div class="debug-row">
-            <span class="debug-label">EU user</span>
-            <span :class="isEU === true ? 'val-yes' : isEU === false ? 'val-no' : 'val-pending'">
-              {{ isEU === null ? "Pending" : isEU ? "Yes" : "No" }}
+            <span class="debug-label">Consent required</span>
+            <span
+              :class="
+                consentRequired === true
+                  ? 'val-yes'
+                  : consentRequired === false
+                    ? 'val-no'
+                    : 'val-pending'
+              "
+            >
+              {{ consentRequired === null ? "Pending" : consentRequired ? "Yes" : "No" }}
             </span>
           </div>
         </div>
@@ -161,8 +169,10 @@ onMounted(() => {
               <span class="val-code">{{ methodLabels[geoResult.method] || geoResult.method }}</span>
             </div>
             <div class="debug-row">
-              <span class="debug-label">Is EU</span>
-              <span :class="geoResult.isEU ? 'val-yes' : 'val-no'">{{ geoResult.isEU }}</span>
+              <span class="debug-label">Consent required</span>
+              <span :class="geoResult.consentRequired ? 'val-yes' : 'val-no'">{{
+                geoResult.consentRequired
+              }}</span>
             </div>
             <!-- Detection Log (collapsible) -->
             <button
@@ -207,7 +217,7 @@ onMounted(() => {
                     </td>
                     <td>
                       <template v-if="entry.result">
-                        EU: {{ entry.result.isEU ? "Yes" : "No" }}
+                        Consent: {{ entry.result.consentRequired ? "Yes" : "No" }}
                         <span v-if="entry.result.countryCode"
                           >({{ entry.result.countryCode }})</span
                         >

@@ -192,7 +192,7 @@ export function useConsent() {
     isCCPAUser: () => manager.isCCPAUser(),
     /** Get the region/state detected for the user */
     getRegion: () => manager.getRegion(),
-    /** Get geo-detection result (country, method, isEU, region) */
+    /** Get geo-detection result (country, method, consentRequired, region) */
     getGeoResult: () => manager.getGeoResult(),
     /** Programmatically show the preference center modal */
     showPreferenceCenter: () => manager.showPreferenceCenter(),

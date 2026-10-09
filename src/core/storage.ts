@@ -205,16 +205,22 @@ export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredCon
   if (!raw) return null;
 
   try {
-    const stored = JSON.parse(raw) as StoredConsent;
+    // Cookies written before the field was renamed carry `isEU`, with the same meaning.
+    const { isEU, ...stored } = JSON.parse(raw) as StoredConsent & { isEU?: boolean };
 
     // Check version - if different, consent is invalid
     if (stored.version !== version) {
       return null;
     }
 
+    const consentRequired = stored.consentRequired ?? isEU;
     // A category the site no longer uses was never asked about in its current dialog. When that
     // leaves nothing granted, the consent manager's restore drops consent_uid too.
-    return { ...stored, categories: limitToUsed(stored.categories, config) };
+    return {
+      ...stored,
+      ...(consentRequired !== undefined && { consentRequired }),
+      categories: limitToUsed(stored.categories, config),
+    };
   } catch {
     return null;
   }
@@ -239,7 +245,7 @@ export function storeConsent(
     timestamp: consent.timestamp ?? Date.now(),
     version,
     // Preserve geo data if provided (use !== undefined for consistent handling)
-    ...(consent.isEU !== undefined && { isEU: consent.isEU }),
+    ...(consent.consentRequired !== undefined && { consentRequired: consent.consentRequired }),
     ...(consent.geoMethod !== undefined && { geoMethod: consent.geoMethod }),
     ...(consent.countryCode !== undefined && { countryCode: consent.countryCode }),
     ...(consent.region !== undefined && { region: consent.region }),
