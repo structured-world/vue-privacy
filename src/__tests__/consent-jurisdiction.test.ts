@@ -293,6 +293,47 @@ describe("geoFailure", () => {
     expect(manager.isConsentRequired()).toBe(false);
   });
 
+  it("restores a remote refusal when the lookup fails with 'grant'", async () => {
+    // Regression: the failed lookup inside the remote restore was taken for a failed storage
+    // read; the outside-jurisdiction grant then replaced the stored refusal.
+    cookieStore = "consent_uid=visitor-1";
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    const storage = { get: vi.fn().mockResolvedValue(refusal), set: vi.fn() };
+
+    const { manager, showBanner } = await started({
+      storage,
+      geoDetector: failing,
+      geoFailure: "grant",
+    });
+
+    expect(storage.get).toHaveBeenCalledWith("visitor-1", "1.0");
+    expect(showBanner).not.toHaveBeenCalled();
+    expect(manager.getConsent()?.categories).toEqual(refusal.categories);
+  });
+
+  it("asks, keeping the remote identity, when the lookup fails for a remote choice", async () => {
+    // By default a failed lookup counts as a consent jurisdiction: the remote choice, made
+    // without the disclosure, is not adopted, but the location is only unknown, so the
+    // identifier that reaches it stays.
+    cookieStore = "consent_uid=visitor-1";
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    };
+    const storage = { get: vi.fn().mockResolvedValue(grant), set: vi.fn() };
+
+    const { manager, showBanner } = await started({ storage, geoDetector: failing });
+
+    expect(showBanner).toHaveBeenCalledTimes(1);
+    expect(manager.getConsent()).toBeNull();
+    expect(cookieStore).toContain("consent_uid=visitor-1");
+  });
+
   it("keeps the attempts of a failed auto detection in the log", async () => {
     // The debug panel shows which methods failed, not a single generic entry.
     const log = [

@@ -194,6 +194,11 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
   writeCookie(cookie);
 }
 
+/** A plain JSON object (not null, not an array). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** The fields the consent cookie holds. */
 const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
 
@@ -207,12 +212,15 @@ function parseConsentCookie(
 ): { consent: StoredConsent; outdated: boolean } | null {
   const raw = getCookie(config.cookie?.name ?? DEFAULT_CONFIG.cookie.name);
   if (!raw) return null;
-  let parsed: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
+  // Valid JSON that is no consent record (null, a number, a record without categories, written
+  // by hand or by another app under the same name) counts as no cookie.
+  if (!isRecord(parsed) || !isRecord(parsed.categories)) return null;
   const stored = parsed as unknown as StoredConsent & { isEU?: boolean };
   const consentRequired = stored.consentRequired ?? stored.isEU;
   return {

@@ -461,22 +461,32 @@ export class ConsentManager {
   ): Promise<boolean> {
     // Roaming protection: remote storage doesn't include geo data, so we must check the current
     // location before restoring. In a consent jurisdiction the visitor needs fresh consent.
-    const geoResult = await this.performGeoDetection();
+    // A failed lookup is settled here by geoFailure: the record was read, and must not be taken
+    // for a failed storage read (with 'grant', the jurisdiction's grant would replace it).
+    let located = true;
+    try {
+      await this.performGeoDetection();
+    } catch (error) {
+      located = false;
+      this.applyGeoFailure(error, " for remote consent");
+    }
     if (this.supersededSince(epoch)) return true;
+    const required = this.consentRequired === true;
 
     // Another tab may have saved a choice, or reset, while the record was fetched: that
     // is newer than the record, which must not be written over it.
     const current = getStoredConsent(this.config);
-    if (current && (!geoResult.consentRequired || current.consentRequired === true)) {
+    if (current && (!required || current.consentRequired === true)) {
       this.restore();
       return true;
     }
     // Reset in another tab meanwhile: undecided again, decided like a first visit.
     if (getConsentUid() !== uid) return false;
-    if (geoResult.consentRequired) {
-      // In a consent jurisdiction — cannot use remote consent without disclosure.
-      // Clear consent_uid and fall through to show banner.
-      clearConsentUid(this.config);
+    if (required) {
+      // In a consent jurisdiction — cannot use remote consent without disclosure: the banner
+      // asks. consent_uid is cleared only for a known location; after a failed lookup the
+      // visitor may well be outside, where the next visit can still restore the record.
+      if (located) clearConsentUid(this.config);
       return false;
     }
     // Outside — safe to restore remote consent. Note: on next page load, this cookie (with

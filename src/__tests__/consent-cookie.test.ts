@@ -185,6 +185,25 @@ describe("the consent cookie", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
+  it("treats a consent cookie that is valid JSON but no record as absent", async () => {
+    // Regression: `null` (or a number, or a record without categories) parsed fine and then
+    // threw while being read, failing init() instead of showing the banner.
+    for (const value of ["null", "42", '"text"', "[]", '{"version":"1.0"}', "{broken"]) {
+      cookieStore = `consent_preferences=${encodeURIComponent(value)}`;
+      const showBanner = vi.fn();
+      const manager = new ConsentManager({
+        version: "1.0",
+        geoDetector: detecting({ consentRequired: true, countryCode: "DE", method: "api" }),
+      });
+      manager.onShowBanner(showBanner);
+
+      await manager.init();
+
+      expect({ value, banner: showBanner.mock.calls.length }).toEqual({ value, banner: 1 });
+      expect(manager.getConsent()).toBeNull();
+    }
+  });
+
   it("leaves a cookie of the current format as it is on load", async () => {
     // A rewrite on every load would restart the cookie's lifetime with each visit.
     cookieStore = `consent_preferences=${encodeURIComponent(
