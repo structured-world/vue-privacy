@@ -148,6 +148,18 @@ interface ConsentConfig {
   // Google Analytics measurement ID
   gaId?: string;
 
+  // Automatic page_view from the tag's config call (false for SPAs). Default: true
+  sendPageView?: boolean;
+
+  // Google tag configuration, see "Data minimisation" below
+  googleAnalytics?: {
+    config?: GoogleAnalyticsConfigFields;       // fields of gtag('config', gaId, ...)
+    customParameters?: Record<string, unknown>; // custom fields merged into that call
+    set?: GoogleAnalyticsFields;                // gtag('set', ...) before config
+    adsDataRedaction?: boolean;                 // gtag('set', 'ads_data_redaction', ...)
+    urlPassthrough?: boolean;                   // gtag('set', 'url_passthrough', ...)
+  };
+
   // 'advanced' (default): gtag.js loads for every visitor with denied defaults and Google
   //   receives cookieless pings before any choice and after a refusal.
   // 'basic': nothing reaches Google until the visitor allows analytics. Requires gaId.
@@ -238,6 +250,27 @@ interface ConsentConfig {
 Cookieless pings still carry the visitor's IP address and browser data to Google, and several European regulators treat loading the tag and sending them as processing that needs consent. A site that promises "Google Analytics only with consent" needs `consentMode: 'basic'`.
 
 In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off (no Google tag, no `data-consent-category="analytics"` scripts unblocked, `analytics: false` in `onConsentChange`) and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
+
+### Data minimisation
+
+`googleAnalytics` configures the Google tag inside the consent flow, so a site does not have to call `gtag()` itself before the manager runs:
+
+```typescript
+createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  googleAnalytics: {
+    config: {
+      allow_google_signals: false,             // no reporting on advertising identifiers
+      allow_ad_personalization_signals: false, // no ad personalisation
+      cookie_expires: 60 * 60 * 24 * 90,       // _ga cookies live 90 days (seconds)
+      cookie_update: false,                    // counted from the first visit
+    },
+    adsDataRedaction: true, // strip ad click IDs while ad_storage is denied
+  },
+});
+```
+
+The `set` fields, `ads_data_redaction` and `url_passthrough` go out in one `gtag('set', ...)` after the consent default and before `config`; every `config` field and custom parameter goes into the single `config` call, with `send_page_view` taken from `sendPageView`. The documented fields are typed, so a misspelt or mistyped one fails to compile; `debug_mode` accepts only `true`, because Google keeps debug mode on for `false` as well. In basic mode none of this is sent before the visitor allows analytics; the cookie settings still tell the manager where to delete the `_ga` cookies after a refusal.
 
 ## Composables
 

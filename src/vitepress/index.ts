@@ -85,8 +85,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
         // After explicit denial (analytics: false): events are NOT sent.
         const trackPageInView = (): void => {
           const frontmatter = ctx.router?.route.data.frontmatter as
-            | VitePressGA4Frontmatter
-            | undefined;
+            VitePressGA4Frontmatter | undefined;
           manager.trackPageView(window.location.pathname, frontmatter?.ga4Title);
 
           // Fire ga4Event from frontmatter if defined
@@ -116,8 +115,7 @@ export function enhanceWithConsent(theme: Theme, config: ConsentConfig): Theme {
               // Capture frontmatter BEFORE nextTick to avoid race condition
               // (user might navigate again before nextTick fires)
               const frontmatter = ctx.router.route.data.frontmatter as
-                | VitePressGA4Frontmatter
-                | undefined;
+                VitePressGA4Frontmatter | undefined;
 
               // Wait for Vue to update DOM (including document.title)
               nextTick(() => {

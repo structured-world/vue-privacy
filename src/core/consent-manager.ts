@@ -856,7 +856,7 @@ export class ConsentManager {
     const withdrawn = previous?.analytics_storage !== "denied";
     const stoppable = restoring ? isManagedTagLiveFor(gaId) : tagRunning;
     if (withdrawn && stoppable && this.config.reloadOnWithdrawal) this.scheduleReload();
-    clearAnalyticsCookies(gaId);
+    clearAnalyticsCookies(gaId, this.config.googleAnalytics);
     setAnalyticsDisabled(gaId, true);
     // A refusal itself must not cause a request to Google: no retry of a failed load either.
     this.gaRetryOnFailure = false;
@@ -885,7 +885,11 @@ export class ConsentManager {
       // site's own snippet); this manager's first push is then an update.
       if (hasConsentDefault()) queueConsentUpdate(signals);
       else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
-      queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true);
+      queueGoogleAnalyticsConfig(
+        gaId,
+        this.config.sendPageView ?? true,
+        this.config.googleAnalytics
+      );
     }
   }
 

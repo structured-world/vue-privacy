@@ -93,6 +93,25 @@ describe("clearAnalyticsCookies", () => {
     window.dataLayer = [];
   });
 
+  it("deletes on the cookie settings of the options, with nothing queued yet", () => {
+    // The consent manager's googleAnalytics block names the cookies an earlier page set before
+    // this page queued any command; both its set and config fields count.
+    clearAnalyticsCookies("G-TEST123", {
+      set: { cookie_prefix: "site" },
+      config: { cookie_path: "/analytics/", cookie_domain: "stats.example.com" },
+    });
+
+    expect(
+      writes.some(
+        (w) =>
+          w.startsWith("site_ga_TEST123=;") &&
+          w.includes("path=/analytics/") &&
+          w.includes("domain=stats.example.com") &&
+          EXPIRED.test(w)
+      )
+    ).toBe(true);
+  });
+
   it("reads cookie settings given as gtag('set', name, value)", () => {
     // Regression: only the object form of `set` was read, so a cookie_path set the other
     // documented way, outside the current route, kept its identifiers after a withdrawal.

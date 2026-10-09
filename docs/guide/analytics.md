@@ -33,6 +33,34 @@ manager.trackSignUp('email');
 manager.trackPurchase({ transaction_id: '123', currency: 'USD', value: 99, items: [...] });
 ```
 
+## Configuring the Google Tag
+
+Pass the tag's settings through `googleAnalytics` instead of calling `gtag()` yourself, so they stay inside the consent flow (in basic mode nothing is sent before the visitor allows analytics):
+
+```typescript
+const manager = createConsentManager({
+  gaId: 'G-XXXXXXXXXX',
+  googleAnalytics: {
+    // gtag('config', gaId, ...): data minimisation for a site without advertising
+    config: {
+      allow_google_signals: false,
+      allow_ad_personalization_signals: false,
+      cookie_expires: 60 * 60 * 24 * 90, // seconds
+      user_properties: { plan: 'free' },
+    },
+    // Custom dimensions and other fields Google does not document for config
+    customParameters: { site_section: 'docs' },
+    // gtag('set', ...): applies to every Google tag on the page
+    set: { cookie_flags: 'SameSite=Lax;Secure' },
+    // Consent Mode settings that act while consent is denied
+    adsDataRedaction: true,
+    urlPassthrough: true,
+  },
+});
+```
+
+The order on the page is `consent default`, one `set` (with `ads_data_redaction` and `url_passthrough`), `js`, then one `config` carrying every `config` field, the custom parameters and `send_page_view` from `sendPageView`. Commands the page queued before the manager (its own snippet, a Tag Manager `gtm.js` event) are processed after the `set`, so its settings cover their hits too. A page whose own snippet already queued `config` for the ID keeps that call, since a second one would count a second page view: put the `config` fields there, the `set` fields still apply. Documented fields are typed: a misspelt name or a wrong type fails to compile, and a documented name is refused in `customParameters`. `debug_mode` accepts only `true`; to turn DebugView off, leave the field out (Google keeps it on for `false`). The privacy notice can state the `_ga` cookie lifetime and scope from `cookie_expires`, `cookie_domain` and `cookie_path`; in basic mode the manager also deletes the cookies there when analytics is refused. See [GoogleAnalyticsOptions](/api/types#googleanalyticsoptions) for every field.
+
 ## Event Tracking Methods
 
 ### General Events
