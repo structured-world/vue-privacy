@@ -4,6 +4,7 @@ import type {
   ConsentCategories,
   ConsentStorage,
   GeoDetectionResult,
+  GeoDetectionResultWithLog,
   GeoDetectionLogEntry,
   GA4EcommerceParams,
   GA4PurchaseParams,
@@ -39,7 +40,7 @@ import {
   trackEvent as gtagTrackEvent,
 } from "./gtag";
 import { createGeoDetector, GeoDetectionError } from "../geo/index";
-import { requiresConsent, DEFAULT_CONSENT_JURISDICTIONS } from "../geo/jurisdictions";
+import { knownCountry, requiresConsent, DEFAULT_CONSENT_JURISDICTIONS } from "../geo/jurisdictions";
 import { limitToUsed } from "./categories";
 import { reloadPage } from "./page";
 
@@ -694,12 +695,25 @@ export class ConsentManager {
       this.config.geoDetector ??
       createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
 
-    const detected = await detector.detect();
+    // A custom detector written for an earlier version answers under the field's earlier name.
+    const { isEU, ...detected } = (await detector.detect()) as GeoDetectionResultWithLog & {
+      isEU?: unknown;
+    };
+    const answer =
+      typeof detected.consentRequired === "boolean"
+        ? detected.consentRequired
+        : typeof isEU === "boolean"
+          ? isEU
+          : undefined;
+    // Neither an answer nor a country: nothing tells where the visitor is (geoFailure decides).
+    if (answer === undefined && knownCountry(detected.countryCode) === undefined) {
+      throw new Error("Geo detector gave neither consentRequired nor a country");
+    }
     // The country decides against the configured jurisdictions; a detector's own answer stands
     // only when it reports no country.
     const consentRequired = requiresConsent(
       detected.countryCode,
-      detected.consentRequired,
+      answer ?? false,
       this.config.consentJurisdictions ?? DEFAULT_CONSENT_JURISDICTIONS
     );
     const geoResult = { ...detected, consentRequired };

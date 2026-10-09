@@ -95,5 +95,8 @@ describe("requiresConsent", () => {
     expect(requiresConsent(undefined, true)).toBe(true);
     expect(requiresConsent(undefined, false)).toBe(false);
     expect(requiresConsent("", true)).toBe(true);
+    // Cloudflare's unknown and Tor codes are no country (a custom detector passing them on).
+    expect(requiresConsent("XX", true)).toBe(true);
+    expect(requiresConsent("T1", true)).toBe(true);
   });
 });

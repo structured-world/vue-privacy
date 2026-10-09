@@ -86,15 +86,11 @@ describe("WorkerGeoDetector", () => {
   });
 
   it("decides from the country when the endpoint gives no isEU flag", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ countryCode: "XX" }),
-    });
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ countryCode: "BR" }) });
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(false);
 
-    const detector = new WorkerGeoDetector("/api/geo");
-    const result = await detector.detect();
-
-    expect(result.consentRequired).toBe(false);
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ countryCode: "IS" }) });
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(true);
   });
 
   it("handles missing countryCode gracefully", async () => {
@@ -202,6 +198,46 @@ describe("consent jurisdictions in the detectors", () => {
     await expect(new WorkerGeoDetector("/api/geo").detect()).rejects.toThrow(
       "Worker geo-detection failed"
     );
+  });
+
+  it("Cloudflare: its unknown (XX) and Tor (T1) codes are no country", async () => {
+    // Regression: XX and T1 passed for a country outside every jurisdiction, so a visitor whose
+    // location Cloudflare could not tell was granted every category.
+    for (const code of ["XX", "T1", "xx"]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "X-Is-EU-Country": "false", "CF-IPCountry": code }),
+      });
+      await expect(new CloudflareGeoDetector().detect()).rejects.toThrow(
+        "Cloudflare geo-detection failed"
+      );
+    }
+    // With the EU flag set the visitor is asked, without the pseudo-country.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ "X-Is-EU-Country": "true", "CF-IPCountry": "XX" }),
+    });
+    expect(await new CloudflareGeoDetector().detect()).toEqual({
+      consentRequired: true,
+      countryCode: undefined,
+      method: "cloudflare",
+    });
+  });
+
+  it("Worker and IP API: the unknown and Tor codes are no country", async () => {
+    // The Worker endpoint copies Cloudflare's request.cf.country, XX and T1 included.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ isEU: false, countryCode: "XX" }),
+    });
+    await expect(new WorkerGeoDetector("/api/geo").detect()).rejects.toThrow(
+      "Worker geo-detection failed"
+    );
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ country_code: "T1" }),
+    });
+    await expect(new IPAPIGeoDetector().detect()).rejects.toThrow("IP API geo-detection failed");
   });
 
   it("timezone: maps the zones of consent countries, outermost regions included", async () => {

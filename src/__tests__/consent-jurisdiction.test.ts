@@ -91,6 +91,29 @@ describe("consent jurisdictions", () => {
     expect(notAsked.showBanner).not.toHaveBeenCalled();
   });
 
+  it("reads isEU from a custom detector written for an earlier version", async () => {
+    // Regression: a detector returning only isEU (the field's earlier name) gave undefined for
+    // consentRequired, read as false: a visitor in the EU was granted every category.
+    const legacy = { isEU: true, method: "manual" } as unknown as GeoDetectionResult;
+
+    const { manager, showBanner } = await started({ geoDetector: detecting(legacy) });
+
+    expect(showBanner).toHaveBeenCalledTimes(1);
+    expect(manager.isConsentRequired()).toBe(true);
+    expect(manager.getGeoResult()).not.toHaveProperty("isEU");
+  });
+
+  it("treats a detector answer with neither flag nor country as a failed lookup", async () => {
+    // Nothing tells where the visitor is: geoFailure decides, asking by default.
+    const empty = { method: "manual" } as unknown as GeoDetectionResult;
+
+    const asked = await started({ geoDetector: detecting(empty) });
+    expect(asked.showBanner).toHaveBeenCalledTimes(1);
+
+    const granted = await started({ geoDetector: detecting(empty), geoFailure: "grant" });
+    expect(granted.showBanner).not.toHaveBeenCalled();
+  });
+
   it("keeps isEUUser() as an alias of isConsentRequired()", async () => {
     const { manager } = await started({
       geoDetector: detecting({ consentRequired: false, countryCode: "GB", method: "api" }),

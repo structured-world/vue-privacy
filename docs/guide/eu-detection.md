@@ -79,7 +79,7 @@ export default {
 }
 ```
 
-`X-Is-EU-Country` is optional. Cloudflare's EU flag covers EU members only, so without a country the library accepts it when it says `true` and moves on to the next method when it says `false`: the flag cannot tell a visitor in Norway or the UK from one in the US.
+Cloudflare's `XX` (location unknown) and `T1` (Tor) count as no country, here and from the Worker endpoint. `X-Is-EU-Country` is optional. Cloudflare's EU flag covers EU members only, so without a country the library accepts it when it says `true` and moves on to the next method when it says `false`: the flag cannot tell a visitor in Norway or the UK from one in the US.
 
 ### 2. Worker Endpoint
 
@@ -112,7 +112,7 @@ Any other zone counts as outside consent jurisdictions. `UTC` and `Etc/*` carry 
 
 ## Custom Detector
 
-Implement your own detection logic. Return the country code when you have it: the library decides from it against `consentJurisdictions`. Without a country, `consentRequired` is your answer to "does this visitor need to be asked"; throw when you cannot tell, and `geoFailure` applies.
+Implement your own detection logic. Return the country code when you have it: the library decides from it against `consentJurisdictions`. Without a country, `consentRequired` is your answer to "does this visitor need to be asked"; throw when you cannot tell, and `geoFailure` applies (as it does for an answer with neither). A detector written for an earlier version that returns `isEU` instead is read the same way.
 
 ```typescript
 import type { GeoDetector } from '@structured-world/vue-privacy';

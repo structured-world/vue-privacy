@@ -46,7 +46,7 @@ This handles: gtag.js loading, Consent Mode v2 defaults, EU detection, consent b
 ## What It Does
 
 1. **Loads Google Analytics** with proper Consent Mode v2 defaults (`denied` where consent is required)
-2. **Detects the visitor's country** via Cloudflare headers, IP API, or the browser time zone
+2. **Detects the visitor's country** via Cloudflare headers, a Worker endpoint, IP API, or the browser time zone
 3. **Shows consent banner** only to visitors who need it (EEA and UK by default, without prior consent; also when the lookup fails)
 4. **Stores consent** in a cookie (365 days) and updates Google Consent Mode signals
 5. **Tracks SPA navigation** automatically (VitePress, Quasar) or via simple route watching (Vue Router)
@@ -69,8 +69,9 @@ All four consent signals, configured automatically:
 Multiple detection methods with automatic fallback, each giving the visitor's country, which decides against the [consent jurisdictions](/guide/eu-detection#consent-jurisdictions):
 
 1. **Cloudflare Headers** — fastest, uses `CF-IPCountry` header
-2. **IP API** — fallback using ipapi.co
-3. **Timezone Heuristics** — last resort based on browser timezone
+2. **Worker Endpoint** — `/api/geo` when `geoUrl` is set
+3. **IP API** — fallback using ipapi.co
+4. **Timezone Heuristics** — last resort based on browser timezone
 
 ### SPA Page Tracking
 

@@ -4,7 +4,7 @@ import type {
   GeoDetectionLogEntry,
   GeoDetectionResultWithLog,
 } from "../core/types";
-import { TIMEZONE_COUNTRIES, requiresConsent } from "./jurisdictions";
+import { TIMEZONE_COUNTRIES, knownCountry, requiresConsent } from "./jurisdictions";
 
 /**
  * Cloudflare geo-detection using headers
@@ -32,7 +32,8 @@ export class CloudflareGeoDetector implements GeoDetector {
       });
 
       const isEUHeader = response.headers.get(this.headerName);
-      const countryCode = response.headers.get("CF-IPCountry") ?? undefined;
+      // XX (unknown) and T1 (Tor) name no country.
+      const countryCode = knownCountry(response.headers.get("CF-IPCountry") ?? undefined);
       const inEU = isEUHeader?.toLowerCase() === "true";
 
       // Neither a country nor a positive EU flag: Cloudflare is not configured, or its flag
@@ -71,11 +72,12 @@ export class IPAPIGeoDetector implements GeoDetector {
       };
       // `in_eu` is false for the EEA EFTA states and the UK; the country decides instead. An
       // error body (rate limit, invalid request) carries no country and is no answer.
-      if (!data.country_code) throw new Error("No country in the response");
+      const countryCode = knownCountry(data.country_code);
+      if (countryCode === undefined) throw new Error("No country in the response");
 
       return {
-        consentRequired: requiresConsent(data.country_code, false),
-        countryCode: data.country_code,
+        consentRequired: requiresConsent(countryCode, false),
+        countryCode,
         region: data.region ?? undefined,
         method: "api",
       };
@@ -109,12 +111,14 @@ export class WorkerGeoDetector implements GeoDetector {
         region?: string;
       };
       const inEU = data.isEU === true;
+      // It copies Cloudflare's request.cf.country: XX (unknown) and T1 (Tor) name no country.
+      const countryCode = knownCountry(data.countryCode);
       // Like Cloudflare's, the endpoint's EU flag says nothing about the EEA or the UK.
-      if (!data.countryCode && !inEU) throw new Error("No country in the response");
+      if (countryCode === undefined && !inEU) throw new Error("No country in the response");
 
       return {
-        consentRequired: requiresConsent(data.countryCode, inEU),
-        countryCode: data.countryCode ?? undefined,
+        consentRequired: requiresConsent(countryCode, inEU),
+        countryCode,
         region: data.region ?? undefined,
         method: "worker",
       };

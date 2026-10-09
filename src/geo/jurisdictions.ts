@@ -132,6 +132,22 @@ export const TIMEZONE_COUNTRIES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Codes in the country position that name no country: Cloudflare's unknown location (`XX`) and
+ * Tor exit node (`T1`), which its `CF-IPCountry` header and `request.cf.country` carry.
+ */
+const NO_COUNTRY = new Set(["XX", "T1"]);
+
+/**
+ * The country a detector reported, upper-cased, or undefined when it reported none (missing,
+ * empty, or one of Cloudflare's codes for an unknown location).
+ */
+export function knownCountry(countryCode: string | undefined): string | undefined {
+  if (!countryCode) return undefined;
+  const code = countryCode.toUpperCase();
+  return NO_COUNTRY.has(code) ? undefined : code;
+}
+
+/**
  * Whether a visitor needs to be asked for consent. A known country decides; without one, the
  * detector's own answer stands.
  *
@@ -144,6 +160,7 @@ export function requiresConsent(
   detected: boolean,
   jurisdictions: readonly ConsentJurisdiction[] = DEFAULT_CONSENT_JURISDICTIONS
 ): boolean {
-  if (!countryCode) return detected;
-  return consentCountries(jurisdictions).has(countryCode.toUpperCase());
+  const country = knownCountry(countryCode);
+  if (country === undefined) return detected;
+  return consentCountries(jurisdictions).has(country);
 }
