@@ -12,32 +12,76 @@ import { uk } from "./locales/uk";
 import { ja } from "./locales/ja";
 import { zh } from "./locales/zh";
 import { ko } from "./locales/ko";
+import { bg } from "./locales/bg";
+import { cs } from "./locales/cs";
+import { da } from "./locales/da";
+import { el } from "./locales/el";
+import { et } from "./locales/et";
+import { fi } from "./locales/fi";
+import { ga } from "./locales/ga";
+import { hr } from "./locales/hr";
+import { hu } from "./locales/hu";
+import { is } from "./locales/is";
+import { lt } from "./locales/lt";
+import { lv } from "./locales/lv";
+import { mt } from "./locales/mt";
+import { nb } from "./locales/nb";
+import { ro } from "./locales/ro";
+import { sk } from "./locales/sk";
+import { sl } from "./locales/sl";
+import { sv } from "./locales/sv";
 
 const translations: Record<SupportedLocale, Translations> = {
-  en,
+  bg,
+  cs,
+  da,
   de,
-  fr,
+  el,
+  en,
   es,
+  et,
+  fi,
+  fr,
+  ga,
+  hr,
+  hu,
+  is,
   it,
-  pt,
+  ja,
+  ko,
+  lt,
+  lv,
+  mt,
+  nb,
   nl,
   pl,
+  pt,
+  ro,
   ru,
+  sk,
+  sl,
+  sv,
   uk,
-  ja,
   zh,
-  ko,
 };
 
 /**
- * Detect locale from browser navigator.language.
- * Returns the matching SupportedLocale or "en" as fallback.
+ * Language subtags read as a supported locale they do not name: Norwegian without a written
+ * standard (`no`) and Nynorsk (`nn`) readers read Bokmål (`nb`).
+ */
+const LANGUAGE_ALIASES: Readonly<Record<string, SupportedLocale>> = { no: "nb", nn: "nb" };
+
+/**
+ * Detect locale from browser navigator.language: its language subtag, so regional tags
+ * (`ro-MD`, `sv-FI`) resolve to their language. Returns "en" as fallback.
  */
 export function detectLocale(): SupportedLocale {
   if (typeof navigator === "undefined") return "en";
 
-  const langCode = navigator.language.toLowerCase().split("-")[0] as SupportedLocale;
-  return translations[langCode] ? langCode : "en";
+  const langCode = navigator.language.toLowerCase().split("-")[0];
+  const locale = LANGUAGE_ALIASES[langCode] ?? langCode;
+  // Own keys only: "constructor" or "toString" is no locale.
+  return Object.hasOwn(translations, locale) ? (locale as SupportedLocale) : "en";
 }
 
 /**

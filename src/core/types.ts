@@ -447,7 +447,8 @@ export interface ConsentConfig {
 
   /**
    * Locale for UI text. Auto-detected from navigator.language if not set.
-   * Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
+   * Supported: every official EU language (bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu,
+   * it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv), nb and is, and ja, ko, ru, uk, zh
    */
   locale?: SupportedLocale;
 

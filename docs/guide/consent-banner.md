@@ -56,7 +56,13 @@ createConsentPlugin({
 
 ### i18n
 
-Banner text is automatically translated based on the user's browser locale. 13 locales are built in: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko.
+Banner text is automatically translated based on the user's browser locale. 31 locales are built in:
+
+- every official EU language: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv;
+- the EEA's Norwegian (`nb`, also chosen for `no` and Nynorsk `nn`) and Icelandic (`is`);
+- ja, ko, ru, uk, zh.
+
+A regional tag resolves to its language (`ro-MD` to `ro`, `sv-FI` to `sv`); any other language falls back to English. The "Do Not Sell My Personal Information" link text stays English in every locale, as the CCPA phrase.
 
 To override the locale:
 
