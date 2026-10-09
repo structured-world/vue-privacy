@@ -169,10 +169,18 @@ interface ConsentConfig {
   // products linked to that tag (Google Ads, Floodlight) stop too. Default: false
   reloadOnWithdrawal?: boolean;
 
-  // Locale for UI text (auto-detected if not set)
+  // Locale for UI text. When not set: the first of the browser's preferred languages
+  // (navigator.languages) among `locales`. consentManager.setLocale(tag) switches it later.
   // Supported: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, is, it, ja, ko, lt, lv,
   // mt, nb, nl, pl, pt, ro, ru, sk, sl, sv, uk, zh
   locale?: SupportedLocale;
+
+  // The locales the site offers (default: all built-in)
+  locales?: SupportedLocale[];
+
+  // Shown when none of the visitor's languages is offered
+  // Default: 'en' when offered, else the first of `locales`
+  fallbackLocale?: SupportedLocale;
 
   // Consent categories
   categories?: {

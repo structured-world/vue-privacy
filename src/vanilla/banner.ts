@@ -138,19 +138,6 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
     createdContainer = true;
   }
 
-  // Get translations
-  const locale = manager.getLocale();
-  const t = getTranslations(locale).banner;
-  const config = manager.getConfig().banner ?? {};
-
-  const title = config.title ?? t.title;
-  const message = config.message ?? t.message;
-  const acceptAllText = config.acceptAll ?? t.acceptAll;
-  const rejectAllText = config.rejectAll ?? t.rejectAll;
-  const customizeText = config.customize ?? t.customize;
-  const privacyLink = config.privacyLink ?? "/privacy";
-  const privacyLinkText = config.privacyLinkText ?? t.privacyLinkText;
-
   // Build DOM
   const bannerEl = document.createElement("div");
   bannerEl.className = `consent-banner consent-banner--${validatedPosition} consent-banner--hidden`;
@@ -164,7 +151,21 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
   bannerEl.setAttribute("aria-describedby", "consent-banner-message");
   setThemeAttribute(bannerEl, validatedTheme);
 
-  bannerEl.innerHTML = `
+  // The text in the manager's current locale; the clicks are delegated to bannerEl, so they
+  // survive a re-render.
+  function render() {
+    const t = getTranslations(manager.getLocale()).banner;
+    const config = manager.getConfig().banner ?? {};
+
+    const title = config.title ?? t.title;
+    const message = config.message ?? t.message;
+    const acceptAllText = config.acceptAll ?? t.acceptAll;
+    const rejectAllText = config.rejectAll ?? t.rejectAll;
+    const customizeText = config.customize ?? t.customize;
+    const privacyLink = config.privacyLink ?? "/privacy";
+    const privacyLinkText = config.privacyLinkText ?? t.privacyLinkText;
+
+    bannerEl.innerHTML = `
     <div class="consent-banner__content">
       <h2 id="consent-banner-title" class="consent-banner__title">${escapeHtml(title)}</h2>
       <p id="consent-banner-message" class="consent-banner__message">
@@ -182,8 +183,11 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
       </button>
     </div>
   `;
+  }
 
+  render();
   container.appendChild(bannerEl);
+  const stopLocaleWatch = manager.onLocaleChange(render);
 
   // State
   let visible = false;
@@ -227,6 +231,7 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
   // Cleanup function
   function destroy() {
     bannerEl.removeEventListener("click", handleClick);
+    stopLocaleWatch();
     // Clear callbacks by setting to no-op functions.
     // Note: onShowBanner/onHideBanner don't accept null (unlike onShowPreferenceCenter),
     // so we use no-op functions. This is a ConsentManager API limitation.

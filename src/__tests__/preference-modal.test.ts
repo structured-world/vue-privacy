@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager } from "../core/consent-manager";
 import { injectModalStyles } from "../vue/modal-styles";
+import { preferLanguages } from "./helpers/languages";
 
 describe("ConsentManager preference center callbacks", () => {
   let manager: ConsentManager;
@@ -89,7 +90,7 @@ describe("ConsentManager preference center callbacks", () => {
   });
 
   it("getLocale returns detected locale when not configured", () => {
-    vi.spyOn(navigator, "language", "get").mockReturnValue("fr-FR");
+    preferLanguages("fr-FR");
     const m = new ConsentManager({});
     expect(m.getLocale()).toBe("fr");
   });

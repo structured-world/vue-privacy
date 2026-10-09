@@ -71,17 +71,44 @@ const translations: Record<SupportedLocale, Translations> = {
  */
 const LANGUAGE_ALIASES: Readonly<Record<string, SupportedLocale>> = { no: "nb", nn: "nb" };
 
-/**
- * Detect locale from browser navigator.language: its language subtag, so regional tags
- * (`ro-MD`, `sv-FI`) resolve to their language. Returns "en" as fallback.
- */
-export function detectLocale(): SupportedLocale {
-  if (typeof navigator === "undefined") return "en";
+/** Which locales a site offers, and which one it shows when the visitor reads none of them. */
+export interface LocaleOptions {
+  /** The locales to choose from; every built-in locale when omitted. */
+  locales?: readonly SupportedLocale[];
+  /** Shown when no language of the visitor is offered: "en" if offered, else the first locale. */
+  fallbackLocale?: SupportedLocale;
+}
 
-  const langCode = navigator.language.toLowerCase().split("-")[0];
-  const locale = LANGUAGE_ALIASES[langCode] ?? langCode;
-  // Own keys only: "constructor" or "toString" is no locale.
-  return Object.hasOwn(translations, locale) ? (locale as SupportedLocale) : "en";
+/**
+ * The first of the language tags (most preferred first) that names an offered locale, through its
+ * language subtag, so regional tags (`ro-MD`, `sv-FI`) resolve to their language; the fallback
+ * locale when none does.
+ */
+export function resolveLocale(
+  tags: readonly string[],
+  options: LocaleOptions = {}
+): SupportedLocale {
+  const { locales } = options;
+  for (const tag of tags) {
+    const langCode = tag.toLowerCase().split("-")[0];
+    const locale = LANGUAGE_ALIASES[langCode] ?? langCode;
+    // Own keys only: "constructor" or "toString" is no locale.
+    if (!Object.hasOwn(translations, locale)) continue;
+    if (!locales || locales.includes(locale as SupportedLocale)) return locale as SupportedLocale;
+  }
+  if (options.fallbackLocale) return options.fallbackLocale;
+  return !locales || locales.includes("en") ? "en" : (locales[0] ?? "en");
+}
+
+/**
+ * Detect the locale from the browser's preferred languages (`navigator.languages`, in order),
+ * within the offered locales; see {@link resolveLocale}.
+ */
+export function detectLocale(options?: LocaleOptions): SupportedLocale {
+  if (typeof navigator === "undefined") return resolveLocale([], options);
+  // An empty list means the browser reports no preferences; navigator.language still names one.
+  const preferred = navigator.languages?.length ? navigator.languages : [navigator.language];
+  return resolveLocale(preferred.filter(Boolean), options);
 }
 
 /**

@@ -12,7 +12,7 @@ import type {
   GoogleConsentSignals,
 } from "./types";
 import { DEFAULT_CONFIG } from "./types";
-import { detectLocale, getTranslations } from "../i18n/index";
+import { detectLocale, getTranslations, resolveLocale, type LocaleOptions } from "../i18n/index";
 import type { SupportedLocale } from "../i18n/types";
 import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
 import {
@@ -132,6 +132,11 @@ export class ConsentManager {
   /** Basic Consent Mode: Google gets nothing until the visitor explicitly allows analytics. */
   private readonly basicMode: boolean;
   private locale: SupportedLocale;
+  /** The offered locales and the fallback, which setLocale() resolves within as detection did. */
+  private readonly localeOptions: LocaleOptions;
+  /** The site's own banner text, which outranks the locale's whatever the language. */
+  private readonly bannerText: ConsentConfig["banner"];
+  private localeChangeListeners: Array<(locale: SupportedLocale) => void> = [];
   private initialized = false;
   /** The visitor is in a consent jurisdiction (null: not detected yet). */
   private consentRequired: boolean | null = null;
@@ -213,18 +218,24 @@ export class ConsentManager {
     if (config.consentMode === "basic" && !config.gaId) {
       throw new Error("consentMode 'basic' requires gaId: the manager must load the Google tag");
     }
-    this.locale = config.locale ?? detectLocale();
+    if (config.locales?.length === 0) {
+      throw new Error("locales must name at least one locale");
+    }
+    if (
+      config.locales &&
+      config.fallbackLocale &&
+      !config.locales.includes(config.fallbackLocale)
+    ) {
+      throw new Error(`fallbackLocale '${config.fallbackLocale}' is not one of locales`);
+    }
+    this.localeOptions = { locales: config.locales, fallbackLocale: config.fallbackLocale };
+    this.bannerText = config.banner;
+    this.locale = config.locale ?? detectLocale(this.localeOptions);
     this.config = {
       ...config,
       locale: this.locale,
       categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
-      // Defaults in the visitor's locale, not DEFAULT_CONFIG's English: the components and any
-      // custom UI read getConfig().banner before the translations.
-      banner: {
-        ...getTranslations(this.locale).banner,
-        privacyLink: DEFAULT_CONFIG.banner.privacyLink,
-        ...config.banner,
-      },
+      banner: this.localizedBanner(),
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
     this.basicMode = config.consentMode === "basic";
@@ -302,6 +313,53 @@ export class ConsentManager {
    */
   getLocale(): SupportedLocale {
     return this.locale;
+  }
+
+  /**
+   * Switch the UI language, e.g. from the site's language switcher. A language tag resolves to
+   * its locale within `locales`, else to `fallbackLocale`; the banner and preference centre
+   * re-render in it. The site keeps its own record of the visitor's language and passes it again
+   * on the next page load.
+   * @returns the locale now shown
+   */
+  setLocale(tag: string): SupportedLocale {
+    const locale = resolveLocale([tag], this.localeOptions);
+    if (locale === this.locale) return locale;
+    this.locale = locale;
+    this.config.locale = locale;
+    this.config.banner = this.localizedBanner();
+    for (const listener of [...this.localeChangeListeners]) {
+      try {
+        listener(locale);
+      } catch (error) {
+        console.error("[vue-privacy] locale listener failed", error);
+      }
+    }
+    return locale;
+  }
+
+  /**
+   * Register a listener for every switch of the UI language; the built-in banners and preference
+   * centres re-render through it.
+   * @returns a function that unregisters the listener
+   */
+  onLocaleChange(listener: (locale: SupportedLocale) => void): () => void {
+    this.localeChangeListeners.push(listener);
+    return () => {
+      this.localeChangeListeners = this.localeChangeListeners.filter((l) => l !== listener);
+    };
+  }
+
+  /**
+   * The banner text in the current locale under the site's own: the components and any custom UI
+   * read getConfig().banner before the translations, so its defaults must not be English.
+   */
+  private localizedBanner(): NonNullable<ConsentConfig["banner"]> {
+    return {
+      ...getTranslations(this.locale).banner,
+      privacyLink: DEFAULT_CONFIG.banner.privacyLink,
+      ...this.bannerText,
+    };
   }
 
   /**
@@ -1560,6 +1618,7 @@ export class ConsentManager {
     this.routerCleanup = null;
 
     this.consentChangeListeners.length = 0;
+    this.localeChangeListeners = [];
     this.showBannerCallback = null;
     this.hideBannerCallback = null;
     this.showPreferenceCenterCallback = null;
