@@ -471,16 +471,14 @@ describe("ConsentManager.getGeoResult()", () => {
     });
   });
 
-  it("restores EU status from stored consent cookie with geo data (skips geo detection)", async () => {
-    // Pre-set consent cookie WITH geo data (new format)
+  it("restores the jurisdiction from the stored consent cookie (skips geo detection)", async () => {
+    // Pre-set consent cookie given in a consent jurisdiction
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
         consentRequired: true,
-        geoMethod: "cloudflare",
-        countryCode: "DE",
       })
     )}`;
 
@@ -502,12 +500,8 @@ describe("ConsentManager.getGeoResult()", () => {
     // consentRequired should be restored from cookie
     expect(manager.isEUUser()).toBe(true);
 
-    // geoResult should be reconstructed from stored data
-    const geoResult = manager.getGeoResult();
-    expect(geoResult).not.toBeNull();
-    expect(geoResult!.consentRequired).toBe(true);
-    expect(geoResult!.method).toBe("cloudflare");
-    expect(geoResult!.countryCode).toBe("DE");
+    // geoResult comes from the stored choice; the cookie keeps no country
+    expect(manager.getGeoResult()).toEqual({ consentRequired: true, method: "stored" });
   });
 
   it("runs geo detection when consent restored from old cookie without geo data", async () => {
@@ -772,15 +766,13 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
     expect(log[0].result).toEqual({ consentRequired: true, countryCode: "DE" });
   });
 
-  it("restores log entry from cookie with geo data", async () => {
+  it("restores log entry from the stored jurisdiction", async () => {
     cookieStore = `consent_preferences=${encodeURIComponent(
       JSON.stringify({
         categories: { analytics: true, marketing: false, functional: true },
         timestamp: Date.now(),
         version: "1.0",
         consentRequired: true,
-        geoMethod: "worker",
-        countryCode: "FR",
       })
     )}`;
 
@@ -789,14 +781,16 @@ describe("ConsentManager.getGeoDetectionLog()", () => {
 
     const log = manager.getGeoDetectionLog();
     expect(log.length).toBe(1);
-    expect(log[0].method).toBe("worker");
+    expect(log[0].method).toBe("stored");
     expect(log[0].status).toBe("success");
-    expect(log[0].result).toEqual({ consentRequired: true, countryCode: "FR" });
+    expect(log[0].result).toEqual({ consentRequired: true });
   });
 });
 
-describe("ConsentManager geo data persistence", () => {
-  it("stores geo data in cookie when accepting consent", async () => {
+// The consent cookie remembers the choice and whether it was made in a consent jurisdiction;
+// the location itself is not strictly necessary for that and is not stored.
+describe("ConsentManager jurisdiction persistence", () => {
+  it("stores the jurisdiction, without the location, when accepting consent", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
         consentRequired: true,
@@ -816,11 +810,11 @@ describe("ConsentManager geo data persistence", () => {
     const stored = JSON.parse(cookieValue);
 
     expect(stored.consentRequired).toBe(true);
-    expect(stored.geoMethod).toBe("api");
-    expect(stored.countryCode).toBe("IT");
+    expect(stored).not.toHaveProperty("geoMethod");
+    expect(stored).not.toHaveProperty("countryCode");
   });
 
-  it("stores geo data when saving preferences", async () => {
+  it("stores the jurisdiction when saving preferences", async () => {
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
         consentRequired: true,
@@ -839,14 +833,13 @@ describe("ConsentManager geo data persistence", () => {
     const stored = JSON.parse(cookieValue);
 
     expect(stored.consentRequired).toBe(true);
-    expect(stored.geoMethod).toBe("worker");
-    expect(stored.countryCode).toBe("ES");
+    expect(stored).not.toHaveProperty("countryCode");
   });
 
-  it("stores geo data for non-EU user who explicitly saves preferences", async () => {
-    // Non-EU users normally get automatic "accept all" without storing consent.
-    // But if they visit preference center and save custom preferences,
-    // the geo data (consentRequired=false) should be persisted.
+  it("stores the jurisdiction for a visitor outside who explicitly saves preferences", async () => {
+    // Visitors outside consent jurisdictions normally get automatic "accept all" without
+    // storing consent. If they save custom preferences, consentRequired=false is persisted, so
+    // the next visit runs the roaming check.
     const geoDetector = {
       detect: vi.fn().mockResolvedValue({
         consentRequired: false,
@@ -866,10 +859,8 @@ describe("ConsentManager geo data persistence", () => {
     );
     const stored = JSON.parse(cookieValue);
 
-    // Geo data should be stored even for non-EU users
     expect(stored.consentRequired).toBe(false);
-    expect(stored.geoMethod).toBe("api");
-    expect(stored.countryCode).toBe("US");
+    expect(stored).not.toHaveProperty("countryCode");
   });
 });
 
@@ -1441,8 +1432,10 @@ describe("ConsentManager CCPA flow", () => {
       marketing: true,
       functional: true,
     });
-    expect(stored.region).toBe("California");
-    expect(stored.countryCode).toBe("US");
+    // The opt-out model needs the choice, not the state it was made in: the next visit detects
+    // the region again (roaming check).
+    expect(stored).not.toHaveProperty("region");
+    expect(stored).not.toHaveProperty("countryCode");
     expect(stored.consentRequired).toBe(false);
   });
 
@@ -1477,8 +1470,8 @@ describe("ConsentManager CCPA flow", () => {
   });
 });
 
-describe("ConsentManager region persistence", () => {
-  it("stores region in cookie when saving preferences", async () => {
+describe("ConsentManager region", () => {
+  it("does not store the region in the cookie when saving preferences", async () => {
     const manager = new ConsentManager({
       geoDetector: createMockGeoDetector(false, "US", "California"),
       version: "1.0",
@@ -1491,8 +1484,8 @@ describe("ConsentManager region persistence", () => {
     );
     const stored = JSON.parse(cookieValue);
 
-    expect(stored.region).toBe("California");
-    expect(stored.countryCode).toBe("US");
+    expect(stored).not.toHaveProperty("region");
+    expect(stored).not.toHaveProperty("countryCode");
     expect(stored.consentRequired).toBe(false);
   });
 

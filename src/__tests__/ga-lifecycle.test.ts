@@ -226,8 +226,6 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
       {
         categories: { analytics: true, marketing: false, functional: true },
         consentRequired: true,
-        geoMethod: "manual",
-        countryCode: "DE",
       },
       {}
     );
@@ -915,9 +913,10 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
-  it("keeps the location of a choice made while init() detects it", async () => {
-    // Regression: the consent was stored before geo detection resolved, without its location; on the
-    // next EU page load the roaming check took it for non-EU consent and asked again.
+  it("keeps the jurisdiction of a choice made while init() detects it", async () => {
+    // Regression: the consent was stored before geo detection resolved, without its
+    // jurisdiction; on the next EU page load the roaming check took it for consent given outside
+    // and asked again.
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
     const manager = euManager({
       geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
@@ -930,7 +929,6 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     expect(manager.getConsent()).toMatchObject({
       consentRequired: true,
-      countryCode: "DE",
       categories: { analytics: true },
     });
   });
@@ -1413,7 +1411,6 @@ describe("basic consent mode", () => {
         {
           categories: { analytics: true, marketing: false, functional: true },
           consentRequired: true,
-          countryCode: "DE",
         },
         {}
       );

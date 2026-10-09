@@ -194,36 +194,59 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
   writeCookie(cookie);
 }
 
+/** The fields the consent cookie holds. */
+const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
+
+/**
+ * The consent cookie of this configuration's version, as stored, or null. `outdated`: it was
+ * written by an earlier version, with the location (`countryCode`, `region`, `geoMethod`) or with
+ * `consentRequired` under its earlier name `isEU`; those are not kept.
+ */
+function readConsentCookie(
+  config: Partial<ConsentConfig>
+): { consent: StoredConsent; outdated: boolean } | null {
+  const raw = getCookie(config.cookie?.name ?? DEFAULT_CONFIG.cookie.name);
+  if (!raw) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const stored = parsed as unknown as StoredConsent & { isEU?: boolean };
+  // A different version: the consent no longer applies.
+  if (stored.version !== (config.version ?? DEFAULT_CONFIG.version)) return null;
+  const consentRequired = stored.consentRequired ?? stored.isEU;
+  return {
+    consent: {
+      categories: stored.categories,
+      timestamp: stored.timestamp,
+      version: stored.version,
+      ...(consentRequired !== undefined && { consentRequired }),
+    },
+    outdated: Object.keys(parsed).some((key) => !STORED_FIELDS.has(key)),
+  };
+}
+
 /**
  * Get stored consent from cookie
  */
 export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredConsent | null {
-  const cookieName = config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
-  const version = config.version ?? DEFAULT_CONFIG.version;
+  const read = readConsentCookie(config);
+  if (read === null) return null;
+  // A category the site no longer uses was never asked about in its current dialog. When that
+  // leaves nothing granted, the consent manager's restore drops consent_uid too.
+  return { ...read.consent, categories: limitToUsed(read.consent.categories, config) };
+}
 
-  const raw = getCookie(cookieName);
-  if (!raw) return null;
-
-  try {
-    // Cookies written before the field was renamed carry `isEU`, with the same meaning.
-    const { isEU, ...stored } = JSON.parse(raw) as StoredConsent & { isEU?: boolean };
-
-    // Check version - if different, consent is invalid
-    if (stored.version !== version) {
-      return null;
-    }
-
-    const consentRequired = stored.consentRequired ?? isEU;
-    // A category the site no longer uses was never asked about in its current dialog. When that
-    // leaves nothing granted, the consent manager's restore drops consent_uid too.
-    return {
-      ...stored,
-      ...(consentRequired !== undefined && { consentRequired }),
-      categories: limitToUsed(stored.categories, config),
-    };
-  } catch {
-    return null;
-  }
+/**
+ * Rewrite a consent cookie an earlier version wrote, keeping the choice and its timestamp (the
+ * other open tabs see no new decision) and dropping what it no longer holds. A cookie already in
+ * the current format is left alone: rewriting it would restart its lifetime on every visit.
+ */
+export function migrateConsentCookie(config: Partial<ConsentConfig> = {}): void {
+  const read = readConsentCookie(config);
+  if (read?.outdated) storeConsent(read.consent, config);
 }
 
 /**
@@ -244,11 +267,8 @@ export function storeConsent(
     // The caller's own record keeps its time: the page compares its choice to the cookie by it.
     timestamp: consent.timestamp ?? Date.now(),
     version,
-    // Preserve geo data if provided (use !== undefined for consistent handling)
+    // Whether it was made in a consent jurisdiction; no location (StoredConsent).
     ...(consent.consentRequired !== undefined && { consentRequired: consent.consentRequired }),
-    ...(consent.geoMethod !== undefined && { geoMethod: consent.geoMethod }),
-    ...(consent.countryCode !== undefined && { countryCode: consent.countryCode }),
-    ...(consent.region !== undefined && { region: consent.region }),
   };
 
   setCookie(cookieConfig.name, JSON.stringify(stored), {

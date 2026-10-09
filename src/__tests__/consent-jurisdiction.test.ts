@@ -109,7 +109,6 @@ describe("consent jurisdictions", () => {
     await manager.rejectAll();
 
     expect(manager.getConsent()?.consentRequired).toBe(true);
-    expect(manager.getConsent()?.countryCode).toBe("IS");
   });
 });
 
@@ -195,7 +194,6 @@ describe("geoFailure", () => {
       {
         categories: { analytics: true, marketing: true, functional: true },
         consentRequired: false,
-        countryCode: "US",
       },
       { version: "1.0" }
     );
@@ -212,7 +210,6 @@ describe("geoFailure", () => {
       {
         categories: { analytics: true, marketing: false, functional: true },
         consentRequired: false,
-        countryCode: "US",
       },
       { version: "1.0" }
     );

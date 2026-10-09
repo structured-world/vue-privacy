@@ -17,6 +17,7 @@ import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
 import {
   getStoredConsent,
   storeConsent,
+  migrateConsentCookie,
   clearConsent,
   getConsentUid,
   setConsentUid,
@@ -330,6 +331,9 @@ export class ConsentManager {
       return;
     }
 
+    // A cookie an earlier version wrote carries the visitor's location to the site with every
+    // request; it is rewritten without it before anything else reads it.
+    migrateConsentCookie(this.config);
     // Fast-path: check consent_preferences cookie
     const stored = getStoredConsent(this.config);
     if (stored && (await this.restoreStoredConsent(stored, epoch))) return;
@@ -375,7 +379,7 @@ export class ConsentManager {
     // everyone IN the EEA, not just its citizens.
     if (stored.consentRequired === true) {
       // Consent was given with full disclosure — valid everywhere.
-      this.adoptStoredLocation(stored);
+      this.adoptStoredJurisdiction();
       this.restore();
       return true;
     }
@@ -394,8 +398,8 @@ export class ConsentManager {
       return true;
     }
     if (!changed && !needsReconsent) {
-      // Still outside consent jurisdictions — the consent given there remains valid.
-      this.storeDetectedLocation(stored);
+      // Still outside consent jurisdictions — the consent given there remains valid. The cookie
+      // is not rewritten: it holds no location, and a write would restart its lifetime.
       this.restore();
       return true;
     }
@@ -405,44 +409,16 @@ export class ConsentManager {
     return false;
   }
 
-  /** The location a choice made in a consent jurisdiction carries, as this page's detection. */
-  private adoptStoredLocation(stored: StoredConsent): void {
-    this.consentRequired = true;
-    this.geoResult = {
-      consentRequired: true,
-      method: stored.geoMethod ?? "manual",
-      countryCode: stored.countryCode,
-      region: stored.region,
-    };
-    this.geoDetectionLog = [
-      {
-        method: stored.geoMethod ?? "manual",
-        status: "success",
-        result: { consentRequired: true, countryCode: stored.countryCode, region: stored.region },
-        duration: 0,
-      },
-    ];
-  }
-
   /**
-   * Update the cookie with fresh geo data from the roaming check (for debugging/analytics).
-   * This doesn't skip future roaming checks — only the consentRequired=true fast-path does that.
+   * A choice made in a consent jurisdiction, restored without a lookup: the jurisdiction is this
+   * page's detection result, with no country (the cookie keeps none).
    */
-  private storeDetectedLocation(stored: StoredConsent): void {
-    if (!this.geoResult) return;
-    storeConsent(
-      {
-        categories: stored.categories,
-        // The same moment: refreshing the location does not make the choice a newer one, which
-        // the other open tabs would take for a new decision.
-        timestamp: stored.timestamp,
-        consentRequired: this.geoResult.consentRequired,
-        geoMethod: this.geoResult.method,
-        countryCode: this.geoResult.countryCode,
-        region: this.geoResult.region,
-      },
-      this.config
-    );
+  private adoptStoredJurisdiction(): void {
+    this.consentRequired = true;
+    this.geoResult = { consentRequired: true, method: "stored" };
+    this.geoDetectionLog = [
+      { method: "stored", status: "success", result: { consentRequired: true }, duration: 0 },
+    ];
   }
 
   /** Restore the remote record stored for `uid`. Returns whether the consent is decided. */
@@ -608,11 +584,10 @@ export class ConsentManager {
   }
 
   /**
-   * A choice with the location it was made in, so the jurisdiction and CCPA status can be
-   * restored on reload.
-   * Every record the manager acts on is built here, so a category the site does not use
-   * (usedCategories) is refused in all of them. `?? undefined` omits a location that was not
-   * detected rather than storing null.
+   * A choice with whether it was made in a consent jurisdiction, so a later visit can skip the
+   * roaming check; no location (StoredConsent). Every record the manager acts on is built here,
+   * so a category the site does not use (usedCategories) is refused in all of them. `?? undefined`
+   * omits a jurisdiction not detected yet rather than storing null.
    */
   private choiceRecord(categories: Omit<ConsentCategories, "necessary">): StoredConsent {
     return {
@@ -622,9 +597,6 @@ export class ConsentManager {
       timestamp: Date.now(),
       version: this.config.version ?? DEFAULT_CONFIG.version,
       consentRequired: this.consentRequired ?? undefined,
-      geoMethod: this.geoResult?.method,
-      countryCode: this.geoResult?.countryCode,
-      region: this.geoResult?.region,
     };
   }
 
@@ -780,31 +752,21 @@ export class ConsentManager {
         return true;
       }
       // geoFailure 'grant': keep the existing choice; the next successful lookup re-checks.
-      // Restore stored geo data if available
+      // The stored jurisdiction stands in for the detection (the cookie keeps no country).
       if (stored.consentRequired !== undefined) {
         this.consentRequired = stored.consentRequired;
-        this.geoResult = {
-          consentRequired: stored.consentRequired,
-          method: stored.geoMethod ?? "manual",
-          countryCode: stored.countryCode,
-          region: stored.region,
-        };
-        // Log that geo data was restored from storage due to detection failure
+        this.geoResult = { consentRequired: stored.consentRequired, method: "stored" };
         this.geoDetectionLog = [
           {
-            method: stored.geoMethod ?? "manual",
+            method: "stored",
             status: "failed",
-            result: {
-              consentRequired: stored.consentRequired,
-              countryCode: stored.countryCode,
-              region: stored.region,
-            },
+            result: { consentRequired: stored.consentRequired },
             duration: 0,
             error: "Geo detection failed in roaming check; restored from stored consent",
           },
         ];
       } else {
-        // Consent stored before locations were recorded: we cannot restore geo state.
+        // Consent stored without its jurisdiction: we cannot restore geo state.
         // Log that geo detection failed with unknown status. The main init flow
         // will fall through to perform geo detection again if this.consentRequired is null.
         this.geoDetectionLog = [
@@ -812,7 +774,7 @@ export class ConsentManager {
             method: "fallback",
             status: "failed",
             duration: 0,
-            error: "Geo detection failed in roaming check; consent stored without a location",
+            error: "Geo detection failed in roaming check; consent stored without a jurisdiction",
           },
         ];
       }

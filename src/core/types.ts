@@ -142,7 +142,9 @@ export interface GoogleAnalyticsOptions {
 }
 
 /**
- * Stored consent state
+ * Stored consent state. The consent cookie is strictly necessary storage (ePrivacy Directive
+ * 2002/58/EC, Art. 5(3)), set without consent to remember the choice, so it holds these fields
+ * and no location.
  */
 export interface StoredConsent {
   /** Consent categories */
@@ -156,12 +158,6 @@ export interface StoredConsent {
    * {@link ConsentConfig.consentJurisdictions}); such a choice stands wherever the visitor goes
    */
   consentRequired?: boolean;
-  /** Geo-detection method used when consent was given */
-  geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
-  /** Country code detected when consent was given */
-  countryCode?: string;
-  /** Region/state detected when consent was given (e.g., "California" for CCPA) */
-  region?: string;
 }
 
 /**
@@ -224,8 +220,8 @@ export interface GeoDetectionResult {
   countryCode?: string;
   /** Region/state code (e.g., "California", "CA" for US states) */
   region?: string;
-  /** Detection method used */
-  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  /** Detection method used; `stored`: no lookup, the stored choice's jurisdiction */
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual" | "stored";
 }
 
 /**
@@ -234,7 +230,7 @@ export interface GeoDetectionResult {
  */
 export interface GeoDetectionLogEntry {
   /** Detection method that was attempted */
-  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual" | "stored";
   /** Status of this detection attempt */
   status: "success" | "failed" | "skipped";
   /** Result if successful */

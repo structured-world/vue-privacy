@@ -28,6 +28,7 @@ const methodLabels: Record<string, string> = {
   api: "IP API (ipapi.co)",
   fallback: "Timezone Heuristic",
   manual: "Manual Override",
+  stored: "Stored Choice",
 };
 
 let consentApi: ReturnType<typeof useConsent> | null = null;

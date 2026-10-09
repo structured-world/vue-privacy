@@ -211,7 +211,8 @@ interface ConsentConfig {
     };
   };
 
-  // Cookie settings
+  // Consent cookie (strictly necessary: holds the categories, the time and version of the
+  // choice, and whether it was made in a consent jurisdiction; never the location)
   cookie?: {
     name?: string;    // Default: 'consent_preferences'
     expiry?: number;  // Days, default: 365
