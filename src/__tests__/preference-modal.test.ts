@@ -14,7 +14,7 @@ describe("ConsentManager preference center callbacks", () => {
   beforeEach(() => {
     manager = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
       },
     });
   });
@@ -32,7 +32,7 @@ describe("ConsentManager preference center callbacks", () => {
     const configCb = vi.fn();
     const m = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
       },
       onPreferenceCenterShow: configCb,
     });
@@ -73,7 +73,7 @@ describe("ConsentManager preference center callbacks", () => {
     const configCb = vi.fn();
     const m = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
       },
       onPreferenceCenterHide: configCb,
     });

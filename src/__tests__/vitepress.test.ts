@@ -41,7 +41,10 @@ describe("enhanceWithConsent", () => {
     // Regression: the route watcher tracked the navigation while init() was still running,
     // and the tracking after init() counted the page in view a second time.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -59,7 +62,7 @@ describe("enhanceWithConsent", () => {
 
     route.path = "/guide";
     await settle();
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await settle();
 
     expect(pageViews()).toHaveLength(1);
@@ -86,7 +89,9 @@ describe("enhanceWithConsent", () => {
     try {
       enhanceWithConsent({} as Theme, {
         gaId: "G-TEST123",
-        geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+        geoDetector: {
+          detect: () => Promise.resolve({ consentRequired: false, method: "manual" }),
+        },
       }).enhanceApp?.(ctx);
       await settle();
       await settle();
@@ -119,7 +124,7 @@ describe("enhanceWithConsent", () => {
     try {
       route.path = "/guide";
       await settle();
-      resolveGeo({ isEU: true, method: "manual" });
+      resolveGeo({ consentRequired: true, method: "manual" });
       await settle();
 
       expect(error).toHaveBeenCalled();

@@ -30,8 +30,22 @@ interface ConsentConfig {
     path?: string; // Default: '/'
   };
 
-  /** EU detection mode */
-  euDetection?: "auto" | "cloudflare" | "api" | "always" | "never";
+  /** Region detection mode */
+  euDetection?: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+
+  /**
+   * Jurisdictions whose visitors are asked for consent, decided from the country.
+   * EEA: EU members (outermost regions and Åland included), IS, LI, NO. UK: GB. CH: Switzerland.
+   * @default ["EEA", "UK"]
+   */
+  consentJurisdictions?: ConsentJurisdiction[]; // 'EEA' | 'UK' | 'CH'
+
+  /**
+   * A failed geo lookup: 'require-consent' asks the visitor (a choice stored outside
+   * consent jurisdictions is asked again too); 'grant' treats them as outside.
+   * @default 'require-consent'
+   */
+  geoFailure?: "require-consent" | "grant";
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;
@@ -212,19 +226,26 @@ interface GoogleConsentSignals {
 
 ```typescript
 interface GeoDetector {
-  /** Detect if user is in the EU */
+  /** Detect the visitor's country and whether it requires consent; throw when unknown */
   detect(): Promise<GeoDetectionResult>;
 }
 
 interface GeoDetectionResult {
-  /** Whether the user is in the EU */
-  isEU: boolean;
+  /**
+   * Whether the visitor is in a consent jurisdiction. With countryCode set the manager
+   * decides from the country and consentJurisdictions instead.
+   */
+  consentRequired: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
+  /** Region/state (e.g. "California") */
+  region?: string;
   /** Detection method used */
-  method: "cloudflare" | "api" | "fallback" | "manual";
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
 }
 ```
+
+`StoredConsent.consentRequired` records whether the choice was made in a consent jurisdiction. Consent cookies written by earlier versions carry the same flag as `isEU` and are read as `consentRequired`.
 
 ## Built-in Geo Detectors
 

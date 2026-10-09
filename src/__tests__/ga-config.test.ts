@@ -30,10 +30,10 @@ function argsOf(command: string): unknown[][] {
   return commands().filter((c) => c[0] === command);
 }
 
-function manager(config: ConsentConfig, isEU = true): ConsentManager {
+function manager(config: ConsentConfig, consentRequired = true): ConsentManager {
   const instance = new ConsentManager({
     gaId: GA_ID,
-    geoDetector: { detect: vi.fn().mockResolvedValue({ isEU, method: "manual" }) },
+    geoDetector: { detect: vi.fn().mockResolvedValue({ consentRequired, method: "manual" }) },
     ...config,
   });
   created.push(instance);
@@ -228,7 +228,10 @@ describe("googleAnalytics option", () => {
     // stored refusal is restored in basic mode, so cookies a granted earlier page set on a
     // configured cookie_path outside this route survived the refusal.
     storeConsent(
-      { categories: { analytics: false, marketing: false, functional: false }, isEU: true },
+      {
+        categories: { analytics: false, marketing: false, functional: false },
+        consentRequired: true,
+      },
       {}
     );
     const writes: string[] = [];

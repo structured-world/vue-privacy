@@ -132,6 +132,6 @@ Or use [Google Tag Assistant](https://tagassistant.google.com/) for visual verif
 Always set consent defaults BEFORE loading gtag.js. This library handles this automatically.
 :::
 
-::: tip Non-EU Users
-For users outside the EU, the library can automatically grant consent without showing a banner. Configure with `euDetection: 'auto'`.
+::: tip Visitors Outside Consent Jurisdictions
+For visitors outside the [consent jurisdictions](/guide/eu-detection) (EEA and UK by default), the library grants consent without showing a banner. Configure with `euDetection: 'auto'`; a failed lookup asks for consent unless `geoFailure: 'grant'`.
 :::

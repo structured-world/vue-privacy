@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { WorkerGeoDetector, AutoGeoDetector, createGeoDetector } from "../geo/index";
+import {
+  WorkerGeoDetector,
+  AutoGeoDetector,
+  CloudflareGeoDetector,
+  IPAPIGeoDetector,
+  TimezoneGeoDetector,
+  createGeoDetector,
+} from "../geo/index";
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -8,6 +15,7 @@ vi.stubGlobal("fetch", mockFetch);
 
 beforeEach(() => {
   mockFetch.mockReset();
+  vi.restoreAllMocks();
 });
 
 describe("WorkerGeoDetector", () => {
@@ -21,7 +29,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: "DE",
       region: undefined,
       method: "worker",
@@ -39,7 +47,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "US",
       region: undefined,
       method: "worker",
@@ -56,7 +64,7 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: false,
+      consentRequired: false,
       countryCode: "US",
       region: "California",
       method: "worker",
@@ -77,16 +85,12 @@ describe("WorkerGeoDetector", () => {
     await expect(detector.detect()).rejects.toThrow("Worker geo-detection failed");
   });
 
-  it("treats missing or non-boolean isEU as false", async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ countryCode: "XX" }),
-    });
+  it("decides from the country when the endpoint gives no isEU flag", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ countryCode: "BR" }) });
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(false);
 
-    const detector = new WorkerGeoDetector("/api/geo");
-    const result = await detector.detect();
-
-    expect(result.isEU).toBe(false);
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ countryCode: "IS" }) });
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(true);
   });
 
   it("handles missing countryCode gracefully", async () => {
@@ -99,11 +103,207 @@ describe("WorkerGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result).toEqual({
-      isEU: true,
+      consentRequired: true,
       countryCode: undefined,
       region: undefined,
       method: "worker",
     });
+  });
+});
+
+/** Makes the browser report this IANA time zone. */
+function useTimezone(timeZone: string): void {
+  vi.spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions").mockReturnValue({
+    ...new Intl.DateTimeFormat().resolvedOptions(),
+    timeZone,
+  });
+}
+
+// "Needs consent" follows the consent jurisdictions (EEA and UK by default), not EU membership:
+// the GDPR applies in Norway, Iceland and Liechtenstein through the EEA Agreement, and the UK
+// GDPR and PECR in the United Kingdom.
+describe("consent jurisdictions in the detectors", () => {
+  it("IP API: decides from the country code, not from in_eu", async () => {
+    for (const country of ["NO", "IS", "LI", "GB", "CY"]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ in_eu: false, country_code: country }),
+      });
+      const result = await new IPAPIGeoDetector().detect();
+      expect({ country, required: result.consentRequired }).toEqual({ country, required: true });
+    }
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ in_eu: false, country_code: "US" }),
+    });
+    expect((await new IPAPIGeoDetector().detect()).consentRequired).toBe(false);
+  });
+
+  it("IP API: a response without a country code is a failure, not a visitor outside", async () => {
+    // Regression: ipapi.co answers a rate-limited request with an error body; `in_eu` missing
+    // read as false and granted every category.
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: true, reason: "RateLimited" }),
+    });
+
+    await expect(new IPAPIGeoDetector().detect()).rejects.toThrow("IP API geo-detection failed");
+  });
+
+  it("Cloudflare: decides from CF-IPCountry when the EU flag says false", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ "X-Is-EU-Country": "false", "CF-IPCountry": "GB" }),
+    });
+
+    const result = await new CloudflareGeoDetector().detect();
+
+    expect(result).toEqual({ consentRequired: true, countryCode: "GB", method: "cloudflare" });
+  });
+
+  it("Cloudflare: an EU flag of false without a country is a failure", async () => {
+    // Cloudflare's flag covers EU members only: false alone says nothing about the EEA or the UK.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ "X-Is-EU-Country": "false" }),
+    });
+
+    await expect(new CloudflareGeoDetector().detect()).rejects.toThrow(
+      "Cloudflare geo-detection failed"
+    );
+  });
+
+  it("Cloudflare: an EU flag of true without a country requires consent", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ "X-Is-EU-Country": "true" }),
+    });
+
+    expect(await new CloudflareGeoDetector().detect()).toEqual({
+      consentRequired: true,
+      countryCode: undefined,
+      method: "cloudflare",
+    });
+  });
+
+  it("Worker: decides from the country code, and fails without one when its flag is false", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ isEU: false, countryCode: "NO" }),
+    });
+    expect((await new WorkerGeoDetector("/api/geo").detect()).consentRequired).toBe(true);
+
+    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ isEU: false }) });
+    await expect(new WorkerGeoDetector("/api/geo").detect()).rejects.toThrow(
+      "Worker geo-detection failed"
+    );
+  });
+
+  it("Cloudflare: its unknown (XX) and Tor (T1) codes are no country", async () => {
+    // Regression: XX and T1 passed for a country outside every jurisdiction, so a visitor whose
+    // location Cloudflare could not tell was granted every category.
+    for (const code of ["XX", "T1", "xx"]) {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "X-Is-EU-Country": "false", "CF-IPCountry": code }),
+      });
+      await expect(new CloudflareGeoDetector().detect()).rejects.toThrow(
+        "Cloudflare geo-detection failed"
+      );
+    }
+    // With the EU flag set the visitor is asked, without the pseudo-country.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({ "X-Is-EU-Country": "true", "CF-IPCountry": "XX" }),
+    });
+    expect(await new CloudflareGeoDetector().detect()).toEqual({
+      consentRequired: true,
+      countryCode: undefined,
+      method: "cloudflare",
+    });
+  });
+
+  it("Worker and IP API: the unknown and Tor codes are no country", async () => {
+    // The Worker endpoint copies Cloudflare's request.cf.country, XX and T1 included.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ isEU: false, countryCode: "XX" }),
+    });
+    await expect(new WorkerGeoDetector("/api/geo").detect()).rejects.toThrow(
+      "Worker geo-detection failed"
+    );
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ country_code: "T1" }),
+    });
+    await expect(new IPAPIGeoDetector().detect()).rejects.toThrow("IP API geo-detection failed");
+  });
+
+  it("timezone: maps the zones of consent countries, outermost regions included", async () => {
+    // Regression: Cyprus, the Azores, Åland, Ceuta, Büsingen, the French outermost regions,
+    // Iceland and the UK were missing from the timezone table.
+    const cases: Array<[string, string]> = [
+      ["Asia/Nicosia", "CY"],
+      ["Europe/Nicosia", "CY"],
+      ["Atlantic/Azores", "PT"],
+      ["Europe/Mariehamn", "AX"],
+      ["Africa/Ceuta", "ES"],
+      ["Europe/Busingen", "DE"],
+      ["America/Guadeloupe", "GP"],
+      ["Indian/Reunion", "RE"],
+      ["Atlantic/Reykjavik", "IS"],
+      ["Europe/London", "GB"],
+    ];
+    for (const [zone, country] of cases) {
+      useTimezone(zone);
+      const result = await new TimezoneGeoDetector().detect();
+      expect({ zone, ...result }).toEqual({
+        zone,
+        consentRequired: true,
+        countryCode: country,
+        method: "fallback",
+      });
+    }
+  });
+
+  it("timezone: zones of countries outside the jurisdictions do not require consent", async () => {
+    // Regression: Sarajevo, Skopje, Tirane, Monaco, Andorra, San Marino and the Vatican were in
+    // the table with no rule behind them.
+    for (const zone of ["Europe/Sarajevo", "Europe/Monaco", "Europe/Vatican", "America/New_York"]) {
+      useTimezone(zone);
+      expect(await new TimezoneGeoDetector().detect()).toEqual({
+        consentRequired: false,
+        method: "fallback",
+      });
+    }
+    useTimezone("Europe/Zurich");
+    expect(await new TimezoneGeoDetector().detect()).toEqual({
+      consentRequired: false,
+      countryCode: "CH",
+      method: "fallback",
+    });
+  });
+
+  it("timezone: UTC says nothing about the location and is a failure", async () => {
+    // Privacy-hardened browsers report UTC everywhere, the EU included. CET, MET, EET and WET
+    // span several countries, consent countries among them, and name none.
+    for (const zone of ["UTC", "Etc/UTC", "Etc/GMT", "CET", "MET", "EET", "WET"]) {
+      useTimezone(zone);
+      await expect(new TimezoneGeoDetector().detect()).rejects.toThrow(
+        "Timezone geo-detection failed"
+      );
+    }
+  });
+
+  it("auto: fails when every method fails, the timezone included", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("Cloudflare unavailable"));
+    mockFetch.mockRejectedValueOnce(new Error("ipapi unavailable"));
+    useTimezone("Etc/UTC");
+
+    await expect(new AutoGeoDetector().detect()).rejects.toThrow(
+      "All geo-detection methods failed"
+    );
   });
 });
 
@@ -121,7 +321,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("worker");
-    expect(result.isEU).toBe(true);
+    expect(result.consentRequired).toBe(true);
   });
 
   it("skips worker when geoUrl is not provided", async () => {
@@ -137,7 +337,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("api");
-    expect(result.isEU).toBe(false);
+    expect(result.consentRequired).toBe(false);
   });
 
   it("falls through to ipapi when worker also fails", async () => {
@@ -155,7 +355,7 @@ describe("AutoGeoDetector", () => {
     const result = await detector.detect();
 
     expect(result.method).toBe("api");
-    expect(result.isEU).toBe(true);
+    expect(result.consentRequired).toBe(true);
   });
 });
 
@@ -177,7 +377,7 @@ describe("AutoGeoDetector detection log", () => {
     expect(result.log!.length).toBe(1);
     expect(result.log![0].method).toBe("cloudflare");
     expect(result.log![0].status).toBe("success");
-    expect(result.log![0].result).toEqual({ isEU: true, countryCode: "DE" });
+    expect(result.log![0].result).toEqual({ consentRequired: true, countryCode: "DE" });
     expect(result.log![0].duration).toBeGreaterThanOrEqual(0);
   });
 
@@ -204,7 +404,7 @@ describe("AutoGeoDetector detection log", () => {
     // Second entry: worker succeeded
     expect(result.log![1].method).toBe("worker");
     expect(result.log![1].status).toBe("success");
-    expect(result.log![1].result).toEqual({ isEU: true, countryCode: "FR" });
+    expect(result.log![1].result).toEqual({ consentRequired: true, countryCode: "FR" });
   });
 
   it("includes skipped entry when geoUrl not provided", async () => {
@@ -235,7 +435,8 @@ describe("AutoGeoDetector detection log", () => {
   });
 
   it("includes all attempts when falling through to timezone", async () => {
-    // All methods fail except timezone
+    // All methods fail except timezone; a set zone, since CI machines run in UTC (no answer)
+    useTimezone("Europe/Berlin");
     mockFetch.mockRejectedValueOnce(new Error("Cloudflare unavailable"));
     mockFetch.mockResolvedValueOnce({ ok: false, status: 500 }); // Worker fails
     mockFetch.mockRejectedValueOnce(new Error("ipapi unavailable")); // ipapi fails
@@ -290,9 +491,9 @@ describe("createGeoDetector", () => {
 
   it("returns manual detectors for always/never modes", async () => {
     const always = createGeoDetector("always");
-    expect((await always.detect()).isEU).toBe(true);
+    expect((await always.detect()).consentRequired).toBe(true);
 
     const never = createGeoDetector("never");
-    expect((await never.detect()).isEU).toBe(false);
+    expect((await never.detect()).consentRequired).toBe(false);
   });
 });

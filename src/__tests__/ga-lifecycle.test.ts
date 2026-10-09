@@ -133,7 +133,9 @@ function euManager(config: ConsentConfig = {}): ConsentManager {
     new ConsentManager({
       gaId: GA_ID,
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, countryCode: "DE", method: "manual" }),
+        detect: vi
+          .fn()
+          .mockResolvedValue({ consentRequired: true, countryCode: "DE", method: "manual" }),
       },
       ...config,
     })
@@ -223,9 +225,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     storeConsent(
       {
         categories: { analytics: true, marketing: false, functional: true },
-        isEU: true,
-        geoMethod: "manual",
-        countryCode: "DE",
+        consentRequired: true,
       },
       {}
     );
@@ -242,7 +242,9 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     const manager = tracked(
       new ConsentManager({
         gaId: GA_ID,
-        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+        geoDetector: {
+          detect: vi.fn().mockResolvedValue({ consentRequired: false, method: "manual" }),
+        },
       })
     );
 
@@ -257,7 +259,10 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     // Defaults apply only before the tag runs; a site that loaded gtag.js itself would keep
     // its own consent state unless the stored choice also arrives as an update.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     preloadGtagScript(true);
@@ -402,7 +407,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     const initDone = manager.init();
     await manager.acceptAll();
     manager.resetConsent();
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     expect(consentCalls("update").at(-1)).toEqual(DENIED);
@@ -420,7 +425,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     manager.resetConsent();
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await initDone;
 
     expect(consentCalls("default")).toEqual([{ ...DENIED, wait_for_update: 500 }]);
@@ -431,7 +436,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     // A returning visitor's final grant queues `config` (and its page view) at once; a refusal
     // made before the tag runs must be processed before that hit, not after it.
     storeConsent(
-      { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+      { categories: { analytics: true, marketing: true, functional: true }, consentRequired: true },
       {}
     );
     scriptOutcome = "manual";
@@ -501,7 +506,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     manager.resetConsent();
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     const showBanner = vi.fn();
@@ -908,9 +913,10 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
-  it("keeps the location of a choice made while init() detects it", async () => {
-    // Regression: the consent was stored before geo detection resolved, without isEU; on the
-    // next EU page load the roaming check took it for non-EU consent and asked again.
+  it("keeps the jurisdiction of a choice made while init() detects it", async () => {
+    // Regression: the consent was stored before geo detection resolved, without its
+    // jurisdiction; on the next EU page load the roaming check took it for consent given outside
+    // and asked again.
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
     const manager = euManager({
       geoDetector: { detect: () => new Promise((resolve) => (resolveGeo = resolve)) },
@@ -918,12 +924,11 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     await manager.acceptAll();
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     expect(manager.getConsent()).toMatchObject({
-      isEU: true,
-      countryCode: "DE",
+      consentRequired: true,
       categories: { analytics: true },
     });
   });
@@ -963,9 +968,12 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
         set: vi.fn().mockResolvedValue(null),
       },
       geoDetector: {
-        detect: vi
-          .fn()
-          .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+        detect: vi.fn().mockResolvedValue({
+          consentRequired: false,
+          countryCode: "US",
+          region: "CA",
+          method: "manual",
+        }),
       },
     });
 
@@ -982,7 +990,10 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     // init() read the stored grant before the reset; when its location check returns, that
     // stale grant must not be stored or signalled again.
     storeConsent(
-      { categories: { analytics: true, marketing: true, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: true, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -992,7 +1003,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     manager.resetConsent();
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await initDone;
 
     expect(manager.getConsent()).toBeNull();
@@ -1044,7 +1055,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     await manager.acceptAll();
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     expect(consentCalls("default")).toEqual([GRANTED]);
@@ -1058,7 +1069,10 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     // Stored non-EU consent triggers a location check; a rejection made meanwhile must not be
     // overwritten by the stored grant when the check returns.
     storeConsent(
-      { categories: { analytics: true, marketing: true, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: true, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -1068,7 +1082,7 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
 
     const initDone = manager.init();
     await manager.rejectAll();
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await initDone;
 
     expect(consentCalls("default")).toEqual([DENIED]);
@@ -1307,9 +1321,12 @@ describe("basic consent mode", () => {
         consentMode: "basic",
         ccpaEnabled: true,
         geoDetector: {
-          detect: vi
-            .fn()
-            .mockResolvedValue({ isEU: false, countryCode: "US", region: "CA", method: "manual" }),
+          detect: vi.fn().mockResolvedValue({
+            consentRequired: false,
+            countryCode: "US",
+            region: "CA",
+            method: "manual",
+          }),
         },
       })
     );
@@ -1349,7 +1366,9 @@ describe("basic consent mode", () => {
       new ConsentManager({
         gaId: GA_ID,
         consentMode: "basic",
-        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+        geoDetector: {
+          detect: vi.fn().mockResolvedValue({ consentRequired: false, method: "manual" }),
+        },
       })
     );
     await manager.init();
@@ -1391,8 +1410,7 @@ describe("basic consent mode", () => {
       storeConsent(
         {
           categories: { analytics: true, marketing: false, functional: true },
-          isEU: true,
-          countryCode: "DE",
+          consentRequired: true,
         },
         {}
       );
@@ -1514,7 +1532,10 @@ describe("basic consent mode", () => {
     expectNothingSentToGoogle();
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     manager.trackEvent("sign_up");
@@ -1535,7 +1556,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       const events = count("event");
@@ -1605,7 +1629,7 @@ describe("basic consent mode", () => {
       });
       const initDone = second.init();
       second.resetConsent();
-      resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+      resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
       await initDone;
       await settle();
 
@@ -1789,7 +1813,10 @@ describe("basic consent mode", () => {
       // the page reloaded it, and the same refusal and tag reloaded every load after.
       markTagRan();
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       const manager = basicManager({ reloadOnWithdrawal: true });
@@ -1804,7 +1831,10 @@ describe("basic consent mode", () => {
       // The site's own element comes back with every load, so a reload for it would never end.
       preloadGtagScript(true);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       const manager = basicManager({ reloadOnWithdrawal: true });
@@ -1819,7 +1849,10 @@ describe("basic consent mode", () => {
       // site calling it on every start reloaded the page for a stored refusal, again and again.
       await loadGtagScript(GA_ID);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       const manager = basicManager({ reloadOnWithdrawal: true });
@@ -1839,7 +1872,10 @@ describe("basic consent mode", () => {
       await settle();
       first.destroy();
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
 
@@ -1987,7 +2023,10 @@ describe("basic consent mode", () => {
     // Regression: focus and tracking calls synced with the stored non-EU grant while the
     // location check was pending, loading the tag for a visitor who needed fresh EU consent.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -2000,7 +2039,7 @@ describe("basic consent mode", () => {
     manager.trackEvent("sign_up");
     expectNothingSentToGoogle();
 
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
     expectNothingSentToGoogle();
     manager.destroy();
@@ -2021,7 +2060,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {
+          categories: { analytics: true, marketing: true, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2040,7 +2082,10 @@ describe("basic consent mode", () => {
     await manager.init();
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2060,7 +2105,10 @@ describe("basic consent mode", () => {
       await manager.acceptAll();
 
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2080,7 +2128,10 @@ describe("basic consent mode", () => {
     try {
       vi.setSystemTime(1_000_000);
       storeConsent(
-        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {
+          categories: { analytics: true, marketing: false, functional: true },
+          consentRequired: false,
+        },
         {}
       );
       let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -2091,10 +2142,13 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: false,
+        },
         {}
       );
-      resolveGeo({ isEU: false, method: "manual" });
+      resolveGeo({ consentRequired: false, method: "manual" });
       await initDone;
 
       expectNothingSentToGoogle();
@@ -2112,7 +2166,10 @@ describe("basic consent mode", () => {
     blocked.setAttribute("data-consent-category", "analytics");
     document.head.appendChild(blocked);
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -2122,7 +2179,7 @@ describe("basic consent mode", () => {
     const initDone = manager.init();
 
     expect(blocked.isConnected).toBe(true);
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
     expect(blocked.isConnected).toBe(true);
   });
@@ -2131,7 +2188,10 @@ describe("basic consent mode", () => {
     // Regression: an allowed script that ran during init() added another consent-gated script;
     // the observer saw it before consent had settled, and nothing scanned again afterwards.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     let resolveGeo: (result: GeoDetectionResult) => void = () => {};
@@ -2149,7 +2209,7 @@ describe("basic consent mode", () => {
       document.head.appendChild(nested);
     });
 
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await initDone;
     await settle();
 
@@ -2195,7 +2255,10 @@ describe("basic consent mode", () => {
     manager.trackPageView("/landing");
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     manager.trackPageView("/checkout");
@@ -2244,7 +2307,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2297,7 +2363,10 @@ describe("basic consent mode", () => {
     await settle();
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2315,7 +2384,10 @@ describe("basic consent mode", () => {
     });
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     manager.trackEvent("sign_up");
@@ -2340,10 +2412,13 @@ describe("basic consent mode", () => {
     const initDone = manager.init();
 
     storeConsent(
-      { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: false, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
-    resolveGeo({ isEU: false, method: "manual" });
+    resolveGeo({ consentRequired: false, method: "manual" });
     await initDone;
     await settle();
 
@@ -2357,7 +2432,7 @@ describe("basic consent mode", () => {
     setConsentUid("uid-1", {});
     let resolveRemote: (consent: StoredConsent | null) => void = () => {};
     const manager = basicManager({
-      geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      geoDetector: { detect: () => Promise.resolve({ consentRequired: false, method: "manual" }) },
       storage: {
         get: () => new Promise((resolve) => (resolveRemote = resolve)),
         set: () => Promise.resolve("uid-1"),
@@ -2366,7 +2441,10 @@ describe("basic consent mode", () => {
     const initDone = manager.init();
 
     storeConsent(
-      { categories: { analytics: false, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: false, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     resolveRemote({
@@ -2391,7 +2469,7 @@ describe("basic consent mode", () => {
       configurable: true,
     });
     const manager = basicManager({
-      geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" }) },
+      geoDetector: { detect: () => Promise.resolve({ consentRequired: false, method: "manual" }) },
       storage: {
         get: () =>
           Promise.resolve({
@@ -2419,7 +2497,10 @@ describe("basic consent mode", () => {
     manager.onConsentChange(listener);
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2443,10 +2524,13 @@ describe("basic consent mode", () => {
     const initDone = manager.init();
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: false,
+      },
       {}
     );
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
     await settle();
 
@@ -2471,7 +2555,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2495,7 +2582,7 @@ describe("basic consent mode", () => {
     const initDone = manager.init();
     await manager.rejectAll();
 
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     expect(manager.getConsent()?.categories.analytics).toBe(false);
@@ -2509,11 +2596,16 @@ describe("basic consent mode", () => {
     try {
       vi.setSystemTime(1_000_000);
       storeConsent(
-        { categories: { analytics: true, marketing: false, functional: true }, isEU: false },
+        {
+          categories: { analytics: true, marketing: false, functional: true },
+          consentRequired: false,
+        },
         {}
       );
       const nonEU = {
-        geoDetector: { detect: () => Promise.resolve({ isEU: false, method: "manual" as const }) },
+        geoDetector: {
+          detect: () => Promise.resolve({ consentRequired: false, method: "manual" as const }),
+        },
       };
       vi.setSystemTime(1_000_001);
       const thisTab = basicManager(nonEU);
@@ -2577,7 +2669,10 @@ describe("basic consent mode", () => {
     manager.onHideBanner(hide);
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2608,7 +2703,10 @@ describe("basic consent mode", () => {
     await manager.init();
 
     storeConsent(
-      { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: false, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2630,7 +2728,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         { cookie: { path: "/app/" } }
       );
       window.dispatchEvent(new Event("focus"));
@@ -2654,7 +2755,7 @@ describe("basic consent mode", () => {
 
     expect(manager.hasConsent()).toBe(true);
     expect(manager.getConsent()?.categories.analytics).toBe(true);
-    expect(manager.getConsent()?.isEU).toBe(true);
+    expect(manager.getConsent()?.consentRequired).toBe(true);
   });
 
   it("hands the configured callback its own copy of the categories", async () => {
@@ -2718,7 +2819,10 @@ describe("basic consent mode", () => {
       scriptOutcome = "load";
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: true, marketing: true, functional: true }, isEU: true },
+        {
+          categories: { analytics: true, marketing: true, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2746,7 +2850,10 @@ describe("basic consent mode", () => {
       scriptOutcome = "load";
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: true, marketing: true, functional: false }, isEU: true },
+        {
+          categories: { analytics: true, marketing: true, functional: false },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2767,7 +2874,10 @@ describe("basic consent mode", () => {
     onConsentChange.mockClear();
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2788,12 +2898,12 @@ describe("basic consent mode", () => {
       manager.onConsentChange(listener);
       const grant = { analytics: true, marketing: false, functional: true };
 
-      storeConsent({ categories: grant, isEU: true }, {});
+      storeConsent({ categories: grant, consentRequired: true }, {});
       window.dispatchEvent(new Event("focus"));
       cookieStore = "";
       window.dispatchEvent(new Event("focus"));
       vi.setSystemTime(1_000_001);
-      storeConsent({ categories: grant, isEU: true }, {});
+      storeConsent({ categories: grant, consentRequired: true }, {});
       window.dispatchEvent(new Event("focus"));
 
       expect(listener).toHaveBeenCalledTimes(2);
@@ -2812,7 +2922,10 @@ describe("basic consent mode", () => {
     });
 
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     window.dispatchEvent(new Event("focus"));
@@ -2837,7 +2950,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2854,7 +2970,10 @@ describe("basic consent mode", () => {
     // Regression: the callback's tracking call ran the cross-tab sync, which notified the
     // listeners before applyConsent() notified them again for the same grant.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     let manager: ConsentManager | null = null;
@@ -2882,7 +3001,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_002);
       storeConsent(
-        { categories: { analytics: false, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: false, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       window.dispatchEvent(new Event("focus"));
@@ -2897,7 +3019,10 @@ describe("basic consent mode", () => {
     // Regression: init() ran the callbacks of a confirmed stored grant while the consent still
     // counted as unsettled, so an event they tracked was dropped.
     storeConsent(
-      { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+      {
+        categories: { analytics: true, marketing: false, functional: true },
+        consentRequired: true,
+      },
       {}
     );
     let manager: ConsentManager | null = null;
@@ -2938,7 +3063,10 @@ describe("basic consent mode", () => {
 
       vi.setSystemTime(1_000_001);
       storeConsent(
-        { categories: { analytics: true, marketing: false, functional: true }, isEU: true },
+        {
+          categories: { analytics: true, marketing: false, functional: true },
+          consentRequired: true,
+        },
         {}
       );
       manager.trackEvent("sign_up");
@@ -2967,7 +3095,7 @@ describe("basic consent mode", () => {
     });
     const initDone = second.init();
     second.resetConsent();
-    resolveGeo({ isEU: true, countryCode: "DE", method: "manual" });
+    resolveGeo({ consentRequired: true, countryCode: "DE", method: "manual" });
     await initDone;
 
     expect(analyticsDisabled()).toBe(true);
@@ -2983,7 +3111,9 @@ describe("basic consent mode", () => {
       new ConsentManager({
         gaId: GA_ID,
         consentMode: "basic",
-        geoDetector: { detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" }) },
+        geoDetector: {
+          detect: vi.fn().mockResolvedValue({ consentRequired: false, method: "manual" }),
+        },
         onConsentChange: (consent) => received.push(consent.categories.analytics),
       })
     );

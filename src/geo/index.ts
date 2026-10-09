@@ -4,11 +4,14 @@ import type {
   GeoDetectionLogEntry,
   GeoDetectionResultWithLog,
 } from "../core/types";
+import { TIMEZONE_COUNTRIES, knownCountry, requiresConsent } from "./jurisdictions";
 
 /**
  * Cloudflare geo-detection using headers
  *
- * Requires Cloudflare Worker or Transform Rule to set X-Is-EU-Country header
+ * Requires a Cloudflare Worker or Transform Rule to set `CF-IPCountry` (and optionally
+ * `X-Is-EU-Country`) on the response. Cloudflare's EU flag covers EU members only, so `false`
+ * without a country is not an answer for the EEA or the UK and counts as a failure.
  */
 export class CloudflareGeoDetector implements GeoDetector {
   private headerName: string;
@@ -18,9 +21,8 @@ export class CloudflareGeoDetector implements GeoDetector {
   }
 
   async detect(): Promise<GeoDetectionResult> {
-    if (typeof document === "undefined") {
-      return { isEU: false, method: "cloudflare" };
-    }
+    // Without a page (server rendering) there is no response to read: no answer.
+    if (typeof document === "undefined") throw new Error("Cloudflare geo-detection failed");
 
     try {
       // Try to get the header by making a HEAD request to current page
@@ -30,18 +32,18 @@ export class CloudflareGeoDetector implements GeoDetector {
       });
 
       const isEUHeader = response.headers.get(this.headerName);
-      const countryCode = response.headers.get("CF-IPCountry") ?? undefined;
+      // XX (unknown) and T1 (Tor) name no country.
+      const countryCode = knownCountry(response.headers.get("CF-IPCountry") ?? undefined);
+      const inEU = isEUHeader?.toLowerCase() === "true";
 
-      if (isEUHeader !== null) {
-        return {
-          isEU: isEUHeader.toLowerCase() === "true",
-          countryCode,
-          method: "cloudflare",
-        };
-      }
-
-      // Header not present - Cloudflare not configured
-      throw new Error("Cloudflare header not present");
+      // Neither a country nor a positive EU flag: Cloudflare is not configured, or its flag
+      // cannot tell a visitor in Norway or the UK from one in the US.
+      if (!countryCode && !inEU) throw new Error("Cloudflare headers not present");
+      return {
+        consentRequired: requiresConsent(countryCode, inEU),
+        countryCode,
+        method: "cloudflare",
+      };
     } catch {
       throw new Error("Cloudflare geo-detection failed");
     }
@@ -65,14 +67,17 @@ export class IPAPIGeoDetector implements GeoDetector {
     try {
       const response = await fetch(this.apiUrl);
       const data = (await response.json()) as {
-        in_eu?: boolean;
         country_code?: string;
         region?: string;
       };
+      // `in_eu` is false for the EEA EFTA states and the UK; the country decides instead. An
+      // error body (rate limit, invalid request) carries no country and is no answer.
+      const countryCode = knownCountry(data.country_code);
+      if (countryCode === undefined) throw new Error("No country in the response");
 
       return {
-        isEU: data.in_eu === true,
-        countryCode: data.country_code,
+        consentRequired: requiresConsent(countryCode, false),
+        countryCode,
         region: data.region ?? undefined,
         method: "api",
       };
@@ -99,15 +104,21 @@ export class WorkerGeoDetector implements GeoDetector {
     try {
       const response = await fetch(this.geoUrl);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // The endpoint's own response format (vue-privacy-worker): `isEU` is Cloudflare's EU flag.
       const data = (await response.json()) as {
         isEU?: boolean;
         countryCode?: string;
         region?: string;
       };
+      const inEU = data.isEU === true;
+      // It copies Cloudflare's request.cf.country: XX (unknown) and T1 (Tor) name no country.
+      const countryCode = knownCountry(data.countryCode);
+      // Like Cloudflare's, the endpoint's EU flag says nothing about the EEA or the UK.
+      if (countryCode === undefined && !inEU) throw new Error("No country in the response");
 
       return {
-        isEU: data.isEU === true,
-        countryCode: data.countryCode ?? undefined,
+        consentRequired: requiresConsent(countryCode, inEU),
+        countryCode,
         region: data.region ?? undefined,
         method: "worker",
       };
@@ -118,69 +129,77 @@ export class WorkerGeoDetector implements GeoDetector {
 }
 
 /**
- * Fallback detector that uses browser timezone heuristics
+ * Zones that name no country: UTC, which privacy-hardened browsers report wherever they are, and
+ * the generic CET, MET, EET and WET, which span several countries, consent countries among them.
+ */
+const LOCATIONLESS_ZONE = /^(?:Etc\/.*|UTC|UCT|GMT|Universal|Zulu|Greenwich|CET|MET|EET|WET)$/;
+
+/**
+ * Fallback detector that uses the browser's time zone
  *
- * Not 100% accurate but works without external requests
+ * A zone of a consent country gives that country; any other zone a visitor outside them. Not
+ * fully accurate (a traveller keeps a home zone) but works without external requests.
  */
 export class TimezoneGeoDetector implements GeoDetector {
-  // EU timezones (not exhaustive but covers most)
-  private euTimezones = new Set([
-    "Europe/Amsterdam",
-    "Europe/Andorra",
-    "Europe/Athens",
-    "Europe/Berlin",
-    "Europe/Bratislava",
-    "Europe/Brussels",
-    "Europe/Bucharest",
-    "Europe/Budapest",
-    "Europe/Copenhagen",
-    "Europe/Dublin",
-    "Europe/Helsinki",
-    "Europe/Lisbon",
-    "Europe/Ljubljana",
-    "Europe/Luxembourg",
-    "Europe/Madrid",
-    "Europe/Malta",
-    "Europe/Monaco",
-    "Europe/Oslo",
-    "Europe/Paris",
-    "Europe/Prague",
-    "Europe/Riga",
-    "Europe/Rome",
-    "Europe/San_Marino",
-    "Europe/Sarajevo",
-    "Europe/Skopje",
-    "Europe/Sofia",
-    "Europe/Stockholm",
-    "Europe/Tallinn",
-    "Europe/Tirane",
-    "Europe/Vaduz",
-    "Europe/Vatican",
-    "Europe/Vienna",
-    "Europe/Vilnius",
-    "Europe/Warsaw",
-    "Europe/Zagreb",
-    "Atlantic/Canary",
-    "Atlantic/Faroe",
-    "Atlantic/Madeira",
-  ]);
-
   async detect(): Promise<GeoDetectionResult> {
+    let timezone: string | undefined;
     try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      const isEU = this.euTimezones.has(timezone);
-
-      return {
-        isEU,
-        method: "fallback",
-      };
+      timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     } catch {
-      // If we can't determine, assume EU for safety
-      return {
-        isEU: true,
-        method: "fallback",
-      };
+      // Leaves the zone unknown, a failure below.
     }
+    if (!timezone || LOCATIONLESS_ZONE.test(timezone)) {
+      throw new Error("Timezone geo-detection failed");
+    }
+    const countryCode = TIMEZONE_COUNTRIES[timezone];
+    if (countryCode === undefined) return { consentRequired: false, method: "fallback" };
+    return {
+      consentRequired: requiresConsent(countryCode, false),
+      countryCode,
+      method: "fallback",
+    };
+  }
+}
+
+/** Every detection method failed; `log` holds each attempt. */
+export class GeoDetectionError extends Error {
+  readonly log: GeoDetectionLogEntry[];
+
+  constructor(message: string, log: GeoDetectionLogEntry[]) {
+    super(message);
+    this.name = "GeoDetectionError";
+    this.log = log;
+  }
+}
+
+/** Run one detection method and log its outcome; null when it failed. */
+async function attempt(
+  method: GeoDetectionLogEntry["method"],
+  detector: GeoDetector,
+  log: GeoDetectionLogEntry[]
+): Promise<GeoDetectionResult | null> {
+  const start = Date.now();
+  try {
+    const result = await detector.detect();
+    log.push({
+      method,
+      status: "success",
+      result: {
+        consentRequired: result.consentRequired,
+        countryCode: result.countryCode,
+        region: result.region,
+      },
+      duration: Date.now() - start,
+    });
+    return result;
+  } catch (e) {
+    log.push({
+      method,
+      status: "failed",
+      error: e instanceof Error ? e.message : "Unknown error",
+      duration: Date.now() - start,
+    });
+    return null;
   }
 }
 
@@ -205,86 +224,27 @@ export class AutoGeoDetector implements GeoDetector {
 
   async detect(): Promise<GeoDetectionResultWithLog> {
     const log: GeoDetectionLogEntry[] = [];
-
-    // Try Cloudflare headers first (fastest, most reliable if available)
-    const cfStart = Date.now();
-    try {
-      const result = await this.cloudflare.detect();
-      log.push({
-        method: "cloudflare",
-        status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
-        duration: Date.now() - cfStart,
-      });
-      return { ...result, log };
-    } catch (e) {
-      log.push({
-        method: "cloudflare",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-        duration: Date.now() - cfStart,
-      });
-    }
-
-    // Try Worker /api/geo (free, no rate limits, accurate)
-    if (this.worker) {
-      const workerStart = Date.now();
-      try {
-        const result = await this.worker.detect();
-        log.push({
-          method: "worker",
-          status: "success",
-          result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
-          duration: Date.now() - workerStart,
-        });
-        return { ...result, log };
-      } catch (e) {
-        log.push({
-          method: "worker",
-          status: "failed",
-          error: e instanceof Error ? e.message : "Unknown error",
-          duration: Date.now() - workerStart,
-        });
+    // In order: Cloudflare headers (fastest), the Worker /api/geo (free, no rate limits; when
+    // geoUrl is set), the IP API (external, rate-limited), then the browser time zone. The first
+    // that answers wins.
+    const chain: Array<[GeoDetectionLogEntry["method"], GeoDetector | null]> = [
+      ["cloudflare", this.cloudflare],
+      ["worker", this.worker],
+      ["api", this.ipapi],
+      ["fallback", this.timezone],
+    ];
+    for (const [method, detector] of chain) {
+      if (detector === null) {
+        // Worker skipped (not a failure, just not configured)
+        log.push({ method, status: "skipped", duration: 0 });
+        continue;
       }
-    } else {
-      // Worker skipped (not a failure, just not configured)
-      log.push({
-        method: "worker",
-        status: "skipped",
-        duration: 0,
-      });
+      // One method at a time: a later one runs only when the earlier ones failed.
+      const result = await attempt(method, detector, log);
+      if (result !== null) return { ...result, log };
     }
-
-    // Try IP API (external service, rate-limited)
-    const apiStart = Date.now();
-    try {
-      const result = await this.ipapi.detect();
-      log.push({
-        method: "api",
-        status: "success",
-        result: { isEU: result.isEU, countryCode: result.countryCode, region: result.region },
-        duration: Date.now() - apiStart,
-      });
-      return { ...result, log };
-    } catch (e) {
-      log.push({
-        method: "api",
-        status: "failed",
-        error: e instanceof Error ? e.message : "Unknown error",
-        duration: Date.now() - apiStart,
-      });
-    }
-
-    // Fallback to timezone heuristics
-    const tzStart = Date.now();
-    const result = await this.timezone.detect();
-    log.push({
-      method: "fallback",
-      status: "success",
-      result: { isEU: result.isEU },
-      duration: Date.now() - tzStart,
-    });
-    return { ...result, log };
+    // The manager's geoFailure option decides; the log stays readable on the error.
+    throw new GeoDetectionError("All geo-detection methods failed", log);
   }
 }
 
@@ -305,11 +265,11 @@ export function createGeoDetector(
       return new IPAPIGeoDetector();
     case "always":
       return {
-        detect: async () => ({ isEU: true, method: "manual" as const }),
+        detect: () => Promise.resolve({ consentRequired: true, method: "manual" as const }),
       };
     case "never":
       return {
-        detect: async () => ({ isEU: false, method: "manual" as const }),
+        detect: () => Promise.resolve({ consentRequired: false, method: "manual" as const }),
       };
     case "auto":
     default:

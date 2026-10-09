@@ -112,7 +112,7 @@ describe("initScriptBlocker with ConsentManager", () => {
 
     const manager = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
       },
     });
 
@@ -140,7 +140,7 @@ describe("initScriptBlocker with ConsentManager", () => {
 
     const manager = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: true, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
       },
     });
 
@@ -156,7 +156,7 @@ describe("initScriptBlocker with ConsentManager", () => {
   it("cleanup disconnects the observer", async () => {
     const manager = new ConsentManager({
       geoDetector: {
-        detect: vi.fn().mockResolvedValue({ isEU: false, method: "manual" as const }),
+        detect: vi.fn().mockResolvedValue({ consentRequired: false, method: "manual" as const }),
       },
     });
 

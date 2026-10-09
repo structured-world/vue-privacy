@@ -34,7 +34,7 @@ This allows us to remember your preference across visits.
 
 | Cookie | Purpose | Duration | Category |
 |--------|---------|----------|----------|
-| `consent_preferences` | Stores your consent choices | 365 days | Necessary |
+| `consent_preferences` | Stores your consent choices, when you made them, and whether you made them where consent is required (no location) | 365 days | Necessary |
 | `consent_uid` | Anonymous ID for remote consent sync | 365 days | Necessary |
 | `_ga`, `_ga_*` | Google Analytics tracking | 2 years | Analytics |
 

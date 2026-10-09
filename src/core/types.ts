@@ -1,4 +1,7 @@
 import type { SupportedLocale } from "../i18n/types";
+import type { ConsentJurisdiction } from "../geo/jurisdictions";
+
+export type { ConsentJurisdiction } from "../geo/jurisdictions";
 
 /**
  * Consent categories that can be managed
@@ -139,7 +142,9 @@ export interface GoogleAnalyticsOptions {
 }
 
 /**
- * Stored consent state
+ * Stored consent state. The consent cookie is strictly necessary storage (ePrivacy Directive
+ * 2002/58/EC, Art. 5(3)), set without consent to remember the choice, so it holds these fields
+ * and no location.
  */
 export interface StoredConsent {
   /** Consent categories */
@@ -148,14 +153,11 @@ export interface StoredConsent {
   timestamp: number;
   /** Version of the consent configuration */
   version: string;
-  /** Whether user was in EU when consent was given */
-  isEU?: boolean;
-  /** Geo-detection method used when consent was given */
-  geoMethod?: "cloudflare" | "worker" | "api" | "fallback" | "manual";
-  /** Country code detected when consent was given */
-  countryCode?: string;
-  /** Region/state detected when consent was given (e.g., "California" for CCPA) */
-  region?: string;
+  /**
+   * Whether the choice was made in a consent jurisdiction (see
+   * {@link ConsentConfig.consentJurisdictions}); such a choice stands wherever the visitor goes
+   */
+  consentRequired?: boolean;
 }
 
 /**
@@ -208,14 +210,18 @@ export interface KVStorageOptions {
  * Geo-detection result
  */
 export interface GeoDetectionResult {
-  /** Whether the user is in the EU */
-  isEU: boolean;
+  /**
+   * Whether the visitor is in a consent jurisdiction. With `countryCode` set the consent manager
+   * decides from the country and its `consentJurisdictions` instead; a detector that cannot
+   * tell throws, and the manager applies `geoFailure`.
+   */
+  consentRequired: boolean;
   /** Country code (ISO 3166-1 alpha-2) */
   countryCode?: string;
   /** Region/state code (e.g., "California", "CA" for US states) */
   region?: string;
-  /** Detection method used */
-  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  /** Detection method used; `stored`: no lookup, the stored choice's jurisdiction */
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual" | "stored";
 }
 
 /**
@@ -224,11 +230,11 @@ export interface GeoDetectionResult {
  */
 export interface GeoDetectionLogEntry {
   /** Detection method that was attempted */
-  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual" | "stored";
   /** Status of this detection attempt */
   status: "success" | "failed" | "skipped";
   /** Result if successful */
-  result?: { isEU: boolean; countryCode?: string; region?: string };
+  result?: { consentRequired: boolean; countryCode?: string; region?: string };
   /** Error message if failed */
   error?: string;
   /** Duration of the attempt in milliseconds */
@@ -248,7 +254,7 @@ export interface GeoDetectionResultWithLog extends GeoDetectionResult {
  * Geo-detection provider interface
  */
 export interface GeoDetector {
-  /** Detect if user is in the EU */
+  /** Detect the visitor's country, and whether it requires consent; throw when unknown */
   detect(): Promise<GeoDetectionResult | GeoDetectionResultWithLog>;
 }
 
@@ -484,6 +490,24 @@ export interface ConsentConfig {
 
   /** URL for Worker-based geo detection (e.g. "/api/geo"). Used by "worker" and "auto" modes. */
   geoUrl?: string;
+
+  /**
+   * Jurisdictions whose visitors are asked for consent; elsewhere every category is granted.
+   * `EEA`: the EU member states (outermost regions and Åland included), Iceland, Liechtenstein
+   * and Norway. `UK`: the United Kingdom. `CH`: Switzerland. The visitor's country decides;
+   * a detector that reports none decides itself.
+   * @default ["EEA", "UK"]
+   */
+  consentJurisdictions?: ConsentJurisdiction[];
+
+  /**
+   * What a failed geo lookup means (a blocked IP API, a browser reporting UTC):
+   * - `'require-consent'` (default): the visitor is asked, since a failure is no evidence of
+   *   being outside a consent jurisdiction. A choice stored outside them is asked again too.
+   * - `'grant'`: the visitor is treated as outside consent jurisdictions.
+   * @default 'require-consent'
+   */
+  geoFailure?: "require-consent" | "grant";
 
   /** Custom geo-detection provider */
   geoDetector?: GeoDetector;

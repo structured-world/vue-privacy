@@ -16,7 +16,7 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
 - **GDPR & CCPA** — Compliant with EU GDPR and California Consumer Privacy Act
 - **GDPR Roaming Protection** — Re-prompt consent when EU user travels to non-EU region
-- **EU Detection** — Auto-detect EU users via Cloudflare headers, IP API, or timezone heuristics
+- **Consent Jurisdictions** — Ask visitors in the EEA and the UK (Switzerland on request), detected by country via Cloudflare headers, IP API, or timezone; a failed lookup asks too
 - **Consent Banner** — Customizable GDPR/CCPA banner with dark mode support
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
 - **Script Blocking** — Block third-party scripts until consent is granted
@@ -211,7 +211,8 @@ interface ConsentConfig {
     };
   };
 
-  // Cookie settings
+  // Consent cookie (strictly necessary: holds the categories, the time and version of the
+  // choice, and whether it was made in a consent jurisdiction; never the location)
   cookie?: {
     name?: string;    // Default: 'consent_preferences'
     expiry?: number;  // Days, default: 365
@@ -222,8 +223,14 @@ interface ConsentConfig {
   // Remote consent storage (pluggable backend)
   storage?: ConsentStorage;
 
-  // EU detection mode
-  euDetection?: 'auto' | 'cloudflare' | 'api' | 'always' | 'never';
+  // Region detection mode
+  euDetection?: 'auto' | 'cloudflare' | 'worker' | 'api' | 'always' | 'never';
+
+  // Jurisdictions whose visitors are asked for consent. Default: ['EEA', 'UK']
+  consentJurisdictions?: ('EEA' | 'UK' | 'CH')[];
+
+  // A failed geo lookup: ask for consent (default) or treat as outside
+  geoFailure?: 'require-consent' | 'grant';
 
   // Consent version (changing resets all consents)
   version?: string;
@@ -378,24 +385,35 @@ manager.showPreferenceCenter();
 
 // Check state
 const consent = manager.getConsent();
-const isEU = manager.isEUUser();
+const asked = manager.isConsentRequired(); // isEUUser() is an alias
 
 // Cleanup
 manager.destroy();
 ```
 
-## EU Detection
+## Consent Jurisdictions
 
-### Auto (Recommended)
+The banner is shown to visitors in a jurisdiction whose law requires consent before non-essential cookies, decided from the visitor's country:
+
+| Jurisdiction | Countries | Default |
+|---|---|---|
+| `'EEA'` | the 27 EU member states, including the outermost regions and Åland (AX, GF, GP, MQ, RE, YT, MF); Iceland, Liechtenstein, Norway | on |
+| `'UK'` | United Kingdom (UK GDPR, PECR) | on |
+| `'CH'` | Switzerland | off |
 
 ```typescript
-createConsentPlugin({ euDetection: 'auto' })
+createConsentPlugin({ consentJurisdictions: ['EEA', 'UK', 'CH'] })
 ```
 
+Everywhere else every category is granted without a banner (CCPA states: see `ccpaEnabled`). A failed lookup (a blocked IP API, a browser reporting UTC) asks for consent; `geoFailure: 'grant'` treats it as outside instead. `isConsentRequired()` tells which applies; `isEUUser()` is an alias.
+
+### Detection (`euDetection: 'auto'`, recommended)
+
 Tries in order:
-1. Cloudflare `X-Is-EU-Country` header
-2. IP API (ipapi.co)
-3. Timezone heuristics fallback
+1. Cloudflare `CF-IPCountry` (and `X-Is-EU-Country`) response headers
+2. Worker `/api/geo` (when `geoUrl` is set)
+3. IP API (ipapi.co)
+4. Browser time zone, mapped to its country from the IANA tz database
 
 ## Styling
 

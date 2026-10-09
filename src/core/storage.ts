@@ -194,30 +194,86 @@ export function deleteCookie(name: string, path = "/", domain?: string): void {
   writeCookie(cookie);
 }
 
+/** A plain JSON object (not null, not an array). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The fields the consent cookie holds. */
+const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
+
+/**
+ * The consent cookie, as stored, whatever its version, or null. `outdated`: it was written by an
+ * earlier version, with the location (`countryCode`, `region`, `geoMethod`) or with
+ * `consentRequired` under its earlier name `isEU`; those are not kept.
+ */
+function parseConsentCookie(
+  config: Partial<ConsentConfig>
+): { consent: StoredConsent; outdated: boolean } | null {
+  const raw = getCookie(config.cookie?.name ?? DEFAULT_CONFIG.cookie.name);
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  // Valid JSON that is no consent record (null, a number, a record without categories, written
+  // by hand or by another app under the same name) counts as no cookie.
+  if (!isRecord(parsed) || !isRecord(parsed.categories)) return null;
+  const stored = parsed as unknown as StoredConsent & { isEU?: boolean };
+  const consentRequired = stored.consentRequired ?? stored.isEU;
+  return {
+    consent: {
+      categories: stored.categories,
+      timestamp: stored.timestamp,
+      version: stored.version,
+      ...(consentRequired !== undefined && { consentRequired }),
+    },
+    outdated: Object.keys(parsed).some((key) => !STORED_FIELDS.has(key)),
+  };
+}
+
 /**
  * Get stored consent from cookie
  */
 export function getStoredConsent(config: Partial<ConsentConfig> = {}): StoredConsent | null {
-  const cookieName = config.cookie?.name ?? DEFAULT_CONFIG.cookie.name;
-  const version = config.version ?? DEFAULT_CONFIG.version;
-
-  const raw = getCookie(cookieName);
-  if (!raw) return null;
-
-  try {
-    const stored = JSON.parse(raw) as StoredConsent;
-
-    // Check version - if different, consent is invalid
-    if (stored.version !== version) {
-      return null;
-    }
-
-    // A category the site no longer uses was never asked about in its current dialog. When that
-    // leaves nothing granted, the consent manager's restore drops consent_uid too.
-    return { ...stored, categories: limitToUsed(stored.categories, config) };
-  } catch {
+  const read = parseConsentCookie(config);
+  // A different version: the consent no longer applies.
+  if (read === null || read.consent.version !== (config.version ?? DEFAULT_CONFIG.version)) {
     return null;
   }
+  // A category the site no longer uses was never asked about in its current dialog. When that
+  // leaves nothing granted, the consent manager's restore drops consent_uid too.
+  return { ...read.consent, categories: limitToUsed(read.consent.categories, config) };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Rewrite a consent cookie an earlier version wrote, keeping the choice and its timestamp (the
+ * other open tabs see no new decision) and dropping what it no longer holds. The rewrite keeps
+ * what is left of the lifetime counted from the choice; one past it, or one for another consent
+ * version (no consent any more), is deleted instead. A cookie already in the current format is
+ * left alone: rewriting it would restart its lifetime on every visit.
+ */
+export function migrateConsentCookie(config: Partial<ConsentConfig> = {}): void {
+  const read = parseConsentCookie(config);
+  if (!read?.outdated) return;
+  if (read.consent.version !== (config.version ?? DEFAULT_CONFIG.version)) {
+    clearConsent(config);
+    return;
+  }
+  const lifetime = config.cookie?.expiry ?? DEFAULT_CONFIG.cookie.expiry;
+  const { timestamp } = read.consent;
+  const remaining = Number.isFinite(timestamp)
+    ? lifetime - (Date.now() - timestamp) / DAY_MS
+    : lifetime;
+  if (remaining <= 0) {
+    clearConsent(config);
+    return;
+  }
+  storeConsent(read.consent, { ...config, cookie: { ...config.cookie, expiry: remaining } });
 }
 
 /**
@@ -238,11 +294,8 @@ export function storeConsent(
     // The caller's own record keeps its time: the page compares its choice to the cookie by it.
     timestamp: consent.timestamp ?? Date.now(),
     version,
-    // Preserve geo data if provided (use !== undefined for consistent handling)
-    ...(consent.isEU !== undefined && { isEU: consent.isEU }),
-    ...(consent.geoMethod !== undefined && { geoMethod: consent.geoMethod }),
-    ...(consent.countryCode !== undefined && { countryCode: consent.countryCode }),
-    ...(consent.region !== undefined && { region: consent.region }),
+    // Whether it was made in a consent jurisdiction; no location (StoredConsent).
+    ...(consent.consentRequired !== undefined && { consentRequired: consent.consentRequired }),
   };
 
   setCookie(cookieConfig.name, JSON.stringify(stored), {
