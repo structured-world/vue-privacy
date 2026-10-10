@@ -6,7 +6,7 @@
 import { getTranslations } from "../i18n/index";
 import { escapeHtml } from "./utils";
 import { usedCategoriesOf } from "../core/categories";
-import { DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
+import { CONSENT_THEMES, DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption.
@@ -46,8 +46,8 @@ export const MODAL_CSS = `/* Vue Privacy - Vanilla Modal Styles */
 .consent-modal__btn--save{background:var(--consent-btn-accept-bg,#0066cc);color:var(--consent-btn-accept-text,#fff)}
 .consent-modal__btn--accept-all,.consent-modal__btn--reject-all{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
 @media(max-width:640px){.consent-modal{max-width:100%;max-height:100vh;border-radius:0}.consent-modal__footer{flex-direction:column}.consent-modal__btn{width:100%;text-align:center}}
-@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444}}
-[data-consent-theme="dark"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444}`;
+@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444;--consent-link:#66b3ff}}
+[data-consent-theme="dark"]{--consent-modal-bg:#1a1a1a;--consent-modal-text:#fff;--consent-modal-text-secondary:#a0a0a0;--consent-modal-border:#333;--consent-toggle-bg-off:#444;--consent-link:#66b3ff}`;
 
 const STYLE_ID = "vue-privacy-vanilla-modal";
 
@@ -99,19 +99,16 @@ export function injectVanillaModalStyles(): void {
  * manager.showPreferenceCenter();
  * ```
  */
-// Valid values for runtime validation
-const VALID_THEMES = ["light", "dark", "auto"] as const;
-
 export function createModal(options: VanillaModalOptions): VanillaModalInstance {
-  const { manager, theme = "auto", onSave, onClose } = options;
+  const { manager, theme = manager.getConfig().theme ?? "auto", onSave, onClose } = options;
 
   // Runtime validation with warning for invalid values
-  const isValidTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number]);
+  const isValidTheme = CONSENT_THEMES.includes(theme);
   const validatedTheme = isValidTheme ? theme : "auto";
-  if (!isValidTheme && theme !== undefined) {
+  if (!isValidTheme) {
     console.warn(
       `[Vue Privacy] Invalid modal theme "${String(theme)}" provided. ` +
-        `Falling back to "auto". Valid themes: ${VALID_THEMES.join(", ")}.`
+        `Falling back to "auto". Valid themes: ${CONSENT_THEMES.join(", ")}.`
     );
   }
 

@@ -149,6 +149,6 @@ createConsentPlugin({
 
 The modal uses CSS-in-JS (auto-injected, SSR-safe). It supports:
 
-- Dark mode via `prefers-color-scheme`
+- Dark mode via `prefers-color-scheme`, or a palette pinned with `theme` (see [Customization](/guide/customization#dark-mode))
 - Mobile-responsive layout (full-width on small screens)
 - CSS custom properties for theming (same as banner)

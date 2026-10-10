@@ -27,13 +27,15 @@
   --consent-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Dark theme */
+/* Dark theme. The link colour keeps the outlined buttons and the focus outline at 4.5:1 or more
+   on the dark background (WCAG 2.1 SC 1.4.3); #0066cc reaches 3.1:1 there. */
 [data-consent-theme="dark"] {
   --consent-modal-bg: #1a1a1a;
   --consent-modal-text: #ffffff;
   --consent-modal-text-secondary: #a0a0a0;
   --consent-modal-border: #333333;
   --consent-toggle-bg-off: #444444;
+  --consent-link: #66b3ff;
 }
 
 /* Auto theme: follow system preference */
@@ -44,6 +46,7 @@
     --consent-modal-text-secondary: #a0a0a0;
     --consent-modal-border: #333333;
     --consent-toggle-bg-off: #444444;
+    --consent-link: #66b3ff;
   }
 }
 

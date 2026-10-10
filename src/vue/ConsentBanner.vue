@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
-import type { BannerConfig, BannerConfigDefaults } from "../core/types";
+import type { BannerConfig, BannerConfigDefaults, ConsentTheme } from "../core/types";
 import { injectBannerStyles } from "./banner-styles";
 import { getTranslations } from "../i18n/index";
 
@@ -10,6 +10,8 @@ const props = defineProps<{
   config?: Partial<BannerConfig>;
   /** Position of the banner */
   position?: "bottom" | "top" | "center";
+  /** Colour palette; the manager's `theme` config, else 'auto', when not set */
+  theme?: ConsentTheme;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +45,9 @@ const bannerConfig = computed<BannerConfigDefaults>(() => {
       propsConfig?.privacyLinkText ?? managerConfig?.privacyLinkText ?? t.privacyLinkText,
   };
 });
+
+// The stylesheet applies the dark palette for 'dark', and for 'auto' on a dark system
+const theme = computed(() => props.theme ?? consentManager?.getConfig().theme ?? "auto");
 
 // Position classes
 const positionClasses = computed(() => {
@@ -105,6 +110,7 @@ function handleCustomize() {
         v-if="visible"
         class="consent-banner"
         :class="positionClasses"
+        :data-consent-theme="theme"
         role="dialog"
         aria-modal="true"
         aria-labelledby="consent-banner-title"

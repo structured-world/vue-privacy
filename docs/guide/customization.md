@@ -49,17 +49,15 @@ Style the banner with CSS variables:
 
 ### Dark Mode
 
-The banner automatically supports `prefers-color-scheme: dark`:
+The banner and the preference centre follow the system's colour scheme (`prefers-color-scheme`) by default. A site whose design is light only, or dark only, pins the palette with `theme`:
 
-```css
-@media (prefers-color-scheme: dark) {
-  :root {
-    --consent-bg: #1a1a1a;
-    --consent-text: #ffffff;
-    --consent-text-secondary: #a0a0a0;
-  }
-}
+```typescript
+createConsentPlugin({
+  theme: 'light', // 'auto' (default) | 'light' | 'dark'
+});
 ```
+
+`'light'` keeps the light palette for visitors in dark mode, and `'dark'` shows the dark one on a light system. A component's own `theme` outranks the config: `<ConsentBanner theme="dark" />`, `<ConsentPreferenceModal theme="dark" />`, or `createBanner({ manager, theme: 'dark' })` in vanilla JS.
 
 ### Equal prominence for refusing
 

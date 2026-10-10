@@ -182,6 +182,10 @@ interface ConsentConfig {
   // Default: 'en' when offered, else the first of `locales`
   fallbackLocale?: SupportedLocale;
 
+  // Colour palette of the banner and preference centre. 'auto' (default) follows the
+  // system's colour scheme; 'light' and 'dark' pin one whatever the system prefers.
+  theme?: 'auto' | 'light' | 'dark';
+
   // Consent categories
   categories?: {
     analytics?: boolean;  // Default: false
@@ -442,7 +446,7 @@ The banner and preference center use CSS custom properties:
 }
 ```
 
-Dark mode is automatically supported via `prefers-color-scheme`.
+Dark mode follows the system's `prefers-color-scheme` by default. `theme: 'light'` or `theme: 'dark'` in the config pins one palette (a light-only site keeps a light dialog for visitors in dark mode); a component's own `theme` prop or option outranks it.
 
 Refusing is as easy and as visible as accepting by default: "Accept all" and "Reject all" on the banner share one style (same size, weight and colours), and the preference centre offers "Reject all" beside "Accept all". The EDPB Cookie Banner Taskforce report (January 2023, points 9-14) and the CNIL guidance treat a less visible refusal as a deceptive design. A site that sets `--consent-btn-reject-bg` / `--consent-btn-reject-text` keeps its own colours.
 
