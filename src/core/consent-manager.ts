@@ -1302,6 +1302,7 @@ export class ConsentManager {
     if (!this.consentSettled) return false;
     const acted = this.actedOnRecord;
     const epoch = this.consentEpoch;
+    const closes = this.preferenceCenterCloses;
     const pending = [...this.consentRequests];
     const allowed = this.reconcile();
     // A consent callback answered the change with its own decision (a reset, a choice), which
@@ -1313,8 +1314,12 @@ export class ConsentManager {
     // Another tab answered the banner this tab is showing (or holds for its component), or
     // reset the choice, which asks again here as a local reset does. Either way it answers the
     // requestConsent() calls made before it (a consent callback reacting to it asks anew), and
-    // their dialog shows toggles it no longer holds.
-    if (answered.length > 0) this.closePreferenceCenter(answered);
+    // their dialog shows toggles it no longer holds. A callback that closed the dialog already
+    // (hidePreferenceCenter()) leaves only the answers, so the site's hide hooks run once.
+    if (answered.length > 0) {
+      if (this.preferenceCenterCloses === closes) this.closePreferenceCenter(answered);
+      else this.answerRequests(answered);
+    }
     if (this.actedOnRecord !== null) this.closeBanner();
     else this.requestBanner();
     return allowed;

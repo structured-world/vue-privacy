@@ -457,6 +457,31 @@ describe("requestConsent", () => {
     expect(show.mock.calls.length).toBeGreaterThan(shownBefore);
   });
 
+  it("closes the dialog once when a callback hides it while following another tab (basic mode)", async () => {
+    // hidePreferenceCenter() closes the dialog and answers its requests without a new decision;
+    // following the other tab must not close it a second time.
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST5" };
+    const { m } = await refusedManager(config);
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const onHide = vi.fn();
+    m.getConfig().onPreferenceCenterHide = onHide;
+    m.onConsentChange((categories) => {
+      if (categories.functional) m.hidePreferenceCenter();
+    });
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+    const otherTab = manager(config);
+    await otherTab.init();
+    await otherTab.savePreferences({ functional: true });
+    window.dispatchEvent(new Event("focus"));
+
+    await expect(answer).resolves.toBe(true);
+    expect(hide).toHaveBeenCalledOnce();
+    expect(onHide).toHaveBeenCalledOnce();
+  });
+
   it("closes the dialog once when a callback resets while following another tab (basic mode)", async () => {
     // The callback's reset closes the dialog and asks with the banner itself; following the other
     // tab must not do either a second time.
