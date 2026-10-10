@@ -98,8 +98,9 @@ const { manager, savePreferences, getConsent } = useConsent();
 const visible = ref(false);
 // What requestConsent() asks for: its categories and reasons, or null
 const request = ref(null);
-// Offer every category the site uses (`usedCategories`), so a requested one can be granted
-const toggles = ref({ analytics: false, marketing: false, functional: false });
+// Offer every category the site uses, so a requested one can be granted
+const usedCategories = manager.getConfig().usedCategories ?? ['analytics', 'marketing', 'functional'];
+const toggles = ref({});
 
 onMounted(() => {
   manager.onShowPreferenceCenter(() => {
@@ -109,11 +110,9 @@ onMounted(() => {
     if (visible.value) return;
     // The stored choice, else unticked: never the ticks of an earlier, unsaved opening
     const categories = getConsent()?.categories;
-    toggles.value = {
-      analytics: categories?.analytics ?? false,
-      marketing: categories?.marketing ?? false,
-      functional: categories?.functional ?? false,
-    };
+    toggles.value = Object.fromEntries(
+      usedCategories.map((category) => [category, categories?.[category] ?? false])
+    );
     visible.value = true;
   });
   manager.onHidePreferenceCenter(() => {
@@ -128,7 +127,8 @@ onUnmounted(() => {
 });
 
 async function save() {
-  // Saving answers the pending requests and closes the dialog
+  // Only the used categories; any other is refused. Saving answers the pending requests
+  // and closes the dialog
   await savePreferences({ ...toggles.value });
 }
 </script>
@@ -137,7 +137,7 @@ async function save() {
   <div v-if="visible" class="preferences-modal">
     <p v-for="reason in request?.reasons ?? []" :key="reason">{{ reason }}</p>
     <label
-      v-for="category in ['analytics', 'marketing', 'functional']"
+      v-for="category in usedCategories"
       :key="category"
       :class="{ requested: request?.categories.includes(category) }"
     >
