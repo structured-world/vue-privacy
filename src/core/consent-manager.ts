@@ -213,6 +213,8 @@ export class ConsentManager {
   private preferenceCenterPending = false;
   /** The preference centre was asked to show, and no choice or close followed yet. */
   private preferenceCenterShown = false;
+  /** Counts the preference centre's closings, so a choice can tell whether a callback closed it. */
+  private preferenceCenterCloses = 0;
   /** Wakes the requestConsent() calls made before the consent was settled. */
   private markSettled: () => void = () => {};
   /** Resolves once the consent is settled (init(), a choice or a reset), or on destroy(). */
@@ -438,18 +440,26 @@ export class ConsentManager {
    * ones by default) from the consent now in effect, even when a hide callback throws.
    */
   private closePreferenceCenter(requests = this.consentRequests.splice(0)): void {
+    this.preferenceCenterCloses++;
     this.preferenceCenterShown = false;
     this.preferenceCenterPending = false;
     try {
       this.hidePreferenceCenterCallback?.();
       this.config.onPreferenceCenterHide?.();
     } finally {
-      const categories = this.consentInEffect().categories;
-      for (const request of requests) request.resolve(categories?.[request.category] === true);
-      // A request a callback made meanwhile (one reacting to this very choice) is a new question.
-      if (this.consentRequests.length > 0 && !this.preferenceCenterShown && !this.destroyed) {
-        this.showPreferenceCenter();
-      }
+      this.answerRequests(requests);
+    }
+  }
+
+  /**
+   * Answer requestConsent() callers from the consent now in effect; a request a callback made
+   * meanwhile (one reacting to this very choice) is a new question, which reopens the dialog.
+   */
+  private answerRequests(requests: ConsentManager["consentRequests"]): void {
+    const categories = this.consentInEffect().categories;
+    for (const request of requests) request.resolve(categories?.[request.category] === true);
+    if (this.consentRequests.length > 0 && !this.preferenceCenterShown && !this.destroyed) {
+      this.showPreferenceCenter();
     }
   }
 
@@ -1427,6 +1437,7 @@ export class ConsentManager {
     // This choice answers the requests made so far; one a consent callback makes in reaction to
     // it is asked anew once the dialog closes.
     const answered = this.consentRequests.splice(0);
+    const closes = this.preferenceCenterCloses;
     this.impliedChoice = null;
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
@@ -1435,8 +1446,11 @@ export class ConsentManager {
     this.reconcile();
 
     // The preference centre closes either way; it would cover a banner a callback's reset
-    // just showed. The banner stays when a callback made a newer decision.
-    this.closePreferenceCenter(answered);
+    // just showed. The banner stays when a callback made a newer decision. A callback whose
+    // decision closed it already (a reset) leaves only this choice's requests to answer, so
+    // the site's hide hooks run once.
+    if (this.preferenceCenterCloses === closes) this.closePreferenceCenter(answered);
+    else this.answerRequests(answered);
     if (this.consentEpoch !== epoch) return;
     this.closeBanner();
   }

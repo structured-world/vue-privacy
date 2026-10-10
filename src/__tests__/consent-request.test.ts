@@ -441,6 +441,30 @@ describe("requestConsent", () => {
     expect(m.getConsentRequest()).toEqual({ categories: ["functional"], reasons: [SIGN_IN] });
   });
 
+  it("closes the dialog once when a consent callback resets during the choice", async () => {
+    // The reset closes the dialog itself; the choice that triggered it must not close it again,
+    // or the site's hide hooks run twice for one action.
+    const { m } = await refusedManager();
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const onHide = vi.fn();
+    m.getConfig().onPreferenceCenterHide = onHide;
+    let reset = false;
+    m.onConsentChange(() => {
+      if (!reset) {
+        reset = true;
+        m.resetConsent();
+      }
+    });
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    await m.savePreferences({ functional: true });
+    expect(hide).toHaveBeenCalledOnce();
+    expect(onHide).toHaveBeenCalledOnce();
+    // The reset cleared the choice the visitor made
+    await expect(answer).resolves.toBe(false);
+  });
+
   it("answers false to pending callers when the manager is destroyed", async () => {
     const { m } = await refusedManager();
     const answer = m.requestConsent("functional");
