@@ -17,7 +17,7 @@ import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(createConsentPlugin({
     gaId: 'G-XXXXXXXXXX', // Your GA4 measurement ID
-    euDetection: 'auto',
+    geoDetection: 'auto',
   }));
 });
 ```
@@ -91,7 +91,7 @@ All standard options are supported:
 export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(createConsentPlugin({
     gaId: 'G-XXXXXXXXXX',
-    euDetection: 'auto',
+    geoDetection: 'auto',
     banner: {
       title: 'Cookie Preferences',
       message: 'This site uses cookies for analytics.',

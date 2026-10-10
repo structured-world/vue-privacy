@@ -14,7 +14,7 @@ const app = createApp(App);
 
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
   banner: {
     title: 'Cookie Settings',
     message: 'We use cookies to improve your experience.',
@@ -49,6 +49,7 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 |------|------|---------|-------------|
 | `position` | `'bottom' \| 'top' \| 'center'` | `'bottom'` | Banner position |
 | `config` | `Partial<BannerConfig>` | `{}` | Override banner text |
+| `theme` | `'auto' \| 'light' \| 'dark'` | the manager's `theme`, else `'auto'` | Colour palette |
 
 ### Events
 
@@ -66,7 +67,7 @@ import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
   getConsent,        // () => StoredConsent | null
-  isConsentRequired, // () => boolean | null (isEUUser is an alias)
+  isConsentRequired, // () => boolean | null
   hasConsent,        // () => boolean
   acceptAll,         // () => Promise<void>
   rejectAll,         // () => Promise<void>
@@ -92,10 +93,11 @@ Build your own preferences modal:
 import { ref } from 'vue';
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
-const { savePreferences, consent } = useConsent();
+const { savePreferences, getConsent } = useConsent();
 
-const analytics = ref(consent.value?.categories.analytics ?? false);
-const marketing = ref(consent.value?.categories.marketing ?? false);
+// Unticked unless the visitor granted it before
+const analytics = ref(getConsent()?.categories.analytics ?? false);
+const marketing = ref(getConsent()?.categories.marketing ?? false);
 
 async function save() {
   // A category left out (functional here) is refused

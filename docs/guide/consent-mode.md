@@ -88,7 +88,7 @@ createConsentPlugin({
 });
 ```
 
-Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off, so it loads no Google tag and unblocks no `data-consent-category="analytics"` script. A site that promises "Google Analytics only with consent" needs basic mode, usually with `euDetection: 'always'` so every visitor is asked.
+Only the visitor's own choice counts in basic mode: a grant applied by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off, so it loads no Google tag and unblocks no `data-consent-category="analytics"` script. A site that promises "Google Analytics only with consent" needs basic mode, usually with `geoDetection: 'always'` so every visitor is asked.
 
 ## Category Mapping
 
@@ -133,5 +133,5 @@ Always set consent defaults BEFORE loading gtag.js. This library handles this au
 :::
 
 ::: tip Visitors Outside Consent Jurisdictions
-For visitors outside the [consent jurisdictions](/guide/eu-detection) (EEA and UK by default), the library grants consent without showing a banner. Configure with `euDetection: 'auto'`; a failed lookup asks for consent unless `geoFailure: 'grant'`.
+For visitors outside the [consent jurisdictions](/guide/consent-jurisdictions) (EEA and UK by default), the library grants consent without showing a banner. Configure with `geoDetection: 'auto'`; a failed lookup asks for consent unless `geoFailure: 'grant'`.
 :::

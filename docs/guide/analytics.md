@@ -22,7 +22,7 @@ import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
 });
 
 await manager.init();
@@ -143,8 +143,8 @@ Tracking methods check consent state and work with Consent Mode v2:
 |--------------|----------|
 | `analytics: true` | Full GA4 tracking with cookies |
 | `analytics: false` | Events silently dropped by vue-privacy |
-| No consent yet (EU) | Events sent under Consent Mode defaults (cookieless pings, no storage) |
-| No consent yet (non-EU) | Auto-granted, full tracking |
+| No consent yet (consent jurisdiction) | Events sent under Consent Mode defaults (cookieless pings, no storage) |
+| No consent yet (elsewhere) | Auto-granted, full tracking |
 
 Consent Mode v2 allows GA to receive cookieless pings before user choice, enabling modeled conversions while remaining GDPR-compliant.
 

@@ -25,7 +25,7 @@ import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
 });
 
 await manager.init();

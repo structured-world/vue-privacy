@@ -15,7 +15,7 @@ import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
 }));
 ```
 
@@ -108,21 +108,21 @@ Use the composable in any component:
 <script setup>
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 
-const { hasConsent, resetConsent } = useConsent();
+const { hasConsent, showPreferenceCenter } = useConsent();
 </script>
 
 <template>
   <q-btn
-    v-if="hasConsent"
+    v-if="hasConsent()"
     label="Cookie Settings"
-    @click="resetConsent"
+    @click="showPreferenceCenter"
   />
 </template>
 ```
 
 ## Quasar Dialog Integration
 
-Show preferences in a Quasar dialog:
+Your own Quasar dialog can be the preference centre: register it with the manager, and every way of opening the preference centre (the banner's "Customize", `showPreferenceCenter()`, [`requestConsent()`](/guide/preference-center#asking-again-when-a-feature-needs-a-category)) shows it.
 
 ```vue
 <script setup>
@@ -131,16 +131,27 @@ import { useConsent } from '@structured-world/vue-privacy/quasar';
 import PreferencesDialog from './PreferencesDialog.vue';
 
 const $q = useQuasar();
-const { resetConsent } = useConsent();
+const { manager } = useConsent();
+let dialog = null;
 
-function showPreferences() {
-  resetConsent(); // Clear stored consent
-  $q.dialog({
-    component: PreferencesDialog,
-  });
-}
+manager.onShowPreferenceCenter(() => {
+  // A request joining the open dialog only refreshes it
+  dialog ??= $q
+    .dialog({ component: PreferencesDialog })
+    // Closed without a choice: the manager answers pending requests from the stored choice
+    .onDismiss(() => {
+      dialog = null;
+      manager.hidePreferenceCenter();
+    });
+});
+manager.onHidePreferenceCenter(() => {
+  dialog?.hide();
+  dialog = null;
+});
 </script>
 ```
+
+`PreferencesDialog` reads what is asked with `manager.getConsentRequest()` and saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
 
 ## Event Tracking
 

@@ -41,7 +41,7 @@ All exports are available under the global `VuePrivacy` namespace:
 <script>
   var manager = VuePrivacy.createConsentManager({
     gaId: 'G-XXXXXXXXXX',
-    euDetection: 'auto',
+    geoDetection: 'auto',
   });
 
   manager.onShowBanner(function () {

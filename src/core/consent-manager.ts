@@ -619,7 +619,8 @@ export class ConsentManager {
   private supersededSince(epoch: number): boolean {
     if (this.consentEpoch === epoch) return false;
     // A choice made meanwhile was stored before its location was known; without it, the
-    // next page load would take an EU visitor's choice for non-EU consent and ask again.
+    // next page load would take a choice made in a consent jurisdiction for one made outside,
+    // and ask again.
     this.storeLocationWithChoice();
     return true;
   }
@@ -957,7 +958,7 @@ export class ConsentManager {
   private async performGeoDetection(): Promise<GeoDetectionResult> {
     const detector =
       this.config.geoDetector ??
-      createGeoDetector(this.config.euDetection ?? "auto", this.config.geoUrl);
+      createGeoDetector(this.config.geoDetection ?? "auto", this.config.geoUrl);
 
     // A custom detector written for an earlier version answers under the field's earlier name.
     const { isEU, ...detected } = (await detector.detect()) as GeoDetectionResultWithLog & {
@@ -1766,11 +1767,6 @@ export class ConsentManager {
     return this.consentRequired;
   }
 
-  /** Alias of {@link isConsentRequired}: "EU" here means every consent jurisdiction. */
-  isEUUser(): boolean | null {
-    return this.isConsentRequired();
-  }
-
   /**
    * Check if user is in a CCPA-covered US state (California, Virginia, Colorado, etc.).
    * Returns true only if ccpaEnabled is true in config and user is in a covered region.
@@ -1794,8 +1790,9 @@ export class ConsentManager {
 
   /**
    * Get geo-detection result (countryCode, region, method, consentRequired).
-   * Returns null if geo detection has not run yet.
-   * Note: When consent is restored from cookie, this returns the stored geo result.
+   * Returns null if geo detection has not run yet. When the stored choice's jurisdiction stands in
+   * for a lookup (a choice made in a consent jurisdiction, or a failed roaming check under
+   * `geoFailure: 'grant'`), it is `{ consentRequired, method: "stored" }`, without a country.
    */
   getGeoResult(): GeoDetectionResult | null {
     return this.geoResult;

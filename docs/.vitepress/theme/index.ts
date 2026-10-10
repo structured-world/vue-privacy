@@ -12,7 +12,7 @@ const consentTheme = enhanceWithConsent(DefaultTheme, {
   gaId: "G-DX5Y29J2QQ",
   storage: createKVStorage("/api/consent"),
   geoUrl: "/api/geo",
-  euDetection: "auto",
+  geoDetection: "auto",
 });
 
 export default {

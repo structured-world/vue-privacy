@@ -31,7 +31,7 @@ type Theme = NonNullable<ConsentConfig["theme"]>;
 
 /** The Vue banner and preference centre, open, under the given config theme and props. */
 async function mountVue(config: ConsentConfig, props: { theme?: Theme } = {}) {
-  const manager = createConsentManager({ ...config, euDetection: "never" });
+  const manager = createConsentManager({ ...config, geoDetection: "never" });
   const host = document.createElement("div");
   document.body.appendChild(host);
   const app = createApp({
@@ -82,7 +82,7 @@ describe("theme", () => {
 
   describe("vanilla components", () => {
     it("follow the site config when given no theme of their own", () => {
-      const manager = createConsentManager({ theme: "light", euDetection: "never" });
+      const manager = createConsentManager({ theme: "light", geoDetection: "never" });
       const banner = createBanner({ manager });
       const modal = createModal({ manager });
       const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
@@ -95,7 +95,7 @@ describe("theme", () => {
     });
 
     it("let their own theme option outrank the site config", () => {
-      const manager = createConsentManager({ theme: "light", euDetection: "never" });
+      const manager = createConsentManager({ theme: "light", geoDetection: "never" });
       const banner = createBanner({ manager, theme: "dark" });
       const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
 
@@ -104,7 +104,7 @@ describe("theme", () => {
     });
 
     it("keep following the system without a theme anywhere", () => {
-      const manager = createConsentManager({ euDetection: "never" });
+      const manager = createConsentManager({ geoDetection: "never" });
       const banner = createBanner({ manager });
       const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
 
@@ -160,7 +160,7 @@ describe("theme", () => {
       ["dark", false],
       ["auto", true],
     ])("vanilla, theme %s, system dark %s, injected and CDN stylesheets", (theme, prefersDark) => {
-      const manager = createConsentManager({ theme, euDetection: "never" });
+      const manager = createConsentManager({ theme, geoDetection: "never" });
       const banner = createBanner({ manager });
       const modal = createModal({ manager });
       const bannerEl = document.querySelector(".consent-banner") as HTMLElement;

@@ -1,5 +1,5 @@
 ---
-description: Get started with Vue Privacy in 2 minutes. Copy-paste examples for VitePress, Vue 3, Nuxt 3, and Quasar with GDPR-compliant Google Analytics.
+description: Add a GDPR cookie consent banner and Google Analytics 4 with Consent Mode v2 in minutes. Copy-paste examples for VitePress, Vue 3, Nuxt 3, Quasar and plain JavaScript.
 ---
 
 # Quick Start in 5 Minutes
@@ -34,7 +34,7 @@ const app = createApp(App);
 
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX', // Your GA4 measurement ID
-  euDetection: 'auto',
+  geoDetection: 'auto',
 }));
 
 app.mount('#app');
@@ -56,7 +56,7 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </template>
 ```
 
-That's it! The banner automatically shows for EU users who haven't given consent.
+That's it! The banner automatically shows for visitors in a [consent jurisdiction](/guide/consent-jurisdictions) (EEA and UK by default) who haven't chosen yet.
 
 ### 3. SPA Page Tracking (Vue Router)
 
@@ -122,10 +122,10 @@ import { createConsentManager } from '@structured-world/vue-privacy';
 
 const manager = createConsentManager({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
 });
 
-// Initialize (loads GA, shows banner for EU users)
+// Initialize (loads GA, shows the banner in consent jurisdictions)
 await manager.init();
 
 // Track page views manually (for SPAs)
@@ -139,10 +139,10 @@ await manager.rejectAll();
 ## What Happens
 
 1. **Google Analytics loads** — `gtag.js` injected with Consent Mode v2 defaults
-2. **Region detection** — finds the visitor's country (Cloudflare → IP API → timezone) and whether it is a [consent jurisdiction](/guide/eu-detection) (EEA and UK by default)
+2. **Region detection** — finds the visitor's country (Cloudflare → IP API → timezone) and whether it is a [consent jurisdiction](/guide/consent-jurisdictions) (EEA and UK by default)
 3. **Consent defaults** — visitors there (or whose lookup failed) start with `denied`, others with `granted`
 4. **Banner display** — shows only for visitors in consent jurisdictions without stored consent
 5. **User choice** — consent stored in cookie, Google Consent Mode signals updated
 6. **Page tracking** — automatic in VitePress and Quasar; use `trackPageView()` with Vue Router (see example above)
 
-Non-EU users automatically get analytics enabled without seeing the banner.
+Visitors elsewhere get analytics enabled without seeing the banner.

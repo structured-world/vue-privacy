@@ -3,6 +3,7 @@ import type {
   GeoDetectionResult,
   GeoDetectionLogEntry,
   GeoDetectionResultWithLog,
+  GeoDetectionMode,
 } from "../core/types";
 import { TIMEZONE_COUNTRIES, knownCountry, requiresConsent } from "./jurisdictions";
 
@@ -251,10 +252,7 @@ export class AutoGeoDetector implements GeoDetector {
 /**
  * Create a geo-detector based on mode
  */
-export function createGeoDetector(
-  mode: "auto" | "cloudflare" | "worker" | "api" | "always" | "never",
-  geoUrl?: string
-): GeoDetector {
+export function createGeoDetector(mode: GeoDetectionMode, geoUrl?: string): GeoDetector {
   switch (mode) {
     case "cloudflare":
       return new CloudflareGeoDetector();

@@ -447,6 +447,9 @@ export type ConsentTheme = "auto" | "light" | "dark";
 /** Every {@link ConsentTheme}, for checking a value that came from untyped JavaScript. */
 export const CONSENT_THEMES: readonly ConsentTheme[] = ["auto", "light", "dark"];
 
+/** How the visitor's country is found ({@link ConsentConfig.geoDetection}). */
+export type GeoDetectionMode = "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+
 /** Options of `requestConsent()`. */
 export interface ConsentRequestOptions {
   /**
@@ -523,15 +526,16 @@ export interface ConsentConfig {
   };
 
   /**
-   * EU detection mode:
+   * How the visitor's country is found, which decides against `consentJurisdictions`:
    * - 'auto': Try Cloudflare header, then Worker /api/geo (if geoUrl set), then IP API, then timezone
    * - 'cloudflare': Only use Cloudflare header
    * - 'worker': Only use Worker /api/geo (requires geoUrl)
    * - 'api': Only use IP API (ipapi.co)
-   * - 'always': Always show banner (treat all as EU)
-   * - 'never': Never show banner (treat all as non-EU)
+   * - 'always': Ask every visitor (treat all as in a consent jurisdiction)
+   * - 'never': Ask no visitor (treat all as outside consent jurisdictions)
+   * @default 'auto'
    */
-  euDetection?: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+  geoDetection?: GeoDetectionMode;
 
   /** URL for Worker-based geo detection (e.g. "/api/geo"). Used by "worker" and "auto" modes. */
   geoUrl?: string;
@@ -700,7 +704,7 @@ export interface BannerConfigDefaults {
 export const DEFAULT_CONFIG: {
   banner: BannerConfigDefaults;
   cookie: CookieConfigDefaults;
-  euDetection: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+  geoDetection: GeoDetectionMode;
   version: string;
 } = {
   banner: {
@@ -718,6 +722,6 @@ export const DEFAULT_CONFIG: {
     expiry: 365,
     path: "/",
   },
-  euDetection: "auto",
+  geoDetection: "auto",
   version: "1.0",
 };

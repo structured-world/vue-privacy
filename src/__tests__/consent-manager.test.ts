@@ -312,7 +312,7 @@ describe("ConsentManager with remote storage", () => {
     expect(showBanner).toHaveBeenCalledTimes(1);
 
     // consentRequired should reflect current location
-    expect(manager.isEUUser()).toBe(true);
+    expect(manager.isConsentRequired()).toBe(true);
   });
 
   it("handles remote storage errors gracefully", async () => {
@@ -498,7 +498,7 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(geoDetector.detect).not.toHaveBeenCalled();
 
     // consentRequired should be restored from cookie
-    expect(manager.isEUUser()).toBe(true);
+    expect(manager.isConsentRequired()).toBe(true);
 
     // geoResult comes from the stored choice; the cookie keeps no country
     expect(manager.getGeoResult()).toEqual({ consentRequired: true, method: "stored" });
@@ -529,7 +529,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // Geo detection should have run to check for roaming
     expect(geoDetector.detect).toHaveBeenCalled();
     // consentRequired should now reflect current location
-    expect(manager.isEUUser()).toBe(false);
+    expect(manager.isConsentRequired()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("US");
   });
 
@@ -566,7 +566,7 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(showBanner).toHaveBeenCalledTimes(1);
 
     // consentRequired should reflect current location
-    expect(manager.isEUUser()).toBe(true);
+    expect(manager.isConsentRequired()).toBe(true);
     expect(manager.getGeoResult()?.countryCode).toBe("DE");
   });
 
@@ -606,7 +606,7 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(showBanner).not.toHaveBeenCalled();
 
     // consentRequired should reflect current location
-    expect(manager.isEUUser()).toBe(false);
+    expect(manager.isConsentRequired()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
 
@@ -648,7 +648,7 @@ describe("ConsentManager.getGeoResult()", () => {
     // consentRequired is null because: legacy cookie has no such field to restore from,
     // and geo detection failed. The roaming check returned false (fail-safe),
     // consent was applied, and init() returned early without running main geo flow.
-    expect(manager.isEUUser()).toBeNull();
+    expect(manager.isConsentRequired()).toBeNull();
 
     // geoDetectionLog should show the failure
     const log = manager.getGeoDetectionLog();
@@ -694,7 +694,7 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(showBanner).toHaveBeenCalledTimes(1);
 
     // consentRequired should reflect current location
-    expect(manager.isEUUser()).toBe(true);
+    expect(manager.isConsentRequired()).toBe(true);
     expect(manager.getGeoResult()?.countryCode).toBe("DE");
   });
 
@@ -736,7 +736,7 @@ describe("ConsentManager.getGeoResult()", () => {
     expect(showBanner).not.toHaveBeenCalled();
 
     // consentRequired should reflect current location
-    expect(manager.isEUUser()).toBe(false);
+    expect(manager.isConsentRequired()).toBe(false);
     expect(manager.getGeoResult()?.countryCode).toBe("CA");
   });
 });

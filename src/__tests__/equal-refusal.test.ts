@@ -145,7 +145,7 @@ describe("'Reject all' in the preference centre", () => {
   });
 
   it("vanilla: refuses every optional category and closes", async () => {
-    const manager = createConsentManager({ euDetection: "never" });
+    const manager = createConsentManager({ geoDetection: "never" });
     await manager.acceptAll();
     const modal = createModal({ manager });
     manager.showPreferenceCenter();
@@ -166,7 +166,7 @@ describe("'Reject all' in the preference centre", () => {
 
   it("vanilla: labels the button with the site's banner text, else the locale's", () => {
     // Both buttons refuse the same thing, so a site that renamed the banner's keeps one label.
-    const custom = createConsentManager({ euDetection: "never", banner: { rejectAll: "Refuse" } });
+    const custom = createConsentManager({ geoDetection: "never", banner: { rejectAll: "Refuse" } });
     const customModal = createModal({ manager: custom });
     custom.showPreferenceCenter();
     expect(document.querySelector(".consent-modal__btn--reject-all")?.textContent?.trim()).toBe(
@@ -174,7 +174,7 @@ describe("'Reject all' in the preference centre", () => {
     );
     customModal.destroy();
 
-    const german = createConsentManager({ locale: "de", euDetection: "never" });
+    const german = createConsentManager({ locale: "de", geoDetection: "never" });
     const germanModal = createModal({ manager: german });
     german.showPreferenceCenter();
     expect(document.querySelector(".consent-modal__btn--reject-all")?.textContent?.trim()).toBe(
@@ -185,7 +185,7 @@ describe("'Reject all' in the preference centre", () => {
 
   it("Vue: labels the button with the site's banner text", async () => {
     const manager = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: { rejectAll: "Refuse" },
     });
     const host = document.createElement("div");
@@ -203,7 +203,7 @@ describe("'Reject all' in the preference centre", () => {
   });
 
   it("Vue: refuses every optional category and closes", async () => {
-    const manager = createConsentManager({ euDetection: "never" });
+    const manager = createConsentManager({ geoDetection: "never" });
     await manager.acceptAll();
     const host = document.createElement("div");
     document.body.appendChild(host);

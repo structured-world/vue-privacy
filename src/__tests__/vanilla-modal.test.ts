@@ -61,7 +61,7 @@ describe("createModal", () => {
 
     // Create a fresh manager for each test
     manager = createConsentManager({
-      euDetection: "never", // Disable geo detection for tests
+      geoDetection: "never", // Disable geo detection for tests
     });
   });
 
@@ -398,7 +398,7 @@ describe("createModal", () => {
 
   it("escapes HTML in text content", () => {
     const managerWithHtml = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       preferenceCenter: {
         title: "<script>alert('xss')</script>",
         description: "<img src=x onerror=alert('xss')>",
@@ -454,7 +454,7 @@ describe("createModal SSR guard", () => {
       // Re-import module to get fresh createModal that sees document as undefined
       // We need dynamic import to ensure the SSR check runs fresh
       const freshModule = await import("../vanilla/modal");
-      const manager = createConsentManager({ euDetection: "never" });
+      const manager = createConsentManager({ geoDetection: "never" });
       const modal = freshModule.createModal({ manager });
 
       // Should warn about SSR context

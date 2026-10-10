@@ -1,10 +1,10 @@
 ---
-description: Configure the GDPR consent banner appearance, position, and behavior. Customize text, colors, and cookie preferences for your Vue application.
+description: Configure the GDPR cookie consent banner for Vue 3, Nuxt, VitePress and Quasar. Text, position, callbacks and the visitors it asks, with refusing as easy as accepting.
 ---
 
 # Consent Banner Configuration
 
-The consent banner is the primary UI component that asks users for cookie consent. It appears automatically for EU users and can be dismissed by accepting, rejecting, or customizing preferences.
+The consent banner is the primary UI component that asks visitors for cookie consent. It appears automatically for visitors in a [consent jurisdiction](/guide/consent-jurisdictions) (EEA and UK by default) and is dismissed by accepting, rejecting, or customizing preferences.
 
 ## Basic Usage
 
@@ -18,8 +18,8 @@ The consent banner is the primary UI component that asks users for cookie consen
 
 The `ConsentBanner` component is registered globally when using `createConsentPlugin`. It automatically:
 
-- Shows for EU users who haven't given consent
-- Hides for non-EU users (consent is granted silently)
+- Shows for visitors in a consent jurisdiction who haven't chosen yet
+- Stays hidden elsewhere (consent is granted silently)
 - Hides after the user makes a choice
 - Persists the choice in a cookie for 365 days
 
@@ -54,40 +54,9 @@ createConsentPlugin({
 });
 ```
 
-### i18n
+### Languages
 
-Banner text is automatically translated into the first of the visitor's preferred browser languages (`navigator.languages`, in order) that has a locale. 31 locales are built in:
-
-- every official EU language: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv;
-- the EEA's Norwegian (`nb`, also chosen for `no` and Nynorsk `nn`) and Icelandic (`is`);
-- ja, ko, ru, uk, zh.
-
-A regional tag resolves to its language (`ro-MD` to `ro`, `sv-FI` to `sv`). A visitor who reads none of them gets English. The "Do Not Sell My Personal Information" link text stays English in every locale, as the CCPA phrase.
-
-To offer only the languages of your site, and choose the one shown to everyone else:
-
-```typescript
-createConsentPlugin({
-  locales: ['ro', 'en', 'hu'], // detection picks only among these
-  fallbackLocale: 'ro', // default: 'en' when offered, else the first of locales
-});
-```
-
-To force a locale:
-
-```typescript
-createConsentPlugin({
-  locale: 'de', // Force German
-});
-```
-
-When the visitor changes language on your site, pass the new language to the manager; the banner and the preference centre re-render in it, within `locales`:
-
-```typescript
-consentManager.setLocale('ro-MD'); // shows 'ro'
-```
-
-The site keeps the visitor's language choice itself (its route or its own setting) and passes it again on the next page load, as `locale` or through `setLocale()`. The manager stores no language of its own, so it never disagrees with the page.
+Banner text is translated into the visitor's language: 31 locales are built in, chosen from the browser's preferred languages. See [Languages](/guide/languages) to limit them to your site's languages, set a fallback, or switch language at runtime.
 
 ## Positioning
 

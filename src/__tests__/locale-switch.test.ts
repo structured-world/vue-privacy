@@ -128,7 +128,7 @@ describe("setLocale", () => {
   });
 
   it("vanilla banner: re-renders in the new language", () => {
-    const manager = createConsentManager({ locale: "en", euDetection: "never" });
+    const manager = createConsentManager({ locale: "en", geoDetection: "never" });
     const banner = createBanner({ manager });
 
     manager.setLocale("ro");
@@ -143,7 +143,7 @@ describe("setLocale", () => {
   });
 
   it("vanilla banner: buttons still act after a re-render", async () => {
-    const manager = createConsentManager({ locale: "en", euDetection: "never" });
+    const manager = createConsentManager({ locale: "en", geoDetection: "never" });
     const banner = createBanner({ manager });
     manager.setLocale("de");
 
@@ -153,7 +153,7 @@ describe("setLocale", () => {
   });
 
   it("vanilla modal: re-renders in the new language and keeps the visitor's toggles", () => {
-    const manager = createConsentManager({ locale: "en", euDetection: "never" });
+    const manager = createConsentManager({ locale: "en", geoDetection: "never" });
     const modal = createModal({ manager });
     manager.showPreferenceCenter();
     const analytics = () =>
@@ -171,7 +171,7 @@ describe("setLocale", () => {
   });
 
   it("vanilla modal: saving after a re-render stores the toggles shown", async () => {
-    const manager = createConsentManager({ locale: "en", euDetection: "never" });
+    const manager = createConsentManager({ locale: "en", geoDetection: "never" });
     const modal = createModal({ manager });
     manager.showPreferenceCenter();
     manager.setLocale("de");
@@ -183,7 +183,7 @@ describe("setLocale", () => {
   });
 
   it("Vue banner and preference centre re-render in the new language", async () => {
-    const manager = createConsentManager({ locale: "en", euDetection: "never" });
+    const manager = createConsentManager({ locale: "en", geoDetection: "never" });
     const host = document.createElement("div");
     document.body.appendChild(host);
     const app = createApp({ render: () => [h(ConsentBanner), h(ConsentPreferenceModal)] });

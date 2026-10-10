@@ -1,11 +1,11 @@
 ---
 layout: home
-description: Add Google Analytics to Vue 3, VitePress, Nuxt, and Quasar with GDPR consent built in. Google Consent Mode v2, EU auto-detection, and cookie banner.
+description: GDPR cookie consent banner and Google Analytics 4 for Vue 3, Nuxt, VitePress and Quasar. Google Consent Mode v2, 31 languages, region detection, refusing as easy as accepting, and SPA page tracking.
 
 hero:
   name: "Vue Privacy"
-  text: Google Analytics for Vue — GDPR Out of the Box
-  tagline: Add GA4 to VitePress and Quasar with one line. Works with Vue 3 and Nuxt 3 via plugin. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking included.
+  text: Cookie Consent and Google Analytics for Vue
+  tagline: A GDPR cookie consent banner with Google Consent Mode v2 for GA4, in 31 languages. One line for VitePress and Quasar, a plugin for Vue 3 and Nuxt, a script tag anywhere else.
   actions:
     - theme: brand
       text: Get Started
@@ -17,20 +17,20 @@ hero:
 features:
   - icon: "\U0001F4CA"
     title: Google Analytics in One Line
-    details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, and tracks page views automatically. SPA navigation tracking built-in for VitePress and Quasar.
+    details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, and tracks page views on every navigation in VitePress, Quasar and Vue Router apps.
   - icon: "\U0001F512"
     title: Google Consent Mode v2
-    details: Full support for analytics_storage, ad_storage, ad_user_data, and ad_personalization. Required by Google since March 2024 for EU traffic.
+    details: All four signals (analytics_storage, ad_storage, ad_user_data, ad_personalization), required by Google for traffic from the EEA and the UK. Advanced mode with cookieless pings, or basic mode that loads nothing before consent.
   - icon: "\U0001F30D"
-    title: EU Auto-Detection
-    details: Automatically detects EU users via Cloudflare headers, IP geolocation, or timezone heuristics. Shows consent banner only when required.
-  - icon: "\U0001F680"
-    title: SPA Page Tracking
-    details: Automatic router integration for VitePress. Use trackPageView() with Vue Router and Quasar for SPA page tracking.
-  - icon: "\U0001F3A8"
-    title: Customizable Banner
-    details: CSS custom properties for theming, configurable UI text, and callback hooks. Adapts to your site's design.
+    title: Consent Jurisdictions
+    details: Asks visitors in the EEA and the UK (Switzerland on request), found through Cloudflare headers, a Worker, IP geolocation or the time zone. A failed lookup asks rather than guesses.
+  - icon: "⚖️"
+    title: Fair by Design
+    details: Refusing takes one click, as accepting does. Nothing is pre-ticked. A feature that needs a refused category asks again at that moment, saying why.
+  - icon: "\U0001F5E3️"
+    title: 31 Languages
+    details: Every official EU language plus Norwegian, Icelandic, Japanese, Korean, Russian, Ukrainian and Chinese, chosen from the browser's languages or your site's switcher.
   - icon: "\U0001F4E6"
     title: Lightweight & SSR Safe
-    details: Zero runtime dependencies. Tree-shakeable exports. Works with SSR and static site generation.
+    details: No runtime dependencies. Tree-shakeable exports, light and dark themes, CSS custom properties. Works with SSR and static site generation.
 ---
