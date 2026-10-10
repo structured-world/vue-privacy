@@ -68,6 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const m of created.splice(0)) m.destroy();
+  vi.restoreAllMocks();
 });
 
 describe("requestConsent", () => {
@@ -296,6 +297,28 @@ describe("requestConsent", () => {
     await expect(video).resolves.toBe(true);
   });
 
+  it("answers from a choice made in another tab once this tab follows it (basic mode)", async () => {
+    // Basic mode follows the shared cookie when the tab regains focus; a request open here is
+    // answered by the visitor's choice there, and its dialog closes.
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST1" };
+    const { m } = await refusedManager(config);
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    // The other tab chooses later: a record is told apart by its timestamp.
+    const later = Date.now() + 1000;
+    vi.spyOn(Date, "now").mockReturnValue(later);
+    const otherTab = manager(config);
+    await otherTab.init();
+    await otherTab.savePreferences({ analytics: false, marketing: false, functional: true });
+    window.dispatchEvent(new Event("focus"));
+
+    await expect(answer).resolves.toBe(true);
+    expect(hide).toHaveBeenCalled();
+    expect(m.getConsentRequest()).toBeNull();
+  });
+
   it("answers false to pending callers when the manager is destroyed", async () => {
     const { m } = await refusedManager();
     const answer = m.requestConsent("functional");
@@ -374,6 +397,50 @@ describe("requestConsent in the preference centres", () => {
     app.unmount();
   });
 
+  it("Vue: toggles of a dialog closed without saving do not come back on the next open", async () => {
+    // An undecided visitor ticks marketing, then closes: nothing was chosen, so the next open
+    // starts from the defaults again, as the vanilla dialog does.
+    const m = manager();
+    await m.init();
+    const app = createApp({ render: () => h(ConsentPreferenceModal) });
+    app.provide("consentManager", m);
+    app.mount(document.body.appendChild(document.createElement("div")));
+    const marketing = () =>
+      document.querySelector('[data-category="marketing"]') as HTMLInputElement;
+
+    m.showPreferenceCenter();
+    await nextTick();
+    marketing().checked = true;
+    marketing().dispatchEvent(new Event("change"));
+    (document.querySelector(".consent-modal__close") as HTMLButtonElement).click();
+    await nextTick();
+    m.showPreferenceCenter();
+    await nextTick();
+    await nextTick();
+    expect(marketing().checked).toBe(false);
+    app.unmount();
+  });
+
+  it("Vue: a request joining the open dialog of an undecided visitor unticks its category", async () => {
+    const m = manager();
+    await m.init();
+    const app = createApp({ render: () => h(ConsentPreferenceModal) });
+    app.provide("consentManager", m);
+    app.mount(document.body.appendChild(document.createElement("div")));
+    const functional = () =>
+      document.querySelector('[data-category="functional"]') as HTMLInputElement;
+
+    void m.requestConsent("marketing", { reason: VIDEO });
+    await nextTick();
+    await nextTick();
+    // functional keeps its default while nothing asks for it
+    expect(functional().checked).toBe(true);
+    void m.requestConsent("functional", { reason: SIGN_IN });
+    await nextTick();
+    expect(functional().checked).toBe(false);
+    app.unmount();
+  });
+
   it("Vue: unmounting the dialog while a request is open answers it", async () => {
     const { m, app } = await vueDialog();
     const answer = m.requestConsent("functional", { reason: SIGN_IN });
@@ -433,6 +500,31 @@ describe("requestConsent in the preference centres", () => {
     expect(
       (document.querySelector('[data-category="functional"]') as HTMLInputElement).checked
     ).toBe(false);
+    modal.destroy();
+  });
+
+  it("vanilla: a request joining the open dialog of an undecided visitor unticks its category", async () => {
+    const m = manager();
+    await m.init();
+    const modal = createModal({ manager: m });
+    const functional = () =>
+      document.querySelector('[data-category="functional"]') as HTMLInputElement;
+
+    void m.requestConsent("marketing", { reason: VIDEO });
+    expect(functional().checked).toBe(true);
+    void m.requestConsent("functional", { reason: SIGN_IN });
+    expect(functional().checked).toBe(false);
+    modal.destroy();
+  });
+
+  it("vanilla: the public hide() answers a pending request", async () => {
+    const { m, modal } = await vanillaDialog();
+    const answer = m.requestConsent("functional");
+
+    modal.hide();
+    await expect(answer).resolves.toBe(false);
+    expect(modal.isVisible()).toBe(false);
+    expect(m.getConsentRequest()).toBeNull();
     modal.destroy();
   });
 

@@ -160,6 +160,8 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Toggle inputs of the shown (used) categories, and the dialog: replaced by every render
   let inputs = new Map<OptionalCategory, HTMLInputElement>();
   let modalEl: HTMLElement;
+  // The categories of the requestConsent() calls the dialog shows
+  let requestedShown: OptionalCategory[] = [];
 
   // The dialog in the manager's current locale, keeping the toggles the visitor set; the clicks
   // are delegated to overlayEl, so they survive a re-render.
@@ -259,6 +261,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
    */
   function showRequest() {
     const request = manager.getConsentRequest();
+    requestedShown = request?.categories ?? [];
     const reasonsEl = overlayEl.querySelector(".consent-modal__reasons") as HTMLElement;
     reasonsEl.replaceChildren(
       ...(request?.reasons ?? []).map((reason) => {
@@ -386,9 +389,20 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // Show/hide functions
   function show() {
-    // A requestConsent() call while the dialog is open shows its reason without reopening it
+    // A requestConsent() call while the dialog is open shows its reason without reopening it,
+    // and its category starts unticked for an undecided visitor, as on opening
+    const before = requestedShown;
     showRequest();
-    if (visible) return;
+    if (visible) {
+      if (!manager.getConsent()) {
+        for (const [category, input] of inputs) {
+          if (requestedShown.includes(category) && !before.includes(category)) {
+            input.checked = false;
+          }
+        }
+      }
+      return;
+    }
     visible = true;
     // Store currently focused element to restore on hide
     previouslyFocusedElement = document.activeElement as HTMLElement | null;
@@ -431,9 +445,11 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     }
   }
 
+  // Through the manager, as every close is: it reaches this dialog's callbacks and answers a
+  // pending requestConsent() on close.
   return {
-    show,
-    hide,
+    show: () => manager.showPreferenceCenter(),
+    hide: () => manager.hidePreferenceCenter(),
     isVisible: () => visible,
     destroy,
   };

@@ -1250,8 +1250,14 @@ export class ConsentManager {
     if (this.actedOnRecord === acted) return allowed;
     // Another tab answered the banner this tab is showing (or holds for its component), or
     // reset the choice, which asks again here as a local reset does.
-    if (this.actedOnRecord !== null) this.closeBanner();
-    else this.requestBanner();
+    if (this.actedOnRecord !== null) {
+      this.closeBanner();
+      // That choice answers the requestConsent() calls waiting here too; the dialog asking them
+      // shows toggles it no longer holds.
+      if (this.consentRequests.length > 0) this.closePreferenceCenter();
+    } else {
+      this.requestBanner();
+    }
     return allowed;
   }
 

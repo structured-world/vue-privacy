@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
+import { DEFAULT_CONFIG } from "../core/types";
 import type { ConsentCategories, ConsentRequest, ConsentTheme } from "../core/types";
 import { getTranslations } from "../i18n/index";
 import { limitToUsed, usedCategoriesOf } from "../core/categories";
@@ -85,9 +86,16 @@ watch(visible, async (isVisible) => {
     if (currentConsent) {
       categories.value = { ...currentConsent.categories };
     } else {
-      // A category a feature asks for (requestConsent) starts unticked for an undecided visitor,
-      // so granting it takes the visitor's own click
-      for (const category of request.value?.categories ?? []) categories.value[category] = false;
+      // An undecided visitor starts from the defaults on every open (toggles of a dialog closed
+      // without saving chose nothing); a category a feature asks for (requestConsent) starts
+      // unticked, so granting it takes the visitor's own click
+      const requested = request.value?.categories ?? [];
+      const defaults = { ...DEFAULT_CONFIG.categories, ...consentManager?.getConfig().categories };
+      categories.value = {
+        analytics: defaults.analytics && !requested.includes("analytics"),
+        marketing: defaults.marketing && !requested.includes("marketing"),
+        functional: defaults.functional && !requested.includes("functional"),
+      };
     }
 
     await nextTick();
@@ -103,7 +111,15 @@ injectModalStyles();
 onMounted(() => {
   if (consentManager) {
     consentManager.onShowPreferenceCenter(() => {
+      const before = request.value?.categories ?? [];
       request.value = consentManager.getConsentRequest();
+      // A request joining the open dialog: its category starts unticked for an undecided visitor
+      // too (the opening above does it for the first ones)
+      if (visible.value && !consentManager.getConsent()) {
+        for (const category of request.value?.categories ?? []) {
+          if (!before.includes(category)) categories.value[category] = false;
+        }
+      }
       visible.value = true;
     });
 
