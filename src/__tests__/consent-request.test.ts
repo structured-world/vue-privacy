@@ -360,6 +360,47 @@ describe("requestConsent", () => {
     expect(m.getConsentRequest()).toBeNull();
   });
 
+  it("a reset in another tab still asks with the banner when closing the dialog throws (basic mode)", async () => {
+    // The other tab cleared the choice: a failing hide hook here must not leave this tab
+    // undecided with nothing asking.
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST6" };
+    const { m } = await refusedManager(config);
+    const showBanner = vi.fn();
+    m.onShowBanner(showBanner);
+    m.getConfig().onPreferenceCenterHide = () => {
+      throw new Error("hook failed");
+    };
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+    const swallow = (event: ErrorEvent) => event.preventDefault();
+    window.addEventListener("error", swallow);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    cookieStore = "";
+    try {
+      window.dispatchEvent(new Event("focus"));
+    } finally {
+      window.removeEventListener("error", swallow);
+    }
+
+    expect(showBanner).toHaveBeenCalledOnce();
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it("a choice still closes the banner when closing the dialog throws", async () => {
+    // The visitor chose: a failing hide hook must not leave the banner asking again.
+    const { m } = await refusedManager();
+    const hideBanner = vi.fn();
+    m.onHideBanner(hideBanner);
+    m.getConfig().onPreferenceCenterHide = () => {
+      throw new Error("hook failed");
+    };
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    await expect(m.savePreferences({ functional: true })).rejects.toThrow("hook failed");
+    expect(hideBanner).toHaveBeenCalledOnce();
+    await expect(answer).resolves.toBe(true);
+  });
+
   it("a reset still asks with the banner when closing the open dialog throws", async () => {
     // The reset already cleared the choice: a failing hide hook must not leave the visitor
     // undecided with nothing asking.
