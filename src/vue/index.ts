@@ -186,8 +186,6 @@ export function useConsent() {
       manager.trackGenerateLead(params),
     /** Whether the visitor is in a consent jurisdiction (EEA and UK by default) */
     isConsentRequired: () => manager.isConsentRequired(),
-    /** Alias of isConsentRequired */
-    isEUUser: () => manager.isEUUser(),
     /** Check if user is in a CCPA-covered US state (California, Virginia, etc.) */
     isCCPAUser: () => manager.isCCPAUser(),
     /** Get the region/state detected for the user */

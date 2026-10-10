@@ -14,7 +14,7 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.banner.rejectAll).toBe("Reject All");
   });
 
-  it("should have auto EU detection by default", () => {
-    expect(DEFAULT_CONFIG.euDetection).toBe("auto");
+  it("should detect the visitor's country automatically by default", () => {
+    expect(DEFAULT_CONFIG.geoDetection).toBe("auto");
   });
 });

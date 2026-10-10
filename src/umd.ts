@@ -10,7 +10,7 @@
  * <script>
  *   const manager = VuePrivacy.createConsentManager({
  *     gaId: 'G-XXXXXXXXXX',
- *     euDetection: 'auto',
+ *     geoDetection: 'auto',
  *   });
  *   manager.init();
  * </script>

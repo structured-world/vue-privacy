@@ -9,7 +9,7 @@
  *
  * const manager = createConsentManager({
  *   gaId: 'G-XXXXXXXXXX',
- *   euDetection: 'auto',
+ *   geoDetection: 'auto',
  * });
  *
  * await manager.init();
@@ -88,6 +88,7 @@ export type {
   GoogleAnalyticsFields,
   GoogleAnalyticsConfigFields,
   GeoDetector,
+  GeoDetectionMode,
   GeoDetectionResult,
   GeoDetectionLogEntry,
   GeoDetectionResultWithLog,

@@ -15,7 +15,7 @@ import { consentBoot } from '@structured-world/vue-privacy/quasar';
 
 export default boot(consentBoot({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
 }));
 ```
 
@@ -108,39 +108,60 @@ Use the composable in any component:
 <script setup>
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 
-const { hasConsent, resetConsent } = useConsent();
+const { showPreferenceCenter } = useConsent();
 </script>
 
 <template>
-  <q-btn
-    v-if="hasConsent"
-    label="Cookie Settings"
-    @click="resetConsent"
-  />
+  <!-- Always offered: the visitor can change or withdraw a choice at any time -->
+  <q-btn label="Cookie Settings" @click="showPreferenceCenter" />
 </template>
 ```
 
+The composable's methods read the manager's state when called; they are not Vue refs, so a template condition on `hasConsent()` does not update when the visitor chooses. Keep such state in a ref updated from `manager.onConsentChange()` if you need it.
+
 ## Quasar Dialog Integration
 
-Show preferences in a Quasar dialog:
+Your own Quasar dialog can be the preference centre: register it with the manager, and every way of opening the preference centre (the banner's "Customize", `showPreferenceCenter()`, [`requestConsent()`](/guide/preference-center#asking-again-when-a-feature-needs-a-category)) shows it.
 
 ```vue
 <script setup>
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 import PreferencesDialog from './PreferencesDialog.vue';
 
 const $q = useQuasar();
-const { resetConsent } = useConsent();
+const { manager } = useConsent();
+// What the dialog is asked for; a request joining the open dialog updates it
+const request = ref(null);
+let dialog = null;
 
-function showPreferences() {
-  resetConsent(); // Clear stored consent
-  $q.dialog({
-    component: PreferencesDialog,
+onMounted(() => {
+  manager.onShowPreferenceCenter(() => {
+    request.value = manager.getConsentRequest();
+    dialog ??= $q
+      .dialog({ component: PreferencesDialog, componentProps: { request } })
+      // Closed without a choice: the manager answers pending requests from the stored choice
+      .onDismiss(() => {
+        dialog = null;
+        manager.hidePreferenceCenter();
+      });
   });
-}
+  manager.onHidePreferenceCenter(() => {
+    dialog?.hide();
+    dialog = null;
+  });
+});
+
+// The component that owns the dialog goes away: so does the registration
+onUnmounted(() => {
+  manager.onShowPreferenceCenter(null);
+  manager.onHidePreferenceCenter(null);
+});
 </script>
 ```
+
+`PreferencesDialog` receives the ref itself as its `request` prop and shows `request.value` (its `categories` and `reasons`), so a request that joins while it is open shows up at once. It loads its toggles from `getConsent()` once, when it is created, and offers every category the site uses, so a requested one can be granted. It saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
 
 ## Event Tracking
 

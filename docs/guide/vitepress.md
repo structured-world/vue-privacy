@@ -27,7 +27,7 @@ This is only needed for TypeScript compilation — vue-router is not used at run
 That's it. This automatically:
 
 - **Loads `gtag.js`** with Google Consent Mode v2 defaults
-- **Detects EU users** and shows a consent banner when required
+- **Detects visitors in a [consent jurisdiction](/guide/consent-jurisdictions)** and shows them a consent banner
 - **Tracks page views** on every VitePress navigation (SPA-aware)
 - **Stores consent** in a cookie for 365 days
 
@@ -158,7 +158,7 @@ All standard options are supported:
 ```typescript
 enhanceWithConsent(DefaultTheme, {
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',         // 'auto' | 'cloudflare' | 'api' | 'always' | 'never'
+  geoDetection: 'auto',        // 'auto' | 'cloudflare' | 'worker' | 'api' | 'always' | 'never'
   banner: {
     title: 'Cookie Preferences',
     message: 'This site uses cookies for analytics.',

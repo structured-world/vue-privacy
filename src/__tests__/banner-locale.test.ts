@@ -14,7 +14,7 @@ describe("banner text follows the locale", () => {
   });
 
   it("vanilla: a German visitor gets the German buttons", () => {
-    const manager = createConsentManager({ locale: "de", euDetection: "never" });
+    const manager = createConsentManager({ locale: "de", geoDetection: "never" });
     const banner = createBanner({ manager });
     const de = getTranslations("de").banner;
 
@@ -28,7 +28,7 @@ describe("banner text follows the locale", () => {
   });
 
   it("Vue: a German visitor gets the German buttons", async () => {
-    const manager = createConsentManager({ locale: "de", euDetection: "never" });
+    const manager = createConsentManager({ locale: "de", geoDetection: "never" });
     const host = document.createElement("div");
     document.body.appendChild(host);
     const app = createApp(ConsentBanner);
@@ -58,7 +58,7 @@ describe("banner text follows the locale", () => {
   it("keeps a site's own banner text", () => {
     const manager = createConsentManager({
       locale: "de",
-      euDetection: "never",
+      geoDetection: "never",
       banner: { rejectAll: "Refuse" },
     });
     const banner = createBanner({ manager });

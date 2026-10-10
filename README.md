@@ -1,6 +1,6 @@
 # @structured-world/vue-privacy
 
-GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3, Quasar, VitePress, and plain HTML.
+GDPR cookie consent banner and Google Analytics (GA4) with **Google Consent Mode v2** for Vue 3, Nuxt, VitePress, Quasar and plain HTML, in 31 languages.
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![npm downloads](https://img.shields.io/npm/dm/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
@@ -17,12 +17,12 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
 - **GDPR & CCPA** — Compliant with EU GDPR and California Consumer Privacy Act
 - **GDPR Roaming Protection** — Ask again when a choice made outside consent jurisdictions meets a visitor now inside one
-- **Consent Jurisdictions** — Ask visitors in the EEA and the UK (Switzerland on request), detected by country via Cloudflare headers, IP API, or timezone; a failed lookup asks too
+- **[Consent Jurisdictions](https://privacy.sw.foundation/guide/consent-jurisdictions)** — Ask visitors in the EEA and the UK (Switzerland on request), detected by country via Cloudflare headers, a Worker, IP API, or timezone; a failed lookup asks too
 - **Consent Banner** — Customizable GDPR/CCPA banner; follows the system's dark mode or a pinned light or dark theme
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
 - **Ask Again When Needed** — A feature that needs a refused category (sign-in, an embedded video) asks for it again, saying why
 - **Script Blocking** — Block third-party scripts until consent is granted
-- **i18n** — 31 built-in locales: every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh; follows the browser's preferred languages and the site's language switcher
+- **[31 Languages](https://privacy.sw.foundation/guide/languages)** — every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh; follows the browser's preferred languages and the site's language switcher
 - **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
@@ -58,7 +58,7 @@ const app = createApp(App);
 app.use(router);
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
   router: router,  // Enables automatic SPA page tracking
 }));
 
@@ -120,7 +120,7 @@ export default boot(consentBoot({
 <script>
   const manager = VuePrivacy.createConsentManager({
     gaId: 'G-XXXXXXXXXX',
-    euDetection: 'auto',
+    geoDetection: 'auto',
   });
   manager.init();
 </script>
@@ -172,7 +172,8 @@ interface ConsentConfig {
   reloadOnWithdrawal?: boolean;
 
   // Locale for UI text. When not set: the first of the browser's preferred languages
-  // (navigator.languages) among `locales`. consentManager.setLocale(tag) switches it later.
+  // (navigator.languages) among `locales`. consentManager.setLocale(tag) switches it later
+  // (see the Languages guide).
   // Supported: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, is, it, ja, ko, lt, lv,
   // mt, nb, nl, pl, pt, ro, ru, sk, sl, sv, uk, zh
   locale?: SupportedLocale;
@@ -232,13 +233,13 @@ interface ConsentConfig {
   // Remote consent storage (pluggable backend)
   storage?: ConsentStorage;
 
-  // Region detection mode
-  euDetection?: 'auto' | 'cloudflare' | 'worker' | 'api' | 'always' | 'never';
+  // How the visitor's country is found. Default: 'auto'
+  geoDetection?: 'auto' | 'cloudflare' | 'worker' | 'api' | 'always' | 'never';
 
   // Worker geo endpoint (e.g. '/api/geo'), used by 'worker' and 'auto'
   geoUrl?: string;
 
-  // Custom geo-detection provider, in place of euDetection
+  // Custom geo-detection provider, in place of geoDetection
   geoDetector?: GeoDetector;
 
   // Jurisdictions whose visitors are asked for consent. Default: ['EEA', 'UK']
@@ -278,7 +279,7 @@ interface ConsentConfig {
 
 Cookieless pings still carry the visitor's IP address and browser data to Google, and several European regulators treat loading the tag and sending them as processing that needs consent. A site that promises "Google Analytics only with consent" needs `consentMode: 'basic'`.
 
-In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off (no Google tag, no `data-consent-category="analytics"` scripts unblocked, `analytics: false` in `onConsentChange`) and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `euDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
+In basic mode only the visitor's own choice counts: a grant the library applies by jurisdiction (CCPA, outside consent jurisdictions) leaves analytics off (no Google tag, no `data-consent-category="analytics"` scripts unblocked, `analytics: false` in `onConsentChange`) and is not stored, so such visitors are measured only after they allow analytics in the preference centre. Use `geoDetection: 'always'` to ask every visitor. A consent cookie that an earlier version stored for a CCPA visitor without a choice counts as a choice; changing `version` asks those visitors again.
 
 ### Data minimisation
 
@@ -413,7 +414,10 @@ const allowed = await manager.requestConsent('functional', {
 
 // Check state
 const consent = manager.getConsent();
-const asked = manager.isConsentRequired(); // isEUUser() is an alias
+const asked = manager.isConsentRequired(); // in a consent jurisdiction?
+
+// Language switcher
+manager.setLocale('ro'); // the banner and preference centre re-render in Romanian
 
 // Cleanup
 manager.destroy();
@@ -433,9 +437,9 @@ The banner is shown to visitors in a jurisdiction whose law requires consent bef
 createConsentPlugin({ consentJurisdictions: ['EEA', 'UK', 'CH'] })
 ```
 
-Everywhere else every category is granted without a banner (CCPA states: see `ccpaEnabled`). A failed lookup (a blocked IP API, a browser reporting UTC) asks for consent; `geoFailure: 'grant'` treats it as outside instead. `isConsentRequired()` tells which applies; `isEUUser()` is an alias.
+Everywhere else every category is granted without a banner (CCPA states: see `ccpaEnabled`). A failed lookup (a blocked IP API, a browser reporting UTC) asks for consent; `geoFailure: 'grant'` treats it as outside instead. `isConsentRequired()` tells which applies. See [Consent Jurisdictions](https://privacy.sw.foundation/guide/consent-jurisdictions) for the details.
 
-### Detection (`euDetection: 'auto'`, recommended)
+### Detection (`geoDetection: 'auto'`, recommended)
 
 Tries in order:
 1. Cloudflare `CF-IPCountry` (and `X-Is-EU-Country`) response headers

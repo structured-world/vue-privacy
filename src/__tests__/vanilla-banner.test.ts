@@ -61,7 +61,7 @@ describe("createBanner", () => {
 
     // Create a fresh manager for each test
     manager = createConsentManager({
-      euDetection: "never", // Disable geo detection for tests
+      geoDetection: "never", // Disable geo detection for tests
     });
   });
 
@@ -195,7 +195,7 @@ describe("createBanner", () => {
 
   it("renders without customize button when not configured", () => {
     const managerNoCustomize = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         customize: undefined,
       },
@@ -313,7 +313,7 @@ describe("createBanner", () => {
 
   it("escapes HTML in text content", () => {
     const managerWithHtml = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         title: "<script>alert('xss')</script>",
         message: "<img src=x onerror=alert('xss')>",
@@ -334,7 +334,7 @@ describe("createBanner", () => {
 
   it("sanitizes dangerous protocols in privacy link URL", () => {
     const managerWithJsUrl = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         privacyLink: "javascript:alert('xss')",
       },
@@ -352,7 +352,7 @@ describe("createBanner", () => {
 
   it("sanitizes data: protocol in privacy link URL", () => {
     const managerWithDataUrl = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         privacyLink: "data:text/html,<script>alert('xss')</script>",
       },
@@ -369,7 +369,7 @@ describe("createBanner", () => {
 
   it("preserves valid URLs with query parameters", () => {
     const managerWithQueryUrl = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         privacyLink: "/privacy?ref=banner&utm_source=consent",
       },
@@ -387,7 +387,7 @@ describe("createBanner", () => {
 
   it("escapes HTML special characters in URL attributes", () => {
     const managerWithSpecialChars = createConsentManager({
-      euDetection: "never",
+      geoDetection: "never",
       banner: {
         privacyLink: '/privacy" onclick="alert(1)',
       },
@@ -464,7 +464,7 @@ describe("createBanner SSR guard", () => {
       // Re-import module to get fresh createBanner that sees document as undefined
       // We need dynamic import to ensure the SSR check runs fresh
       const freshModule = await import("../vanilla/banner");
-      const manager = createConsentManager({ euDetection: "never" });
+      const manager = createConsentManager({ geoDetection: "never" });
       const banner = freshModule.createBanner({ manager });
 
       // Should warn about SSR context

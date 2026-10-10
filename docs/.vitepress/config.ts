@@ -4,6 +4,10 @@ import pkg from "../../package.json" with { type: "json" };
 
 const hostname = "https://privacy.sw.foundation";
 
+// The site's description: the docs home, its JSON-LD, and every page without its own
+const siteDescription =
+  "GDPR cookie consent banner for Vue 3, Nuxt, VitePress and Quasar: Google Consent Mode v2 for GA4, 31 languages, region detection and SPA page tracking.";
+
 // Page title mappings for breadcrumbs
 const pageTitles: Record<string, string> = {
   guide: "Guide",
@@ -19,7 +23,8 @@ const pageTitles: Record<string, string> = {
   "preference-center": "Preference Center",
   "consent-mode": "Google Consent Mode v2",
   "script-blocking": "Script Blocking",
-  "eu-detection": "EU Detection",
+  "consent-jurisdictions": "Consent Jurisdictions",
+  languages: "Languages",
   customization: "Customization",
   analytics: "Analytics Overview",
   ecommerce: "Ecommerce Tracking",
@@ -44,8 +49,7 @@ const webSiteSchema = {
   "@type": "WebSite",
   url: hostname,
   name: "Vue Privacy Documentation",
-  description:
-    "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.",
+  description: siteDescription,
 };
 
 const softwareAppSchema = {
@@ -116,15 +120,22 @@ export default defineConfig({
   title: "Vue Privacy",
   titleTemplate: ":title | Vue Privacy",
   cleanUrls: true,
-  description:
-    "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.",
+  description: siteDescription,
 
   transformHead({ pageData }) {
     const head: HeadConfig[] = [];
+
+    // A moved page: GitHub Pages has no server redirects, and search engines treat an instant
+    // meta refresh with a canonical link to the target as a permanent move.
+    const redirect: unknown = pageData.frontmatter.redirect;
+    if (typeof redirect === "string") {
+      head.push(["meta", { "http-equiv": "refresh", content: `0; url=${redirect}` }]);
+      head.push(["link", { rel: "canonical", href: `${hostname}${redirect}` }]);
+      return head;
+    }
+
     const title = pageData.title || "Vue Privacy";
-    const description =
-      pageData.description ||
-      "Add Google Analytics to Vue 3, VitePress & Quasar with GDPR consent. Google Consent Mode v2, EU auto-detection, cookie banner, and SPA page tracking.";
+    const description = pageData.description || siteDescription;
     // Remove trailing slash for URL consistency with breadcrumbs
     const cleanPath = pageData.relativePath.replace(/(?:index)?\.md$/, "").replace(/\/$/, "");
     const url = `${hostname}/${cleanPath}`;
@@ -159,6 +170,8 @@ export default defineConfig({
 
   sitemap: {
     hostname,
+    // A moved page's old URL only redirects; the sitemap lists where it went
+    transformItems: (items) => items.filter((item) => !item.url.endsWith("guide/eu-detection")),
   },
 
   head: [
@@ -212,9 +225,10 @@ export default defineConfig({
           items: [
             { text: "Consent Banner", link: "/guide/consent-banner" },
             { text: "Preference Center", link: "/guide/preference-center" },
+            { text: "Languages", link: "/guide/languages" },
             { text: "Google Consent Mode v2", link: "/guide/consent-mode" },
             { text: "Script Blocking", link: "/guide/script-blocking" },
-            { text: "EU Detection", link: "/guide/eu-detection" },
+            { text: "Consent Jurisdictions", link: "/guide/consent-jurisdictions" },
             { text: "Customization", link: "/guide/customization" },
           ],
         },

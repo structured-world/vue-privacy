@@ -14,7 +14,7 @@ const app = createApp(App);
 
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
-  euDetection: 'auto',
+  geoDetection: 'auto',
   banner: {
     title: 'Cookie Settings',
     message: 'We use cookies to improve your experience.',
@@ -49,6 +49,7 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 |------|------|---------|-------------|
 | `position` | `'bottom' \| 'top' \| 'center'` | `'bottom'` | Banner position |
 | `config` | `Partial<BannerConfig>` | `{}` | Override banner text |
+| `theme` | `'auto' \| 'light' \| 'dark'` | the manager's `theme`, else `'auto'` | Colour palette |
 
 ### Events
 
@@ -66,7 +67,7 @@ import { useConsent } from '@structured-world/vue-privacy/vue';
 
 const {
   getConsent,        // () => StoredConsent | null
-  isConsentRequired, // () => boolean | null (isEUUser is an alias)
+  isConsentRequired, // () => boolean | null
   hasConsent,        // () => boolean
   acceptAll,         // () => Promise<void>
   rejectAll,         // () => Promise<void>
@@ -85,38 +86,66 @@ const {
 
 ## Custom Preferences UI
 
-Build your own preferences modal:
+Build your own preferences modal in place of `ConsentPreferenceModal`. Registered with the manager, it opens for the banner's "Customize", `showPreferenceCenter()` and `requestConsent()`; it loads the current choice when it opens, and shows why a feature asks:
 
 ```vue
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
-const { savePreferences, consent } = useConsent();
+const { manager, savePreferences, getConsent } = useConsent();
 
-const analytics = ref(consent.value?.categories.analytics ?? false);
-const marketing = ref(consent.value?.categories.marketing ?? false);
+const visible = ref(false);
+// What requestConsent() asks for: its categories and reasons, or null
+const request = ref(null);
+// Offer every category the site uses, so a requested one can be granted
+const usedCategories = manager.getConfig().usedCategories ?? ['analytics', 'marketing', 'functional'];
+const toggles = ref({});
+
+onMounted(() => {
+  manager.onShowPreferenceCenter(() => {
+    request.value = manager.getConsentRequest();
+    // A request joining the open dialog only refreshes the request: the visitor's
+    // unsaved ticks stay
+    if (visible.value) return;
+    // The stored choice, else unticked: never the ticks of an earlier, unsaved opening
+    const categories = getConsent()?.categories;
+    toggles.value = Object.fromEntries(
+      usedCategories.map((category) => [category, categories?.[category] ?? false])
+    );
+    visible.value = true;
+  });
+  manager.onHidePreferenceCenter(() => {
+    visible.value = false;
+    request.value = null;
+  });
+});
+
+onUnmounted(() => {
+  manager.onShowPreferenceCenter(null);
+  manager.onHidePreferenceCenter(null);
+});
 
 async function save() {
-  // A category left out (functional here) is refused
-  await savePreferences({
-    analytics: analytics.value,
-    marketing: marketing.value,
-  });
+  // Only the used categories; any other is refused. Saving answers the pending requests
+  // and closes the dialog
+  await savePreferences({ ...toggles.value });
 }
 </script>
 
 <template>
-  <div class="preferences-modal">
-    <label>
-      <input type="checkbox" v-model="analytics" />
-      Analytics Cookies
-    </label>
-    <label>
-      <input type="checkbox" v-model="marketing" />
-      Marketing Cookies
+  <div v-if="visible" class="preferences-modal">
+    <p v-for="reason in request?.reasons ?? []" :key="reason">{{ reason }}</p>
+    <label
+      v-for="category in usedCategories"
+      :key="category"
+      :class="{ requested: request?.categories.includes(category) }"
+    >
+      <input type="checkbox" v-model="toggles[category]" />
+      {{ category }}
     </label>
     <button @click="save">Save Preferences</button>
+    <button @click="manager.hidePreferenceCenter()">Close</button>
   </div>
 </template>
 ```

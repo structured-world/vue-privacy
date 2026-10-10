@@ -1,5 +1,5 @@
 ---
-description: Vue 3 plugin API reference. createConsentPlugin, useConsent composable, ConsentBanner component, and VitePress/Quasar integrations.
+description: Vue 3 cookie consent plugin API reference. createConsentPlugin, the useConsent composable, the ConsentBanner and ConsentPreferenceModal components, and the VitePress and Quasar integrations.
 ---
 
 # Vue Plugin API Reference
@@ -38,15 +38,39 @@ const {
 
 ### Returns
 
-| Property            | Type                            | Description                                                         |
-| ------------------- | ------------------------------- | ------------------------------------------------------------------- |
-| `getConsent`        | `() => StoredConsent \| null`   | Current consent state                                               |
-| `isConsentRequired` | `() => boolean \| null`         | Whether the visitor is in a consent jurisdiction (`isEUUser` alias) |
-| `hasConsent`        | `() => boolean`                 | Whether the visitor's choice (a grant or a refusal) is stored       |
-| `acceptAll`       | `() => Promise<void>`           | Accept all categories                                         |
-| `rejectAll`       | `() => Promise<void>`           | Reject non-essential                                          |
-| `resetConsent`    | `() => void`                    | Clear consent and show banner                                 |
-| `savePreferences` | `(categories) => Promise<void>` | Save specific preferences                                     |
+Each member calls the [manager method](/api/) of the same name.
+
+| Property | Type | Description |
+| -------- | ---- | ----------- |
+| `getConsent` | `() => StoredConsent \| null` | The visitor's choice, or `null` while undecided |
+| `hasConsent` | `() => boolean` | Whether the visitor has chosen (a grant or a refusal) |
+| `acceptAll` | `() => Promise<void>` | Accept every category |
+| `rejectAll` | `() => Promise<void>` | Refuse every optional category |
+| `savePreferences` | `(categories) => Promise<void>` | Save a choice; a category not given is refused |
+| `resetConsent` | `() => void` | Forget the choice and show the banner again |
+| `showPreferenceCenter` | `() => void` | Open the preference centre |
+| `requestConsent` | `(category, { reason }?) => Promise<boolean>` | Ask again for a category a feature needs; resolves whether it is granted |
+| `isConsentRequired` | `() => boolean \| null` | Whether the visitor is in a consent jurisdiction |
+| `isCCPAUser` | `() => boolean` | Whether the visitor is in a CCPA-covered US state (`ccpaEnabled`) |
+| `getRegion` | `() => string \| undefined` | Detected region or US state |
+| `getGeoResult` | `() => GeoDetectionResult \| null` | The region lookup's result |
+| `trackPageView` | `(path, title?) => void` | Track a page view (SPA navigation) |
+| `trackEvent` | `(name, params?) => void` | Track a GA4 event |
+| `trackPurchase`, `trackAddToCart`, `trackBeginCheckout`, `trackViewItem`, `trackViewItemList`, `trackSelectItem`, `trackAddShippingInfo`, `trackAddPaymentInfo`, `trackSignUp`, `trackLogin`, `trackGenerateLead` | | GA4 recommended events ([Ecommerce Tracking](/guide/ecommerce)) |
+| `manager` | `ConsentManager` | The manager itself, e.g. for `setLocale()` and the dialog callbacks |
+
+## ConsentPreferenceModal
+
+The built-in preference centre. It opens through the manager (the banner's "Customize", `showPreferenceCenter()`, `requestConsent()`) and shows the categories in `usedCategories`, unticked for an undecided visitor.
+
+| Prop | Type | Default | Description |
+| ---- | ---- | ------- | ----------- |
+| `theme` | `'auto' \| 'light' \| 'dark'` | the manager's `theme`, else `'auto'` | Colour palette |
+
+| Event | Payload | Description |
+| ----- | ------- | ----------- |
+| `save` | the saved categories | Emitted after "Save preferences" |
+| `close` | | Emitted on accept all, reject all, or closing without a choice |
 
 ## ConsentBanner
 
@@ -68,6 +92,7 @@ Vue component for the consent banner.
 | ---------- | ------------------------------- | ---------- | ---------------------- |
 | `position` | `'bottom' \| 'top' \| 'center'` | `'bottom'` | Banner position        |
 | `config`   | `Partial<BannerConfig>`         | `{}`       | Override banner config |
+| `theme`    | `'auto' \| 'light' \| 'dark'`   | the manager's `theme`, else `'auto'` | Colour palette |
 
 ### Events
 

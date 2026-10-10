@@ -1,5 +1,5 @@
 ---
-description: Learn how to add GDPR-compliant Google Analytics to Vue 3, Nuxt, VitePress, and Quasar with automatic consent management and Google Consent Mode v2.
+description: Add a GDPR cookie consent banner and Google Analytics 4 to Vue 3, Nuxt, VitePress and Quasar, with Google Consent Mode v2, region detection and 31 languages.
 ---
 
 # Getting Started Guide
@@ -8,10 +8,10 @@ description: Learn how to add GDPR-compliant Google Analytics to Vue 3, Nuxt, Vi
 
 ## The Problem
 
-Since March 2024, Google requires **Consent Mode v2** for all websites using Google Analytics or Google Ads in the EU. Setting this up correctly means:
+Since March 2024, Google requires **Consent Mode v2** for websites using Google Analytics or Google Ads with visitors in the EEA and the UK. Setting this up correctly means:
 
 - Loading `gtag.js` with the right consent defaults **before** any tracking
-- Showing a cookie consent banner to EU users
+- Showing a cookie consent banner to visitors where the law requires consent
 - Updating consent signals when the user makes a choice
 - Handling SPA navigation (Vue Router, VitePress) so page views are tracked correctly
 
@@ -41,7 +41,7 @@ app.use(createConsentPlugin({
 }));
 ```
 
-This handles: gtag.js loading, Consent Mode v2 defaults, EU detection, consent banner, and consent persistence. For SPA page tracking, VitePress and Quasar include automatic router integration; Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)).
+This handles: gtag.js loading, Consent Mode v2 defaults, region detection, the consent banner in 31 languages, and consent persistence. For SPA page tracking, VitePress and Quasar include automatic router integration; Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)).
 
 ## What It Does
 
@@ -66,12 +66,19 @@ All four consent signals, configured automatically:
 
 ### Region Detection
 
-Multiple detection methods with automatic fallback, each giving the visitor's country, which decides against the [consent jurisdictions](/guide/eu-detection#consent-jurisdictions):
+Multiple detection methods with automatic fallback, each giving the visitor's country, which decides against the [consent jurisdictions](/guide/consent-jurisdictions#consent-jurisdictions):
 
 1. **Cloudflare Headers** — fastest, uses `CF-IPCountry` header
 2. **Worker Endpoint** — `/api/geo` when `geoUrl` is set
 3. **IP API** — fallback using ipapi.co
 4. **Timezone Heuristics** — last resort based on browser timezone
+
+### Fair Consent
+
+- **Refusing is as easy as accepting**: "Reject all" sits beside "Accept all" on the banner and in the preference centre, styled the same.
+- **Nothing pre-ticked**: optional categories start unticked, so only the visitor's own tick grants one (CJEU, Planet49).
+- **Asking again when needed**: a feature that needs a refused category asks at that moment, saying why, with [`requestConsent()`](/guide/preference-center#asking-again-when-a-feature-needs-a-category).
+- **31 languages**, chosen from the browser's languages or your site's language switcher ([Languages](/guide/languages)).
 
 ### SPA Page Tracking
 

@@ -1,5 +1,5 @@
 ---
-description: Framework-agnostic Vue Privacy API reference. ConsentManager methods, Google Tag functions, storage utilities, and KV storage with rate limiting.
+description: Vue Privacy core API reference. Every ConsentManager method (consent, languages, requestConsent, preference centre, GA4 tracking), Google tag functions, storage utilities and KV storage.
 ---
 
 # Core API Reference Guide
@@ -15,15 +15,17 @@ import { createConsentManager } from "@structured-world/vue-privacy";
 
 const manager = createConsentManager({
   gaId: "G-XXXXXXXXXX",
-  euDetection: "auto",
+  geoDetection: "auto",
 });
 ```
+
+See [ConsentConfig](/api/types#consentconfig) for every option.
 
 ### Methods
 
 #### `init(): Promise<void>`
 
-Initialize the consent manager. Detects EU status, loads stored consent, and shows banner if needed.
+Initialize the consent manager: finds whether the visitor is in a [consent jurisdiction](/guide/consent-jurisdictions), loads the stored choice, and shows the banner if the visitor has to be asked.
 
 ```typescript
 await manager.init();
@@ -90,9 +92,21 @@ if (manager.isConsentRequired()) {
 }
 ```
 
-#### `isEUUser(): boolean | null`
+#### `isCCPAUser(): boolean`
 
-Alias of `isConsentRequired()`: "EU" here means every consent jurisdiction, the EEA and the UK included.
+Whether the visitor is in a CCPA-covered US state (California, Virginia, Colorado and others); always `false` unless `ccpaEnabled` is set.
+
+#### `getGeoResult(): GeoDetectionResult | null`
+
+The region lookup's result (`countryCode`, `region`, `method`, `consentRequired`), or `null` before it ran. When the stored choice's jurisdiction stands in for a lookup, it is `{ consentRequired, method: 'stored' }`, without a country.
+
+#### `getRegion(): string | undefined`
+
+The detected region or US state, when the lookup reported one.
+
+#### `getGeoDetectionLog(): GeoDetectionLogEntry[]`
+
+Every detection method tried and its outcome, for debugging the lookup.
 
 #### `trackPageView(path, title?): void`
 
@@ -108,6 +122,16 @@ manager.trackPageView("/docs/api", "API Reference");
 ::: tip
 The VitePress `enhanceWithConsent` adapter calls this automatically on every navigation. You only need this for custom SPA setups.
 :::
+
+#### `trackEvent(eventName, params?): void`
+
+Send a GA4 event. Before any choice it goes out under the Consent Mode defaults, as a cookieless ping; once the visitor's choice leaves analytics off it is dropped. With `consentMode: 'basic'` an event tracked before the visitor allows analytics is dropped too, and unlike the last page view it is not sent later.
+
+```typescript
+manager.trackEvent("share", { method: "twitter", content_type: "article" });
+```
+
+Typed helpers send the GA4 recommended events: `trackPurchase`, `trackAddToCart`, `trackBeginCheckout`, `trackViewItem`, `trackViewItemList`, `trackSelectItem`, `trackAddShippingInfo`, `trackAddPaymentInfo`, `trackSignUp(method?)`, `trackLogin(method?)` and `trackGenerateLead`. See [Ecommerce Tracking](/guide/ecommerce).
 
 #### `isInitialized(): boolean`
 
@@ -144,6 +168,49 @@ What the open preference centre is asked for: the requested `categories` and the
 #### `hidePreferenceCenter(): void`
 
 Close the preference centre without a choice (a custom dialog's close button, Escape, a click outside). The stored choice stands, and each pending `requestConsent()` call is answered from it. With nothing open it does nothing, and `onPreferenceCenterHide` does not fire.
+
+#### `showPreferenceCenter(): void`
+
+Open the preference centre, e.g. from a "Cookie settings" link. Without a mounted dialog the request is held until one registers.
+
+#### `getLocale(): SupportedLocale`
+
+The locale the banner and the preference centre are shown in.
+
+#### `setLocale(tag): SupportedLocale`
+
+Switch the UI language, e.g. from the site's language switcher. A language tag resolves to its locale within `locales` (`ro-MD` to `ro`), else to `fallbackLocale`; the built-in dialogs re-render in it. Returns the locale now shown. See [Languages](/guide/languages).
+
+```typescript
+manager.setLocale("ro-MD"); // 'ro'
+```
+
+#### `onLocaleChange(listener): () => void`
+
+Call `listener(locale)` on every language switch, for a custom dialog to re-render. Returns a function that unregisters it.
+
+#### `onConsentChange(listener): void`
+
+Call `listener(categories)` whenever the categories in effect change on this page. With `consentMode: 'basic'` (and `gaId`) a choice made in another tab of the site counts too, once this tab follows it; in the default advanced mode the listeners are not called for another tab's choice. Each listener gets its own copy; one that throws is logged and does not stop the others.
+
+#### Dialog callbacks
+
+A custom banner or preference centre registers with the manager, which then opens and closes it:
+
+| Method | Called |
+|--------|--------|
+| `onShowBanner(callback)` | when the banner should show; at once if it was requested before the callback registered |
+| `onHideBanner(callback)` | when the banner should close |
+| `onShowPreferenceCenter(callback \| null)` | when the preference centre should open, or refresh for a joining request; `null` unregisters it, and an open dialog going away answers its requests |
+| `onHidePreferenceCenter(callback \| null)` | when the preference centre should close |
+
+#### `getConfig(): ConsentConfig`
+
+The configuration in effect, with the banner text in the current locale.
+
+#### `destroy(): void`
+
+Remove the manager's listeners, the script blocker and router tracking, e.g. when the app unmounts. A `requestConsent()` call still waiting answers `false`.
 
 ## Google Tag Functions
 

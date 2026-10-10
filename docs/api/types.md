@@ -1,5 +1,5 @@
 ---
-description: TypeScript type definitions for Vue Privacy. ConsentConfig, StoredConsent, GA4Item, GA4PurchaseParams, and all ecommerce event types.
+description: TypeScript types of Vue Privacy, the Vue 3 cookie consent library. Every ConsentConfig option (languages, theme, region detection, Consent Mode), StoredConsent, ConsentRequest and the GA4 ecommerce event types.
 ---
 
 # TypeScript Type Definitions
@@ -14,13 +14,31 @@ interface ConsentConfig {
   gaId?: string;
 
   /**
+   * UI language. When not set: the first of the browser's preferred languages among
+   * `locales`, else `fallbackLocale`. setLocale() switches it later. See the Languages guide.
+   */
+  locale?: SupportedLocale;
+
+  /** The locales the site offers; detection and setLocale() pick only among these. Default: all 31 */
+  locales?: SupportedLocale[];
+
+  /** Shown when none of the visitor's languages is offered. Default: 'en', else the first of `locales` */
+  fallbackLocale?: SupportedLocale;
+
+  /** Colour palette of the banner and the preference centre; a component's own `theme` outranks it */
+  theme?: ConsentTheme; // 'auto' (default) | 'light' | 'dark'
+
+  /**
    * Optional categories the site uses; the rest are never offered or granted. Default: all three.
    * They start unticked for a visitor who has not chosen (a pre-ticked box is no consent).
    */
   usedCategories?: OptionalCategory[]; // 'analytics' | 'marketing' | 'functional'
 
-  /** Banner UI configuration */
+  /** Banner text (overrides the translation in every language) */
   banner?: Partial<BannerConfig>;
+
+  /** Preference centre text (overrides the translation in every language) */
+  preferenceCenter?: Partial<PreferenceCenterConfig>;
 
   /** Cookie configuration */
   cookie?: {
@@ -30,8 +48,11 @@ interface ConsentConfig {
     path?: string; // Default: '/'
   };
 
-  /** Region detection mode */
-  euDetection?: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
+  /** How the visitor's country is found: see the Consent Jurisdictions guide */
+  geoDetection?: GeoDetectionMode; // 'auto' (default) | 'cloudflare' | 'worker' | 'api' | 'always' | 'never'
+
+  /** URL of a Worker geo endpoint (e.g. '/api/geo'), used by 'worker' and 'auto' */
+  geoUrl?: string;
 
   /**
    * Jurisdictions whose visitors are asked for consent, decided from the country.
@@ -92,10 +113,17 @@ interface ConsentConfig {
    */
   onGoogleAnalyticsError?: (error: unknown) => void;
 
+  /**
+   * Remote consent storage: a copy of the choice kept on a server. The consent cookie still
+   * holds the choice; a grant of analytics or marketing also sets consent_uid, naming the
+   * remote record. createKVStorage('/api/consent') for the Cloudflare KV Worker, or your own.
+   */
+  storage?: ConsentStorage;
+
   /** Consent version (changing resets consent) */
   version?: string;
 
-  /** Callback when consent changes */
+  /** Callback when consent changes (also for a choice made in another tab, in basic mode) */
   onConsentChange?: (consent: StoredConsent) => void;
 
   /** Callback when banner is shown */
@@ -103,7 +131,63 @@ interface ConsentConfig {
 
   /** Callback when banner is hidden */
   onBannerHide?: () => void;
+
+  /** Callback when the preference centre opens */
+  onPreferenceCenterShow?: () => void;
+
+  /** Callback when the preference centre closes */
+  onPreferenceCenterHide?: () => void;
+
+  /** CCPA mode: visitors in covered US states see no banner but can opt out ("Do Not Sell") */
+  ccpaEnabled?: boolean; // Default: false
+
+  /** Your "Do Not Sell My Personal Information" link text; the library renders no link */
+  doNotSellText?: string;
+
+  /** Callback when the visitor is detected in a CCPA-covered state */
+  onCCPAUser?: () => void;
 }
+```
+
+## GeoDetectionMode
+
+```typescript
+type GeoDetectionMode =
+  | "auto" // Cloudflare header, then Worker (with geoUrl), then IP API, then time zone
+  | "cloudflare" // only the Cloudflare header
+  | "worker" // only the Worker at geoUrl
+  | "api" // only the IP API (ipapi.co)
+  | "always" // ask every visitor
+  | "never"; // ask no visitor
+```
+
+## ConsentRequest
+
+What `requestConsent()` asks, for a custom preference centre to show (`manager.getConsentRequest()`).
+
+```typescript
+interface ConsentRequestOptions {
+  /** Why the feature needs the category: your own text, in the visitor's language */
+  reason?: string;
+}
+
+interface ConsentRequest {
+  /** The categories asked for, in display order */
+  categories: OptionalCategory[];
+  /** The distinct reasons, in the order asked */
+  reasons: string[];
+}
+```
+
+## Other Types
+
+```typescript
+type OptionalCategory = "analytics" | "marketing" | "functional";
+type ConsentJurisdiction = "EEA" | "UK" | "CH";
+type ConsentTheme = "auto" | "light" | "dark";
+type SupportedLocale = "bg" | "cs" | "da" | "de" | "el" | "en" | "es" | "et" | "fi" | "fr" | "ga"
+  | "hr" | "hu" | "is" | "it" | "ja" | "ko" | "lt" | "lv" | "mt" | "nb" | "nl" | "pl" | "pt"
+  | "ro" | "ru" | "sk" | "sl" | "sv" | "uk" | "zh";
 ```
 
 ## GoogleAnalyticsOptions
@@ -183,6 +267,8 @@ interface StoredConsent {
   timestamp: number;
   /** Version of the consent configuration */
   version: string;
+  /** Whether the choice was made in a consent jurisdiction; such a choice stands wherever the visitor goes */
+  consentRequired?: boolean;
 }
 ```
 
@@ -204,6 +290,31 @@ interface BannerConfig {
   privacyLink?: string;
   /** Privacy policy link text */
   privacyLinkText?: string;
+}
+```
+
+## PreferenceCenterConfig
+
+```typescript
+interface PreferenceCenterConfig {
+  title: string;
+  description: string;
+  savePreferences: string;
+  acceptAll: string;
+  /** The banner's "Reject all" text when omitted */
+  rejectAll?: string;
+  /** Name and description per category */
+  categories: {
+    necessary: Partial<CategoryDisplayConfig>;
+    analytics: Partial<CategoryDisplayConfig>;
+    marketing: Partial<CategoryDisplayConfig>;
+    functional: Partial<CategoryDisplayConfig>;
+  };
+}
+
+interface CategoryDisplayConfig {
+  name: string;
+  description: string;
 }
 ```
 
@@ -240,8 +351,8 @@ interface GeoDetectionResult {
   countryCode?: string;
   /** Region/state (e.g. "California") */
   region?: string;
-  /** Detection method used */
-  method: "cloudflare" | "worker" | "api" | "fallback" | "manual";
+  /** Detection method used; 'stored': no lookup, the stored choice's jurisdiction */
+  method: "cloudflare" | "worker" | "api" | "fallback" | "manual" | "stored";
 }
 ```
 
@@ -252,14 +363,19 @@ interface GeoDetectionResult {
 ```typescript
 import {
   CloudflareGeoDetector,
+  WorkerGeoDetector,
   IPAPIGeoDetector,
   TimezoneGeoDetector,
   AutoGeoDetector,
+  createGeoDetector,
 } from "@structured-world/vue-privacy";
 
 // Use a specific detector
 const detector = new CloudflareGeoDetector();
 const result = await detector.detect();
+
+// Or the one a GeoDetectionMode names
+const worker = createGeoDetector("worker", "/api/geo");
 ```
 
 ## GA4 Event Types

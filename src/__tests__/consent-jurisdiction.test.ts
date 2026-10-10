@@ -149,8 +149,8 @@ describe("consent jurisdictions", () => {
     ]);
   });
 
-  it("exposes isConsentRequired() and its alias through useConsent()", async () => {
-    // The Vue composable hands the decision to templates; both names give the same answer.
+  it("exposes isConsentRequired() through useConsent()", async () => {
+    // The Vue composable hands the decision to templates.
     const { manager } = await started({
       geoDetector: detecting({ consentRequired: false, countryCode: "NO", method: "api" }),
     });
@@ -160,16 +160,6 @@ describe("consent jurisdictions", () => {
     const consent = app.runWithContext(() => useConsent());
 
     expect(consent.isConsentRequired()).toBe(true);
-    expect(consent.isEUUser()).toBe(true);
-  });
-
-  it("keeps isEUUser() as an alias of isConsentRequired()", async () => {
-    const { manager } = await started({
-      geoDetector: detecting({ consentRequired: false, countryCode: "GB", method: "api" }),
-    });
-
-    expect(manager.isEUUser()).toBe(true);
-    expect(manager.isEUUser()).toBe(manager.isConsentRequired());
   });
 
   it("stores the choice of a visitor asked by country as given in a consent jurisdiction", async () => {
