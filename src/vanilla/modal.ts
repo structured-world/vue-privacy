@@ -429,7 +429,8 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   }
 
   // Through the manager, as every close is: it reaches this dialog's callbacks and answers a
-  // pending requestConsent() on close.
+  // pending requestConsent() on close. With nothing open the manager does nothing, so hide()
+  // before show() or twice reports no close.
   return {
     show: () => manager.showPreferenceCenter(),
     hide: () => manager.hidePreferenceCenter(),
