@@ -13,6 +13,12 @@ import { installCookieJar } from "./helpers/cookie-jar";
 let cookieStore = "";
 const created: ConsentManager[] = [];
 const NOTHING = { analytics: false, marketing: false, functional: false };
+// Every optional toggle is rendered, and none is ticked (an empty list would prove nothing)
+const UNTICKED_TOGGLES = [
+  ["analytics", false],
+  ["marketing", false],
+  ["functional", false],
+];
 
 async function undecided(): Promise<ConsentManager> {
   const m = new ConsentManager({
@@ -51,7 +57,7 @@ describe("optional categories start unticked", () => {
     const modal = createModal({ manager: m });
 
     m.showPreferenceCenter();
-    expect(toggles().every(([, checked]) => !checked)).toBe(true);
+    expect(toggles()).toEqual(UNTICKED_TOGGLES);
     (document.querySelector(".consent-modal__btn--save") as HTMLButtonElement).click();
     await vi.waitFor(() => expect(m.getConsent()?.categories).toEqual(NOTHING));
     modal.destroy();
@@ -66,7 +72,7 @@ describe("optional categories start unticked", () => {
     m.showPreferenceCenter();
     await nextTick();
     await nextTick();
-    expect(toggles().every(([, checked]) => !checked)).toBe(true);
+    expect(toggles()).toEqual(UNTICKED_TOGGLES);
     (document.querySelector(".consent-modal__btn--save") as HTMLButtonElement).click();
     await vi.waitFor(() => expect(m.getConsent()?.categories).toEqual(NOTHING));
     app.unmount();

@@ -306,8 +306,25 @@ export class ConsentManager {
     }
     if (callback && this.preferenceCenterPending) {
       this.preferenceCenterPending = false;
-      callback();
+      try {
+        callback();
+      } catch (error) {
+        // The dialog mounted late and failed to show what was held for it
+        this.failPreferenceCenterOpening(error);
+      }
     }
+  }
+
+  /**
+   * A site's dialog or show callback failed while opening the preference centre: the visitor was
+   * not asked, so nothing is granted. The waiting requests answer false instead of waiting on a
+   * dialog that did not open, and the next call opens it afresh.
+   */
+  private failPreferenceCenterOpening(error: unknown): void {
+    console.error("[vue-privacy] preference centre failed to open", error);
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    for (const request of this.consentRequests.splice(0)) request.resolve(false);
   }
 
   /**
@@ -388,15 +405,15 @@ export class ConsentManager {
           this.showPreferenceCenterCallback?.();
         }
       } catch (error) {
-        // A site's dialog or show callback failed: the visitor was not asked, so nothing is
-        // granted, and the request is dropped instead of waiting on a dialog that did not open.
-        console.error("[vue-privacy] preference centre failed to open", error);
-        this.consentRequests = this.consentRequests.filter((r) => r !== request);
         if (opening) {
-          this.preferenceCenterShown = false;
-          this.preferenceCenterPending = false;
+          this.failPreferenceCenterOpening(error);
+        } else {
+          // Refreshing the open dialog failed: this request was not shown, the ones before it
+          // still are
+          console.error("[vue-privacy] preference centre failed to show a request", error);
+          this.consentRequests = this.consentRequests.filter((r) => r !== request);
+          resolve(false);
         }
-        resolve(false);
       }
     });
   }
@@ -1259,18 +1276,18 @@ export class ConsentManager {
   private syncFromOutside(): boolean {
     if (!this.consentSettled) return false;
     const acted = this.actedOnRecord;
+    const pending = [...this.consentRequests];
     const allowed = this.reconcile();
+    const answered = this.actedOnRecord === acted ? [] : pending;
+    this.consentRequests = this.consentRequests.filter((r) => !answered.includes(r));
     if (this.actedOnRecord === acted) return allowed;
     // Another tab answered the banner this tab is showing (or holds for its component), or
-    // reset the choice, which asks again here as a local reset does.
-    if (this.actedOnRecord !== null) {
-      this.closeBanner();
-      // That choice answers the requestConsent() calls waiting here too; the dialog asking them
-      // shows toggles it no longer holds.
-      if (this.consentRequests.length > 0) this.closePreferenceCenter();
-    } else {
-      this.requestBanner();
-    }
+    // reset the choice, which asks again here as a local reset does. Either way it answers the
+    // requestConsent() calls made before it (a consent callback reacting to it asks anew), and
+    // their dialog shows toggles it no longer holds.
+    if (answered.length > 0) this.closePreferenceCenter(answered);
+    if (this.actedOnRecord !== null) this.closeBanner();
+    else this.requestBanner();
     return allowed;
   }
 

@@ -365,6 +365,82 @@ describe("requestConsent", () => {
     expect(show).toHaveBeenCalledTimes(2);
   });
 
+  it("a reset made in another tab answers the open request and closes its dialog (basic mode)", async () => {
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST2" };
+    const { m } = await refusedManager(config);
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const showBanner = vi.fn();
+    m.onShowBanner(showBanner);
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    cookieStore = "";
+    window.dispatchEvent(new Event("focus"));
+
+    await expect(answer).resolves.toBe(false);
+    expect(hide).toHaveBeenCalledOnce();
+    expect(hide.mock.invocationCallOrder[0]).toBeLessThan(showBanner.mock.invocationCallOrder[0]);
+  });
+
+  it("keeps a request a consent callback makes while following another tab (basic mode)", async () => {
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST3" };
+    const { m, show } = await refusedManager(config);
+    let video: Promise<boolean> | undefined;
+    m.onConsentChange((categories) => {
+      if (categories.functional && !video) video = m.requestConsent("marketing", { reason: VIDEO });
+    });
+    const signIn = m.requestConsent("functional", { reason: SIGN_IN });
+
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+    const otherTab = manager(config);
+    await otherTab.init();
+    await otherTab.savePreferences({ functional: true });
+    const shownBefore = show.mock.calls.length;
+    window.dispatchEvent(new Event("focus"));
+
+    await expect(signIn).resolves.toBe(true);
+    expect(video).toBeDefined();
+    expect(await settled(video as Promise<boolean>)).toBe(false);
+    expect(m.getConsentRequest()).toEqual({ categories: ["marketing"], reasons: [VIDEO] });
+    expect(show.mock.calls.length).toBeGreaterThan(shownBefore);
+  });
+
+  it("a dialog that fails when it mounts late answers every waiting request false", async () => {
+    // Requests made before any dialog is mounted wait for one; if that one throws on showing,
+    // nothing was asked.
+    const m = manager();
+    await m.init();
+    await m.rejectAll();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const first = m.requestConsent("functional", { reason: SIGN_IN });
+    const second = m.requestConsent("marketing", { reason: VIDEO });
+
+    m.onShowPreferenceCenter(() => {
+      throw new Error("site dialog failed");
+    });
+    await expect(first).resolves.toBe(false);
+    await expect(second).resolves.toBe(false);
+    expect(m.getConsentRequest()).toBeNull();
+
+    const show = vi.fn();
+    m.onShowPreferenceCenter(show);
+    void m.requestConsent("functional");
+    expect(show).toHaveBeenCalledOnce();
+  });
+
+  it("a request the open dialog fails to show answers false; the ones it shows keep waiting", async () => {
+    const { m } = await refusedManager();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const signIn = m.requestConsent("functional", { reason: SIGN_IN });
+    m.onShowPreferenceCenter(() => {
+      throw new Error("site dialog failed to refresh");
+    });
+
+    await expect(m.requestConsent("marketing", { reason: VIDEO })).resolves.toBe(false);
+    expect(await settled(signIn)).toBe(false);
+    expect(m.getConsentRequest()).toEqual({ categories: ["functional"], reasons: [SIGN_IN] });
+  });
+
   it("answers false to pending callers when the manager is destroyed", async () => {
     const { m } = await refusedManager();
     const answer = m.requestConsent("functional");
