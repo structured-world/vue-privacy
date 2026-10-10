@@ -216,7 +216,8 @@ export class ConsentManager {
   /** Counts the preference centre's closings, so a choice can tell whether a callback closed it. */
   private preferenceCenterCloses = 0;
   /** Wakes the requestConsent() calls made before the consent was settled. */
-  private markSettled: () => void = () => {};
+  // Assigned by the `settled` executor below, which runs as that field initialises.
+  private markSettled!: () => void;
   /** Resolves once the consent is settled (init(), a choice or a reset), or on destroy(). */
   private readonly settled = new Promise<void>((resolve) => {
     this.markSettled = resolve;
@@ -1571,10 +1572,17 @@ export class ConsentManager {
     this.reconcile(false);
     // The open preference centre would cover the banner, and the requests it asks for were about
     // the choice just cleared: they are answered false, and the banner asks afresh.
-    if (this.preferenceCenterShown || this.consentRequests.length > 0) this.closePreferenceCenter();
-    // A pending init() stops after this reset, so with no banner mounted yet the reset itself
-    // leaves the banner pending for the component that mounts later.
-    this.requestBanner();
+    // A failing hide hook still reaches the site, after the banner asks: the choice is cleared,
+    // so the visitor is never left undecided with nothing asking.
+    try {
+      if (this.preferenceCenterShown || this.consentRequests.length > 0) {
+        this.closePreferenceCenter();
+      }
+    } finally {
+      // A pending init() stops after this reset, so with no banner mounted yet the reset itself
+      // leaves the banner pending for the component that mounts later.
+      this.requestBanner();
+    }
   }
 
   /**

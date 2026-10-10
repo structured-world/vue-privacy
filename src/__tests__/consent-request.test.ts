@@ -334,6 +334,22 @@ describe("requestConsent", () => {
     expect(m.getConsentRequest()).toBeNull();
   });
 
+  it("a reset still asks with the banner when closing the open dialog throws", async () => {
+    // The reset already cleared the choice: a failing hide hook must not leave the visitor
+    // undecided with nothing asking.
+    const { m } = await refusedManager();
+    const showBanner = vi.fn();
+    m.onShowBanner(showBanner);
+    m.getConfig().onPreferenceCenterHide = () => {
+      throw new Error("hook failed");
+    };
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    expect(() => m.resetConsent()).toThrow("hook failed");
+    expect(showBanner).toHaveBeenCalledOnce();
+    await expect(answer).resolves.toBe(false);
+  });
+
   it("a throwing show callback leaves no stale request: it answers false and the next call asks", async () => {
     const { m } = await refusedManager();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
