@@ -379,6 +379,8 @@ export class ConsentManager {
    * the stored choice stands, and each pending requestConsent() caller gets its answer from it.
    */
   hidePreferenceCenter(): void {
+    // Nothing open and nothing asked (called before showing, or twice): no close to report.
+    if (!this.preferenceCenterShown && this.consentRequests.length === 0) return;
     this.closePreferenceCenter();
   }
 
@@ -474,7 +476,13 @@ export class ConsentManager {
     const categories = this.consentInEffect().categories;
     for (const request of requests) request.resolve(categories?.[request.category] === true);
     if (this.consentRequests.length > 0 && !this.preferenceCenterShown && !this.destroyed) {
-      this.showPreferenceCenter();
+      // An opening like requestConsent()'s: a dialog that fails answers its requests false
+      // instead of leaving them waiting, and the choice that closed the last one stands.
+      try {
+        this.showPreferenceCenter();
+      } catch (error) {
+        this.failPreferenceCenterOpening(error);
+      }
     }
   }
 

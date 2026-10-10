@@ -143,7 +143,7 @@ What the open preference centre is asked for: the requested `categories` and the
 
 #### `hidePreferenceCenter(): void`
 
-Close the preference centre without a choice (a custom dialog's close button, Escape, a click outside). The stored choice stands, and each pending `requestConsent()` call is answered from it.
+Close the preference centre without a choice (a custom dialog's close button, Escape, a click outside). The stored choice stands, and each pending `requestConsent()` call is answered from it. With nothing open it does nothing, and `onPreferenceCenterHide` does not fire.
 
 ## Google Tag Functions
 

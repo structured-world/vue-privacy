@@ -339,6 +339,21 @@ describe("createModal", () => {
     expect(document.querySelector(".consent-modal-overlay")).toBeNull();
   });
 
+  it("hide() of a modal that is not open does not report a close", () => {
+    // onPreferenceCenterHide reports a dialog closing; nothing closes before show() or twice
+    const onHide = vi.fn();
+    manager.getConfig().onPreferenceCenterHide = onHide;
+    const modal = createModal({ manager });
+
+    modal.hide();
+    expect(onHide).not.toHaveBeenCalled();
+    modal.show();
+    modal.hide();
+    modal.hide();
+    expect(onHide).toHaveBeenCalledOnce();
+    modal.destroy();
+  });
+
   it("destroy() of an open modal finishes when a hide hook throws", () => {
     // The close that destroying an open dialog causes runs the site's hook; its failure must not
     // leave the dialog's callbacks registered or its DOM in the page.

@@ -297,6 +297,32 @@ describe("requestConsent", () => {
     await expect(video).resolves.toBe(true);
   });
 
+  it("a dialog that fails to reopen for a callback's request answers it false", async () => {
+    // The reopening after a choice goes through the same failure path as an opening: the new
+    // request answers false instead of waiting on a dialog that never showed.
+    const { m } = await refusedManager();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let video: Promise<boolean> | undefined;
+    m.onConsentChange((categories) => {
+      if (categories.functional && !video) video = m.requestConsent("marketing", { reason: VIDEO });
+    });
+    const signIn = m.requestConsent("functional", { reason: SIGN_IN });
+    let opened = 1;
+    m.onShowPreferenceCenter(() => {
+      // The joining request refreshes the open dialog; the reopening after the choice fails
+      if (opened++ >= 2) throw new Error("site dialog failed");
+    });
+
+    await expect(m.savePreferences({ functional: true })).resolves.toBeUndefined();
+    await expect(signIn).resolves.toBe(true);
+    await expect(video).resolves.toBe(false);
+    expect(m.getConsentRequest()).toBeNull();
+    expect(error).toHaveBeenCalledWith(
+      "[vue-privacy] preference centre failed to open",
+      expect.any(Error)
+    );
+  });
+
   it("answers from a choice made in another tab once this tab follows it (basic mode)", async () => {
     // Basic mode follows the shared cookie when the tab regains focus; a request open here is
     // answered by the visitor's choice there, and its dialog closes.
