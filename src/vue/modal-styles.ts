@@ -221,13 +221,16 @@ const MODAL_CSS = `
   transform: scale(0.95);
 }
 
-/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never */
+/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never.
+   The link colour keeps the outlined accept-all and reject-all buttons and the focus outline at
+   4.5:1 or more on the dark background (WCAG 2.1 SC 1.4.3); #0066cc reaches 3.1:1 there. */
 .consent-modal-overlay[data-consent-theme="dark"] {
   --consent-modal-bg: #1a1a1a;
   --consent-modal-text: #ffffff;
   --consent-modal-text-secondary: #a0a0a0;
   --consent-modal-border: #333333;
   --consent-toggle-bg-off: #444444;
+  --consent-link: #66b3ff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -237,6 +240,7 @@ const MODAL_CSS = `
     --consent-modal-text-secondary: #a0a0a0;
     --consent-modal-border: #333333;
     --consent-toggle-bg-off: #444444;
+    --consent-link: #66b3ff;
   }
 }
 

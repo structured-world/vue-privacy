@@ -122,11 +122,14 @@ const BANNER_CSS = `
   opacity: 0;
 }
 
-/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never */
+/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never.
+   The link colour keeps the privacy link and the customize button at 4.5:1 or more on the dark
+   background (WCAG 2.1 SC 1.4.3); the light palette's #0066cc reaches 3.1:1 there. */
 .consent-banner[data-consent-theme="dark"] {
   --consent-bg: #1a1a1a;
   --consent-text: #ffffff;
   --consent-text-secondary: #a0a0a0;
+  --consent-link: #66b3ff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -134,6 +137,7 @@ const BANNER_CSS = `
     --consent-bg: #1a1a1a;
     --consent-text: #ffffff;
     --consent-text-secondary: #a0a0a0;
+    --consent-link: #66b3ff;
   }
 }
 
