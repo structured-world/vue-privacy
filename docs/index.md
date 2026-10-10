@@ -20,7 +20,7 @@ features:
     details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, and tracks page views on every navigation in VitePress, Quasar and Vue Router apps.
   - icon: "\U0001F512"
     title: Google Consent Mode v2
-    details: All four signals (analytics_storage, ad_storage, ad_user_data, ad_personalization), required by Google for traffic from the EEA and the UK. Advanced mode with cookieless pings, or basic mode that loads nothing before consent.
+    details: All four signals (analytics_storage, ad_storage, ad_user_data, ad_personalization), so Google receives the visitor's choice where its EU user consent policy requires it. Advanced mode with cookieless pings, or basic mode that loads nothing before consent.
   - icon: "\U0001F30D"
     title: Consent Jurisdictions
     details: Asks visitors in the EEA and the UK (Switzerland on request), found through Cloudflare headers, a Worker, IP geolocation or the time zone. A failed lookup asks rather than guesses.

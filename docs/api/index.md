@@ -125,7 +125,7 @@ The VitePress `enhanceWithConsent` adapter calls this automatically on every nav
 
 #### `trackEvent(eventName, params?): void`
 
-Send a GA4 event, under the same consent rules as `trackPageView()`.
+Send a GA4 event. Before any choice it goes out under the Consent Mode defaults, as a cookieless ping; once the visitor's choice leaves analytics off it is dropped. With `consentMode: 'basic'` an event tracked before the visitor allows analytics is dropped too, and unlike the last page view it is not sent later.
 
 ```typescript
 manager.trackEvent("share", { method: "twitter", content_type: "article" });
@@ -191,7 +191,7 @@ Call `listener(locale)` on every language switch, for a custom dialog to re-rend
 
 #### `onConsentChange(listener): void`
 
-Call `listener(categories)` whenever the categories in effect change, a choice made in another tab included. Each listener gets its own copy; one that throws is logged and does not stop the others.
+Call `listener(categories)` whenever the categories in effect change on this page. With `consentMode: 'basic'` (and `gaId`) a choice made in another tab of the site counts too, once this tab follows it; in the default advanced mode the listeners are not called for another tab's choice. Each listener gets its own copy; one that throws is logged and does not stop the others.
 
 #### Dialog callbacks
 

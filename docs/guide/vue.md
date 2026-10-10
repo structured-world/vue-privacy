@@ -86,21 +86,39 @@ const {
 
 ## Custom Preferences UI
 
-Build your own preferences modal:
+Build your own preferences modal in place of `ConsentPreferenceModal`. Registered with the manager, it opens for the banner's "Customize", `showPreferenceCenter()` and `requestConsent()`, and loads the current choice each time it opens:
 
 ```vue
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useConsent } from '@structured-world/vue-privacy/vue';
 
-const { savePreferences, getConsent } = useConsent();
+const { manager, savePreferences, getConsent } = useConsent();
 
-// Unticked unless the visitor granted it before
-const analytics = ref(getConsent()?.categories.analytics ?? false);
-const marketing = ref(getConsent()?.categories.marketing ?? false);
+const visible = ref(false);
+const analytics = ref(false);
+const marketing = ref(false);
+
+onMounted(() => {
+  manager.onShowPreferenceCenter(() => {
+    // The stored choice, else unticked: never the toggles of an earlier, unsaved opening
+    const categories = getConsent()?.categories;
+    analytics.value = categories?.analytics ?? false;
+    marketing.value = categories?.marketing ?? false;
+    visible.value = true;
+  });
+  manager.onHidePreferenceCenter(() => {
+    visible.value = false;
+  });
+});
+
+onUnmounted(() => {
+  manager.onShowPreferenceCenter(null);
+  manager.onHidePreferenceCenter(null);
+});
 
 async function save() {
-  // A category left out (functional here) is refused
+  // A category left out (functional here) is refused; saving closes the dialog
   await savePreferences({
     analytics: analytics.value,
     marketing: marketing.value,
@@ -109,7 +127,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="preferences-modal">
+  <div v-if="visible" class="preferences-modal">
     <label>
       <input type="checkbox" v-model="analytics" />
       Analytics Cookies
@@ -119,6 +137,7 @@ async function save() {
       Marketing Cookies
     </label>
     <button @click="save">Save Preferences</button>
+    <button @click="manager.hidePreferenceCenter()">Close</button>
   </div>
 </template>
 ```

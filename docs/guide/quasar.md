@@ -108,17 +108,16 @@ Use the composable in any component:
 <script setup>
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 
-const { hasConsent, showPreferenceCenter } = useConsent();
+const { showPreferenceCenter } = useConsent();
 </script>
 
 <template>
-  <q-btn
-    v-if="hasConsent()"
-    label="Cookie Settings"
-    @click="showPreferenceCenter"
-  />
+  <!-- Always offered: the visitor can change or withdraw a choice at any time -->
+  <q-btn label="Cookie Settings" @click="showPreferenceCenter" />
 </template>
 ```
+
+The composable's methods read the manager's state when called; they are not Vue refs, so a template condition on `hasConsent()` does not update when the visitor chooses. Keep such state in a ref updated from `manager.onConsentChange()` if you need it.
 
 ## Quasar Dialog Integration
 
@@ -126,18 +125,21 @@ Your own Quasar dialog can be the preference centre: register it with the manage
 
 ```vue
 <script setup>
+import { ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 import PreferencesDialog from './PreferencesDialog.vue';
 
 const $q = useQuasar();
 const { manager } = useConsent();
+// What the dialog is asked for; a request joining the open dialog updates it
+const request = ref(null);
 let dialog = null;
 
 manager.onShowPreferenceCenter(() => {
-  // A request joining the open dialog only refreshes it
+  request.value = manager.getConsentRequest();
   dialog ??= $q
-    .dialog({ component: PreferencesDialog })
+    .dialog({ component: PreferencesDialog, componentProps: { request } })
     // Closed without a choice: the manager answers pending requests from the stored choice
     .onDismiss(() => {
       dialog = null;
@@ -151,7 +153,7 @@ manager.onHidePreferenceCenter(() => {
 </script>
 ```
 
-`PreferencesDialog` reads what is asked with `manager.getConsentRequest()` and saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
+`PreferencesDialog` receives the ref itself as its `request` prop and shows `request.value` (its `categories` and `reasons`), so a request that joins while it is open shows up at once. It saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
 
 ## Event Tracking
 

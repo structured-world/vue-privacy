@@ -612,9 +612,9 @@ export interface ConsentConfig {
   onGoogleAnalyticsError?: (error: unknown) => void;
 
   /**
-   * Remote consent storage implementation.
-   * When set, consent is persisted remotely and cookie is used
-   * only for re-identification. No cookies are set before consent.
+   * Remote consent storage: a copy of the choice kept on a server, e.g. to sync it across
+   * devices. The consent cookie still holds the choice; a grant of analytics or marketing also
+   * sets a `consent_uid` cookie that names the remote record.
    *
    * Use `createKVStorage('/api/consent')` for Cloudflare KV Worker,
    * or implement ConsentStorage interface for custom backends.

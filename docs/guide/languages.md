@@ -58,27 +58,33 @@ consentManager.setLocale('ro-MD'); // returns 'ro', the locale now shown
 consentManager.getLocale(); // 'ro'
 ```
 
-A custom dialog follows the switch with `onLocaleChange()`:
-
-```typescript
-const stop = consentManager.onLocaleChange((locale) => {
-  render(getTranslations(locale));
-});
-// later: stop();
-```
+A custom dialog follows the switch with `onLocaleChange()`, which returns a function that stops it (see [Your Own Text](#your-own-text) for an example).
 
 The site keeps the visitor's language choice itself (its route or its own setting) and passes it again on the next page load, as `locale` or through `setLocale()`. The manager stores no language of its own, so it never disagrees with the page.
 
 ## Your Own Text
 
-Text you set in `banner` or `preferenceCenter` replaces the built-in translation in every language; the rest stays translated. To start from a built-in locale and change part of it, use `mergeTranslations()`:
+Text you set in `banner` or `preferenceCenter` replaces the built-in translation in every language; the rest stays translated. A site shown in one language sets it in that language:
+
+```typescript
+createConsentPlugin({
+  locale: 'ro',
+  banner: { title: 'Cookie-uri pe acest site' },
+});
+```
+
+A custom banner or dialog renders the text itself: `getTranslations(locale)` gives a built-in locale, and `mergeTranslations()` changes part of it, for every language the visitor switches to:
 
 ```typescript
 import { mergeTranslations } from '@structured-world/vue-privacy';
 
-const ro = mergeTranslations('ro', {
-  banner: { title: 'Cookie-uri pe acest site' },
-});
+function render(locale) {
+  const t = mergeTranslations(locale, { banner: { title: 'Cookies' } });
+  titleElement.textContent = t.banner.title; // and the rest of t.banner, t.preferenceCenter
+}
+
+render(consentManager.getLocale());
+consentManager.onLocaleChange(render);
 ```
 
 The reason a feature gives with [`requestConsent()`](/guide/preference-center#asking-again-when-a-feature-needs-a-category) is your own text too, in the visitor's language.

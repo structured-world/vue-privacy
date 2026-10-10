@@ -114,8 +114,9 @@ interface ConsentConfig {
   onGoogleAnalyticsError?: (error: unknown) => void;
 
   /**
-   * Remote consent storage: the choice is kept there and the cookie only identifies the visitor.
-   * createKVStorage('/api/consent') for the Cloudflare KV Worker, or your own ConsentStorage.
+   * Remote consent storage: a copy of the choice kept on a server. The consent cookie still
+   * holds the choice; a grant of analytics or marketing also sets consent_uid, naming the
+   * remote record. createKVStorage('/api/consent') for the Cloudflare KV Worker, or your own.
    */
   storage?: ConsentStorage;
 
