@@ -221,9 +221,17 @@ const MODAL_CSS = `
   transform: scale(0.95);
 }
 
-/* Dark mode */
+/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never */
+.consent-modal-overlay[data-consent-theme="dark"] {
+  --consent-modal-bg: #1a1a1a;
+  --consent-modal-text: #ffffff;
+  --consent-modal-text-secondary: #a0a0a0;
+  --consent-modal-border: #333333;
+  --consent-toggle-bg-off: #444444;
+}
+
 @media (prefers-color-scheme: dark) {
-  .consent-modal-overlay {
+  .consent-modal-overlay[data-consent-theme="auto"] {
     --consent-modal-bg: #1a1a1a;
     --consent-modal-text: #ffffff;
     --consent-modal-text-secondary: #a0a0a0;

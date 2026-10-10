@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
-import type { ConsentCategories } from "../core/types";
+import type { ConsentCategories, ConsentTheme } from "../core/types";
 import { getTranslations } from "../i18n/index";
 import { limitToUsed, usedCategoriesOf } from "../core/categories";
 import { injectModalStyles } from "./modal-styles";
+
+const props = defineProps<{
+  /** Colour palette; the manager's `theme` config, else 'auto', when not set */
+  theme?: ConsentTheme;
+}>();
 
 const emit = defineEmits<{
   save: [categories: Partial<Omit<ConsentCategories, "necessary">>];
@@ -12,6 +17,9 @@ const emit = defineEmits<{
 }>();
 
 const consentManager = inject<ConsentManager>("consentManager");
+
+// The stylesheet applies the dark palette for 'dark', and for 'auto' on a dark system
+const theme = computed(() => props.theme ?? consentManager?.getConfig().theme ?? "auto");
 const modalRef = ref<HTMLElement | null>(null);
 
 const visible = ref(false);
@@ -170,6 +178,7 @@ function handleKeydown(e: KeyboardEvent) {
       <div
         v-if="visible"
         class="consent-modal-overlay"
+        :data-consent-theme="theme"
         @click.self="handleClose"
         @keydown="handleKeydown"
       >

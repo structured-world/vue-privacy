@@ -11,7 +11,7 @@ import type {
   GA4GenerateLeadParams,
   GoogleConsentSignals,
 } from "./types";
-import { DEFAULT_CONFIG } from "./types";
+import { CONSENT_THEMES, DEFAULT_CONFIG } from "./types";
 import { detectLocale, getTranslations, resolveLocale, type LocaleOptions } from "../i18n/index";
 import type { SupportedLocale } from "../i18n/types";
 import { initScriptBlocker, unblockScriptsByCategory } from "./script-blocker";
@@ -217,6 +217,9 @@ export class ConsentManager {
     // for a tag this manager loads and can switch off; a tag the site loads itself is beyond it.
     if (config.consentMode === "basic" && !config.gaId) {
       throw new Error("consentMode 'basic' requires gaId: the manager must load the Google tag");
+    }
+    if (config.theme !== undefined && !CONSENT_THEMES.includes(config.theme)) {
+      throw new Error(`theme must be one of ${CONSENT_THEMES.join(", ")}, not '${config.theme}'`);
     }
     if (config.locales?.length === 0) {
       throw new Error("locales must name at least one locale");

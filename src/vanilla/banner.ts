@@ -5,6 +5,7 @@
 
 import { getTranslations } from "../i18n/index";
 import { escapeHtml, sanitizeUrl } from "./utils";
+import { CONSENT_THEMES } from "../core/types";
 import type {
   VanillaBannerOptions,
   VanillaBannerInstance,
@@ -78,10 +79,16 @@ export function injectVanillaBannerStyles(): void {
  */
 // Valid values for runtime validation
 const VALID_POSITIONS = ["bottom", "top", "center"] as const;
-const VALID_THEMES = ["light", "dark", "auto"] as const;
 
 export function createBanner(options: VanillaBannerOptions): VanillaBannerInstance {
-  const { manager, theme = "auto", position = "bottom", onAccept, onReject, onCustomize } = options;
+  const {
+    manager,
+    theme = manager.getConfig().theme ?? "auto",
+    position = "bottom",
+    onAccept,
+    onReject,
+    onCustomize,
+  } = options;
 
   // Runtime validation for JS users (TypeScript users get compile-time checks)
   // Runtime validation with warnings for invalid values
@@ -94,12 +101,12 @@ export function createBanner(options: VanillaBannerOptions): VanillaBannerInstan
     );
   }
 
-  const isValidTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number]);
+  const isValidTheme = CONSENT_THEMES.includes(theme);
   const validatedTheme = isValidTheme ? theme : "auto";
-  if (!isValidTheme && theme !== undefined) {
+  if (!isValidTheme) {
     console.warn(
       `[Vue Privacy] Invalid banner theme "${String(theme)}" provided. ` +
-        `Falling back to "auto". Valid themes: ${VALID_THEMES.join(", ")}.`
+        `Falling back to "auto". Valid themes: ${CONSENT_THEMES.join(", ")}.`
     );
   }
 

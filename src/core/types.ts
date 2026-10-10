@@ -439,6 +439,15 @@ export interface GA4RouteMeta {
 }
 
 /**
+ * Colour palette of the banner and the preference centre: `'auto'` follows the system's colour
+ * scheme, `'light'` and `'dark'` pin one whatever the system prefers.
+ */
+export type ConsentTheme = "auto" | "light" | "dark";
+
+/** Every {@link ConsentTheme}, for checking a value that came from untyped JavaScript. */
+export const CONSENT_THEMES: readonly ConsentTheme[] = ["auto", "light", "dark"];
+
+/**
  * Main plugin configuration
  */
 export interface ConsentConfig {
@@ -464,6 +473,13 @@ export interface ConsentConfig {
    * @default "en", or the first of `locales` when they leave English out
    */
   fallbackLocale?: SupportedLocale;
+
+  /**
+   * Colour palette of the banner and the preference centre; a component's own `theme` outranks
+   * it. A light-only site pins `'light'`, so visitors in dark mode get no dark dialog.
+   * @default "auto"
+   */
+  theme?: ConsentTheme;
 
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;

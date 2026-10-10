@@ -6,7 +6,7 @@
 import { getTranslations } from "../i18n/index";
 import { escapeHtml } from "./utils";
 import { usedCategoriesOf } from "../core/categories";
-import { DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
+import { CONSENT_THEMES, DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption.
@@ -99,19 +99,16 @@ export function injectVanillaModalStyles(): void {
  * manager.showPreferenceCenter();
  * ```
  */
-// Valid values for runtime validation
-const VALID_THEMES = ["light", "dark", "auto"] as const;
-
 export function createModal(options: VanillaModalOptions): VanillaModalInstance {
-  const { manager, theme = "auto", onSave, onClose } = options;
+  const { manager, theme = manager.getConfig().theme ?? "auto", onSave, onClose } = options;
 
   // Runtime validation with warning for invalid values
-  const isValidTheme = VALID_THEMES.includes(theme as (typeof VALID_THEMES)[number]);
+  const isValidTheme = CONSENT_THEMES.includes(theme);
   const validatedTheme = isValidTheme ? theme : "auto";
-  if (!isValidTheme && theme !== undefined) {
+  if (!isValidTheme) {
     console.warn(
       `[Vue Privacy] Invalid modal theme "${String(theme)}" provided. ` +
-        `Falling back to "auto". Valid themes: ${VALID_THEMES.join(", ")}.`
+        `Falling back to "auto". Valid themes: ${CONSENT_THEMES.join(", ")}.`
     );
   }
 

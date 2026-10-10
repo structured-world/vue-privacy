@@ -1,9 +1,10 @@
 import type { ConsentManager } from "../core/consent-manager";
+import type { ConsentTheme } from "../core/types";
 
 /**
  * Theme mode for vanilla banner/modal components
  */
-export type VanillaTheme = "light" | "dark" | "auto";
+export type VanillaTheme = ConsentTheme;
 
 /**
  * Banner position
@@ -30,8 +31,8 @@ export interface VanillaBannerOptions {
    * Theme mode.
    * - 'light': Force light theme
    * - 'dark': Force dark theme
-   * - 'auto': Follow system preference (default)
-   * @default 'auto'
+   * - 'auto': Follow system preference
+   * @default the manager's `theme` config, else 'auto'
    */
   theme?: VanillaTheme;
 
@@ -80,8 +81,8 @@ export interface VanillaModalOptions {
    * Theme mode.
    * - 'light': Force light theme
    * - 'dark': Force dark theme
-   * - 'auto': Follow system preference (default)
-   * @default 'auto'
+   * - 'auto': Follow system preference
+   * @default the manager's `theme` config, else 'auto'
    */
   theme?: VanillaTheme;
 

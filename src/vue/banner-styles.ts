@@ -122,9 +122,15 @@ const BANNER_CSS = `
   opacity: 0;
 }
 
-/* Dark mode support */
+/* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never */
+.consent-banner[data-consent-theme="dark"] {
+  --consent-bg: #1a1a1a;
+  --consent-text: #ffffff;
+  --consent-text-secondary: #a0a0a0;
+}
+
 @media (prefers-color-scheme: dark) {
-  .consent-banner {
+  .consent-banner[data-consent-theme="auto"] {
     --consent-bg: #1a1a1a;
     --consent-text: #ffffff;
     --consent-text-secondary: #a0a0a0;
