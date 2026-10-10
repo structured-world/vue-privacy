@@ -59,6 +59,7 @@ export { initScriptBlocker, unblockScriptsByCategory } from "./core/script-block
 
 // i18n exports
 export { detectLocale, getTranslations, mergeTranslations } from "./i18n/index";
+export type { LocaleOptions } from "./i18n/index";
 
 // Vanilla JS components (banner and modal for non-Vue users)
 export {

@@ -20,7 +20,7 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 - **Consent Banner** — Customizable GDPR/CCPA banner with dark mode support
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
 - **Script Blocking** — Block third-party scripts until consent is granted
-- **i18n** — 13 built-in locales (en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko)
+- **i18n** — 31 built-in locales: every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh
 - **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
@@ -169,9 +169,18 @@ interface ConsentConfig {
   // products linked to that tag (Google Ads, Floodlight) stop too. Default: false
   reloadOnWithdrawal?: boolean;
 
-  // Locale for UI text (auto-detected if not set)
-  // Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
+  // Locale for UI text. When not set: the first of the browser's preferred languages
+  // (navigator.languages) among `locales`. consentManager.setLocale(tag) switches it later.
+  // Supported: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, is, it, ja, ko, lt, lv,
+  // mt, nb, nl, pl, pt, ro, ru, sk, sl, sv, uk, zh
   locale?: SupportedLocale;
+
+  // The locales the site offers (default: all built-in)
+  locales?: SupportedLocale[];
+
+  // Shown when none of the visitor's languages is offered
+  // Default: 'en' when offered, else the first of `locales`
+  fallbackLocale?: SupportedLocale;
 
   // Consent categories
   categories?: {
@@ -451,7 +460,7 @@ Refusing is as easy and as visible as accepting by default: "Accept all" and "Re
 | GA4 event tracking (ecommerce, conversions) | ✅ |
 | EU geo-detection | ✅ |
 | Script blocking | ✅ |
-| i18n (13 locales) | ✅ |
+| i18n (31 locales, every EU and EEA language) | ✅ |
 | Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
 | Vanilla JS entry point | ✅ |
 | UMD/CDN build | ✅ |

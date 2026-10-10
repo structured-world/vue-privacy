@@ -24,10 +24,13 @@ const categories = ref({
 // Only the categories the site uses are offered; the manager refuses the rest on save.
 const usedCategories = computed(() => usedCategoriesOf(consentManager?.getConfig() ?? {}));
 
+// The manager's locale, tracked so the text re-renders when the site switches language
+const locale = ref(consentManager?.getLocale() ?? "en");
+let stopLocaleWatch: (() => void) | undefined;
+
 // Merged config: manager config overrides > i18n translations
 const modalConfig = computed(() => {
-  const locale = consentManager?.getLocale() ?? "en";
-  const translations = getTranslations(locale);
+  const translations = getTranslations(locale.value);
   const t = translations.preferenceCenter;
   const cfg = consentManager?.getConfig().preferenceCenter;
 
@@ -92,11 +95,17 @@ onMounted(() => {
     consentManager.onHidePreferenceCenter(() => {
       visible.value = false;
     });
+
+    locale.value = consentManager.getLocale();
+    stopLocaleWatch = consentManager.onLocaleChange((next) => {
+      locale.value = next;
+    });
   }
 });
 
 // Clean up callbacks on unmount to prevent stale references
 onUnmounted(() => {
+  stopLocaleWatch?.();
   if (consentManager) {
     consentManager.onShowPreferenceCenter(null);
     consentManager.onHidePreferenceCenter(null);

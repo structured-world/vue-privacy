@@ -60,7 +60,38 @@ export interface Translations {
 }
 
 /**
- * Supported locale codes
+ * Supported locale codes: every official EU language, the EEA's Norwegian (Bokmål) and
+ * Icelandic, and Russian, Ukrainian, Japanese, Chinese and Korean
  */
 export type SupportedLocale =
-  "en" | "de" | "fr" | "es" | "it" | "pt" | "nl" | "pl" | "ru" | "uk" | "ja" | "zh" | "ko";
+  | "bg"
+  | "cs"
+  | "da"
+  | "de"
+  | "el"
+  | "en"
+  | "es"
+  | "et"
+  | "fi"
+  | "fr"
+  | "ga"
+  | "hr"
+  | "hu"
+  | "is"
+  | "it"
+  | "ja"
+  | "ko"
+  | "lt"
+  | "lv"
+  | "mt"
+  | "nb"
+  | "nl"
+  | "pl"
+  | "pt"
+  | "ro"
+  | "ru"
+  | "sk"
+  | "sl"
+  | "sv"
+  | "uk"
+  | "zh";

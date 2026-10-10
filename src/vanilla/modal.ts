@@ -150,40 +150,6 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     createdContainer = true;
   }
 
-  // Get translations
-  const locale = manager.getLocale();
-  const translations = getTranslations(locale);
-  const t = translations.preferenceCenter;
-  const config = manager.getConfig().preferenceCenter ?? {};
-
-  const title = config.title ?? t.title;
-  const description = config.description ?? t.description;
-  const savePreferencesText = config.savePreferences ?? t.savePreferences;
-  const acceptAllText = config.acceptAll ?? t.acceptAll;
-  // Both buttons refuse the same thing, so they share one label: the banner's, which the manager
-  // resolves to the site's text or the locale's.
-  const rejectAllText =
-    config.rejectAll ?? manager.getConfig().banner?.rejectAll ?? translations.banner.rejectAll;
-  const categories = {
-    necessary: {
-      name: config.categories?.necessary?.name ?? t.categories.necessary.name,
-      description: config.categories?.necessary?.description ?? t.categories.necessary.description,
-    },
-    analytics: {
-      name: config.categories?.analytics?.name ?? t.categories.analytics.name,
-      description: config.categories?.analytics?.description ?? t.categories.analytics.description,
-    },
-    marketing: {
-      name: config.categories?.marketing?.name ?? t.categories.marketing.name,
-      description: config.categories?.marketing?.description ?? t.categories.marketing.description,
-    },
-    functional: {
-      name: config.categories?.functional?.name ?? t.categories.functional.name,
-      description:
-        config.categories?.functional?.description ?? t.categories.functional.description,
-    },
-  };
-
   // Only the categories the site uses are offered
   const used = usedCategoriesOf(manager.getConfig());
 
@@ -192,7 +158,52 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   overlayEl.className = "consent-modal-overlay consent-modal-overlay--hidden";
   setThemeAttribute(overlayEl, validatedTheme);
 
-  overlayEl.innerHTML = `
+  // Toggle inputs of the shown (used) categories, and the dialog: replaced by every render
+  let inputs = new Map<OptionalCategory, HTMLInputElement>();
+  let modalEl: HTMLElement;
+
+  // The dialog in the manager's current locale, keeping the toggles the visitor set; the clicks
+  // are delegated to overlayEl, so they survive a re-render.
+  function render() {
+    const translations = getTranslations(manager.getLocale());
+    const t = translations.preferenceCenter;
+    const config = manager.getConfig().preferenceCenter ?? {};
+
+    const title = config.title ?? t.title;
+    const description = config.description ?? t.description;
+    const savePreferencesText = config.savePreferences ?? t.savePreferences;
+    const acceptAllText = config.acceptAll ?? t.acceptAll;
+    // Both buttons refuse the same thing, so they share one label: the banner's, which the manager
+    // resolves to the site's text or the locale's.
+    const rejectAllText =
+      config.rejectAll ?? manager.getConfig().banner?.rejectAll ?? translations.banner.rejectAll;
+    const categories = {
+      necessary: {
+        name: config.categories?.necessary?.name ?? t.categories.necessary.name,
+        description:
+          config.categories?.necessary?.description ?? t.categories.necessary.description,
+      },
+      analytics: {
+        name: config.categories?.analytics?.name ?? t.categories.analytics.name,
+        description:
+          config.categories?.analytics?.description ?? t.categories.analytics.description,
+      },
+      marketing: {
+        name: config.categories?.marketing?.name ?? t.categories.marketing.name,
+        description:
+          config.categories?.marketing?.description ?? t.categories.marketing.description,
+      },
+      functional: {
+        name: config.categories?.functional?.name ?? t.categories.functional.name,
+        description:
+          config.categories?.functional?.description ?? t.categories.functional.description,
+      },
+    };
+
+    const checked = new Map([...inputs].map(([category, input]) => [category, input.checked]));
+    const hadFocus = overlayEl.contains(document.activeElement);
+
+    overlayEl.innerHTML = `
     <div class="consent-modal" role="dialog" aria-modal="true" aria-labelledby="consent-modal-title" tabindex="-1">
       <button type="button" class="consent-modal__close" aria-label="Close" data-action="close">&times;</button>
       <div class="consent-modal__header">
@@ -227,16 +238,23 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     </div>
   `;
 
-  container.appendChild(overlayEl);
+    inputs = new Map(
+      used.map((category) => [
+        category,
+        overlayEl.querySelector(`[data-category="${category}"]`) as HTMLInputElement,
+      ])
+    );
+    for (const [category, input] of inputs) {
+      input.checked = checked.get(category) ?? false;
+    }
+    modalEl = overlayEl.querySelector(".consent-modal") as HTMLElement;
+    // The focused control went with the old markup; keep focus inside the open dialog.
+    if (hadFocus) modalEl.focus();
+  }
 
-  // Toggle inputs of the shown (used) categories
-  const inputs = new Map(
-    used.map((category) => [
-      category,
-      overlayEl.querySelector(`[data-category="${category}"]`) as HTMLInputElement,
-    ])
-  );
-  const modalEl = overlayEl.querySelector(".consent-modal") as HTMLElement;
+  render();
+  container.appendChild(overlayEl);
+  const stopLocaleWatch = manager.onLocaleChange(render);
 
   // State
   let visible = false;
@@ -373,6 +391,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     overlayEl.removeEventListener("click", handleClick);
     overlayEl.removeEventListener("click", handleOverlayClick);
     document.removeEventListener("keydown", handleKeydown);
+    stopLocaleWatch();
     manager.onShowPreferenceCenter(null);
     manager.onHidePreferenceCenter(null);
     overlayEl.remove();

@@ -56,15 +56,38 @@ createConsentPlugin({
 
 ### i18n
 
-Banner text is automatically translated based on the user's browser locale. 13 locales are built in: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko.
+Banner text is automatically translated into the first of the visitor's preferred browser languages (`navigator.languages`, in order) that has a locale. 31 locales are built in:
 
-To override the locale:
+- every official EU language: bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu, it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv;
+- the EEA's Norwegian (`nb`, also chosen for `no` and Nynorsk `nn`) and Icelandic (`is`);
+- ja, ko, ru, uk, zh.
+
+A regional tag resolves to its language (`ro-MD` to `ro`, `sv-FI` to `sv`). A visitor who reads none of them gets English. The "Do Not Sell My Personal Information" link text stays English in every locale, as the CCPA phrase.
+
+To offer only the languages of your site, and choose the one shown to everyone else:
+
+```typescript
+createConsentPlugin({
+  locales: ['ro', 'en', 'hu'], // detection picks only among these
+  fallbackLocale: 'ro', // default: 'en' when offered, else the first of locales
+});
+```
+
+To force a locale:
 
 ```typescript
 createConsentPlugin({
   locale: 'de', // Force German
 });
 ```
+
+When the visitor changes language on your site, pass the new language to the manager; the banner and the preference centre re-render in it, within `locales`:
+
+```typescript
+consentManager.setLocale('ro-MD'); // shows 'ro'
+```
+
+The site keeps the visitor's language choice itself (its route or its own setting) and passes it again on the next page load, as `locale` or through `setLocale()`. The manager stores no language of its own, so it never disagrees with the page.
 
 ## Positioning
 

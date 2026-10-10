@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, inject } from "vue";
+import { ref, computed, onMounted, onUnmounted, inject } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
 import type { BannerConfig, BannerConfigDefaults } from "../core/types";
 import { injectBannerStyles } from "./banner-styles";
@@ -23,11 +23,13 @@ const consentManager = inject<ConsentManager>("consentManager");
 
 // State
 const visible = ref(false);
+// The manager's locale, tracked so the text re-renders when the site switches language
+const locale = ref(consentManager?.getLocale() ?? "en");
+let stopLocaleWatch: (() => void) | undefined;
 
 // Merged config: props > manager config > i18n translations > defaults
 const bannerConfig = computed<BannerConfigDefaults>(() => {
-  const locale = consentManager?.getLocale() ?? "en";
-  const t = getTranslations(locale).banner;
+  const t = getTranslations(locale.value).banner;
   const managerConfig = consentManager?.getConfig().banner;
   const propsConfig = props.config;
   return {
@@ -67,7 +69,16 @@ onMounted(() => {
     consentManager.onHideBanner(() => {
       visible.value = false;
     });
+
+    locale.value = consentManager.getLocale();
+    stopLocaleWatch = consentManager.onLocaleChange((next) => {
+      locale.value = next;
+    });
   }
+});
+
+onUnmounted(() => {
+  stopLocaleWatch?.();
 });
 
 // Actions

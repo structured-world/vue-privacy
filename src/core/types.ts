@@ -446,10 +446,24 @@ export interface ConsentConfig {
   gaId?: string;
 
   /**
-   * Locale for UI text. Auto-detected from navigator.language if not set.
-   * Supported: en, de, fr, es, it, pt, nl, pl, ru, uk, ja, zh, ko
+   * Locale for UI text. When not set, the first of the browser's preferred languages
+   * (navigator.languages) among `locales`, else `fallbackLocale`. `setLocale()` switches it later.
+   * Supported: every official EU language (bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu,
+   * it, lt, lv, mt, nl, pl, pt, ro, sk, sl, sv), nb and is, and ja, ko, ru, uk, zh
    */
   locale?: SupportedLocale;
+
+  /**
+   * The locales the site offers: detection and `setLocale()` pick only among these.
+   * @default every built-in locale
+   */
+  locales?: SupportedLocale[];
+
+  /**
+   * The locale shown when none of the visitor's languages is offered; must be one of `locales`.
+   * @default "en", or the first of `locales` when they leave English out
+   */
+  fallbackLocale?: SupportedLocale;
 
   /** Consent categories to manage */
   categories?: Partial<Omit<ConsentCategories, "necessary">>;
