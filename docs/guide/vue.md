@@ -86,7 +86,7 @@ const {
 
 ## Custom Preferences UI
 
-Build your own preferences modal in place of `ConsentPreferenceModal`. Registered with the manager, it opens for the banner's "Customize", `showPreferenceCenter()` and `requestConsent()`, and loads the current choice each time it opens:
+Build your own preferences modal in place of `ConsentPreferenceModal`. Registered with the manager, it opens for the banner's "Customize", `showPreferenceCenter()` and `requestConsent()`; it loads the current choice when it opens, and shows why a feature asks:
 
 ```vue
 <script setup>
@@ -96,19 +96,29 @@ import { useConsent } from '@structured-world/vue-privacy/vue';
 const { manager, savePreferences, getConsent } = useConsent();
 
 const visible = ref(false);
-const analytics = ref(false);
-const marketing = ref(false);
+// What requestConsent() asks for: its categories and reasons, or null
+const request = ref(null);
+// Offer every category the site uses (`usedCategories`), so a requested one can be granted
+const toggles = ref({ analytics: false, marketing: false, functional: false });
 
 onMounted(() => {
   manager.onShowPreferenceCenter(() => {
-    // The stored choice, else unticked: never the toggles of an earlier, unsaved opening
+    request.value = manager.getConsentRequest();
+    // A request joining the open dialog only refreshes the request: the visitor's
+    // unsaved ticks stay
+    if (visible.value) return;
+    // The stored choice, else unticked: never the ticks of an earlier, unsaved opening
     const categories = getConsent()?.categories;
-    analytics.value = categories?.analytics ?? false;
-    marketing.value = categories?.marketing ?? false;
+    toggles.value = {
+      analytics: categories?.analytics ?? false,
+      marketing: categories?.marketing ?? false,
+      functional: categories?.functional ?? false,
+    };
     visible.value = true;
   });
   manager.onHidePreferenceCenter(() => {
     visible.value = false;
+    request.value = null;
   });
 });
 
@@ -118,23 +128,21 @@ onUnmounted(() => {
 });
 
 async function save() {
-  // A category left out (functional here) is refused; saving closes the dialog
-  await savePreferences({
-    analytics: analytics.value,
-    marketing: marketing.value,
-  });
+  // Saving answers the pending requests and closes the dialog
+  await savePreferences({ ...toggles.value });
 }
 </script>
 
 <template>
   <div v-if="visible" class="preferences-modal">
-    <label>
-      <input type="checkbox" v-model="analytics" />
-      Analytics Cookies
-    </label>
-    <label>
-      <input type="checkbox" v-model="marketing" />
-      Marketing Cookies
+    <p v-for="reason in request?.reasons ?? []" :key="reason">{{ reason }}</p>
+    <label
+      v-for="category in ['analytics', 'marketing', 'functional']"
+      :key="category"
+      :class="{ requested: request?.categories.includes(category) }"
+    >
+      <input type="checkbox" v-model="toggles[category]" />
+      {{ category }}
     </label>
     <button @click="save">Save Preferences</button>
     <button @click="manager.hidePreferenceCenter()">Close</button>

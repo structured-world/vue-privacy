@@ -125,7 +125,7 @@ Your own Quasar dialog can be the preference centre: register it with the manage
 
 ```vue
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useQuasar } from 'quasar';
 import { useConsent } from '@structured-world/vue-privacy/quasar';
 import PreferencesDialog from './PreferencesDialog.vue';
@@ -136,24 +136,32 @@ const { manager } = useConsent();
 const request = ref(null);
 let dialog = null;
 
-manager.onShowPreferenceCenter(() => {
-  request.value = manager.getConsentRequest();
-  dialog ??= $q
-    .dialog({ component: PreferencesDialog, componentProps: { request } })
-    // Closed without a choice: the manager answers pending requests from the stored choice
-    .onDismiss(() => {
-      dialog = null;
-      manager.hidePreferenceCenter();
-    });
+onMounted(() => {
+  manager.onShowPreferenceCenter(() => {
+    request.value = manager.getConsentRequest();
+    dialog ??= $q
+      .dialog({ component: PreferencesDialog, componentProps: { request } })
+      // Closed without a choice: the manager answers pending requests from the stored choice
+      .onDismiss(() => {
+        dialog = null;
+        manager.hidePreferenceCenter();
+      });
+  });
+  manager.onHidePreferenceCenter(() => {
+    dialog?.hide();
+    dialog = null;
+  });
 });
-manager.onHidePreferenceCenter(() => {
-  dialog?.hide();
-  dialog = null;
+
+// The component that owns the dialog goes away: so does the registration
+onUnmounted(() => {
+  manager.onShowPreferenceCenter(null);
+  manager.onHidePreferenceCenter(null);
 });
 </script>
 ```
 
-`PreferencesDialog` receives the ref itself as its `request` prop and shows `request.value` (its `categories` and `reasons`), so a request that joins while it is open shows up at once. It saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
+`PreferencesDialog` receives the ref itself as its `request` prop and shows `request.value` (its `categories` and `reasons`), so a request that joins while it is open shows up at once. It loads its toggles from `getConsent()` once, when it is created, and offers every category the site uses, so a requested one can be granted. It saves with `savePreferences()`, `acceptAll()` or `rejectAll()`; each closes the dialog through the manager.
 
 ## Event Tracking
 
