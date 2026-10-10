@@ -48,6 +48,16 @@ describe("unblockScriptsByCategory", () => {
     expect(blocked).not.toBeNull();
   });
 
+  it("does NOT unblock functional scripts for a category it is not given", () => {
+    // A category left out is refused, as in savePreferences(): only a grant unblocks.
+    const script = createBlockedScript("functional", "https://example.com/chat.js");
+    document.body.appendChild(script);
+
+    unblockScriptsByCategory({ analytics: true });
+
+    expect(document.querySelector('script[type="text/plain"]')).not.toBeNull();
+  });
+
   it("preserves data-consent-category attribute on unblocked scripts", () => {
     const script = createBlockedScript("analytics", "https://example.com/a.js");
     document.body.appendChild(script);

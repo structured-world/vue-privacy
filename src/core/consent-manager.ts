@@ -10,6 +10,9 @@ import type {
   GA4PurchaseParams,
   GA4GenerateLeadParams,
   GoogleConsentSignals,
+  ConsentRequest,
+  ConsentRequestOptions,
+  OptionalCategory,
 } from "./types";
 import { CONSENT_THEMES, DEFAULT_CONFIG } from "./types";
 import { detectLocale, getTranslations, resolveLocale, type LocaleOptions } from "../i18n/index";
@@ -41,7 +44,7 @@ import {
 } from "./gtag";
 import { createGeoDetector, GeoDetectionError } from "../geo/index";
 import { knownCountry, requiresConsent, DEFAULT_CONSENT_JURISDICTIONS } from "../geo/jurisdictions";
-import { limitToUsed } from "./categories";
+import { limitToUsed, OPTIONAL_CATEGORIES, usedCategoriesOf } from "./categories";
 import { reloadPage } from "./page";
 
 /**
@@ -208,6 +211,22 @@ export class ConsentManager {
   private consentEpoch = 0;
   private bannerPending = false;
   private preferenceCenterPending = false;
+  /** The preference centre was asked to show, and no choice or close followed yet. */
+  private preferenceCenterShown = false;
+  /** Counts the preference centre's closings, so a choice can tell whether a callback closed it. */
+  private preferenceCenterCloses = 0;
+  /** Wakes the requestConsent() calls made before the consent was settled. */
+  private markSettled: () => void = () => {};
+  /** Resolves once the consent is settled (init(), a choice or a reset), or on destroy(). */
+  private readonly settled = new Promise<void>((resolve) => {
+    this.markSettled = resolve;
+  });
+  /** requestConsent() callers waiting for the visitor's answer, in the order they asked. */
+  private consentRequests: Array<{
+    category: OptionalCategory;
+    reason: string | undefined;
+    resolve: (granted: boolean) => void;
+  }> = [];
   private consentChangeListeners: Array<
     (categories: Omit<ConsentCategories, "necessary">) => void
   > = [];
@@ -237,7 +256,6 @@ export class ConsentManager {
     this.config = {
       ...config,
       locale: this.locale,
-      categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
       banner: this.localizedBanner(),
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
@@ -275,11 +293,46 @@ export class ConsentManager {
    * fires immediately (same race-condition handling as banner).
    */
   onShowPreferenceCenter(callback: (() => void) | null): void {
+    // An open dialog going away with its component (unmount, destroy) is closed without a choice:
+    // pending requestConsent() callers get their answer, and the next dialog is not left
+    // believing one is open.
+    const removesOpenDialog =
+      callback === null &&
+      this.showPreferenceCenterCallback !== null &&
+      this.preferenceCenterShown &&
+      !this.preferenceCenterPending;
     this.showPreferenceCenterCallback = callback;
+    if (removesOpenDialog) {
+      // Unregistering is the component's cleanup: a failing hide hook is reported, not thrown,
+      // so the cleanup that follows (its other callbacks, its DOM) still runs.
+      try {
+        this.closePreferenceCenter();
+      } catch (error) {
+        console.error("[vue-privacy] preference centre hide hook failed", error);
+      }
+      return;
+    }
     if (callback && this.preferenceCenterPending) {
       this.preferenceCenterPending = false;
-      callback();
+      try {
+        callback();
+      } catch (error) {
+        // The dialog mounted late and failed to show what was held for it
+        this.failPreferenceCenterOpening(error);
+      }
     }
+  }
+
+  /**
+   * A site's dialog or show callback failed while opening the preference centre: the visitor was
+   * not asked, so nothing is granted. The waiting requests answer false instead of waiting on a
+   * dialog that did not open, and the next call opens it afresh.
+   */
+  private failPreferenceCenterOpening(error: unknown): void {
+    console.error("[vue-privacy] preference centre failed to open", error);
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    for (const request of this.consentRequests.splice(0)) request.resolve(false);
   }
 
   /**
@@ -303,12 +356,123 @@ export class ConsentManager {
    * Programmatically show the preference center modal
    */
   showPreferenceCenter(): void {
+    this.preferenceCenterShown = true;
     if (this.showPreferenceCenterCallback) {
       this.showPreferenceCenterCallback();
     } else {
       this.preferenceCenterPending = true;
     }
     this.config.onPreferenceCenterShow?.();
+  }
+
+  /**
+   * Close the preference centre without a choice (its close button, Escape, a click outside):
+   * the stored choice stands, and each pending requestConsent() caller gets its answer from it.
+   */
+  hidePreferenceCenter(): void {
+    this.closePreferenceCenter();
+  }
+
+  /**
+   * Ask for a category a feature needs, at the moment it is needed: signing in needs
+   * `functional`, an embedded video `marketing`. A category in effect (granted by the visitor,
+   * or by the jurisdiction) answers `true` at once and shows nothing. Otherwise the preference
+   * centre opens with `reason` above the categories and the category highlighted, never
+   * pre-ticked; the answer is whether the category is granted after the visitor's choice, and
+   * `false` when the visitor closes it. A call while the preference centre is open joins it.
+   * A call made before init() settled the consent waits for it, and the preference centre
+   * waits for its component, if none is mounted yet; after destroy() it answers `false`.
+   * @throws (rejects) for a category outside `usedCategories`, which no choice can grant
+   */
+  requestConsent(
+    category: OptionalCategory,
+    options: ConsentRequestOptions = {}
+  ): Promise<boolean> {
+    if (!usedCategoriesOf(this.config).includes(category)) {
+      return Promise.reject(
+        new Error(`'${category}' is not one of usedCategories: no choice can grant it`)
+      );
+    }
+    if (this.destroyed) return Promise.resolve(false);
+    // A stored grant counts once init() has checked where it was given (the roaming check): a
+    // grant made outside consent jurisdictions is no consent for a visitor now inside one.
+    if (!this.consentSettled) {
+      return this.settled.then(() => this.requestConsent(category, options));
+    }
+    if (this.consentInEffect().categories?.[category] === true) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const request = { category, reason: options.reason, resolve };
+      this.consentRequests.push(request);
+      const opening = !this.preferenceCenterShown;
+      try {
+        if (opening) {
+          this.showPreferenceCenter();
+        } else {
+          // Open already: the dialog reads the request again, and the site's show callback, which
+          // reports an opening, does not run a second time.
+          this.showPreferenceCenterCallback?.();
+        }
+      } catch (error) {
+        if (opening) {
+          this.failPreferenceCenterOpening(error);
+        } else {
+          // Refreshing the open dialog failed: this request was not shown, the ones before it
+          // still are
+          console.error("[vue-privacy] preference centre failed to show a request", error);
+          this.consentRequests = this.consentRequests.filter((r) => r !== request);
+          resolve(false);
+        }
+      }
+    });
+  }
+
+  /**
+   * The pending requestConsent() calls the preference centre shows (null: none), for the
+   * built-in dialogs and a site's own one.
+   */
+  getConsentRequest(): ConsentRequest | null {
+    if (this.consentRequests.length === 0) return null;
+    const asked = new Set(this.consentRequests.map((r) => r.category));
+    const reasons = this.consentRequests.flatMap((r) => (r.reason ? [r.reason] : []));
+    return {
+      categories: OPTIONAL_CATEGORIES.filter((c) => asked.has(c)),
+      reasons: [...new Set(reasons)],
+    };
+  }
+
+  /**
+   * The preference centre's question is answered or dismissed: close it, drop a request its
+   * component never got, and answer the requestConsent() callers it was asking for (all pending
+   * ones by default) from the consent now in effect, even when a hide callback throws.
+   */
+  private closePreferenceCenter(requests = this.consentRequests.splice(0)): void {
+    this.preferenceCenterCloses++;
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    try {
+      this.hidePreferenceCenterCallback?.();
+      this.config.onPreferenceCenterHide?.();
+    } finally {
+      this.answerRequests(requests);
+    }
+  }
+
+  /**
+   * Answer requestConsent() callers from the consent now in effect; a request a callback made
+   * meanwhile (one reacting to this very choice) is a new question, which reopens the dialog.
+   */
+  private answerRequests(requests: ConsentManager["consentRequests"]): void {
+    const categories = this.consentInEffect().categories;
+    for (const request of requests) request.resolve(categories?.[request.category] === true);
+    if (this.consentRequests.length > 0 && !this.preferenceCenterShown && !this.destroyed) {
+      this.showPreferenceCenter();
+    }
+  }
+
+  /** The visitor's consent is settled; wakes the requestConsent() calls waiting for it. */
+  private settle(): void {
+    this.consentSettled = true;
+    this.markSettled();
   }
 
   /**
@@ -378,7 +542,7 @@ export class ConsentManager {
     try {
       await this.decideInitialConsent();
     } finally {
-      this.consentSettled = true;
+      this.settle();
       // The script blocker ignored scripts added before this point (an allowed script may add
       // more while init() finishes); with the consent settled they are scanned once more.
       const settled = this.scriptBlockerCleanup ? this.getConsent() : null;
@@ -1086,7 +1250,7 @@ export class ConsentManager {
    *   loader it calls on every start), which comes back with every load.
    */
   private reconcile(final = true, restoring = false): boolean {
-    this.consentSettled = true;
+    this.settle();
     const epoch = this.consentEpoch;
     const { choice, categories, signals } = this.consentInEffect();
     if (choice !== null && choice !== this.pageChoice) {
@@ -1128,10 +1292,16 @@ export class ConsentManager {
   private syncFromOutside(): boolean {
     if (!this.consentSettled) return false;
     const acted = this.actedOnRecord;
+    const pending = [...this.consentRequests];
     const allowed = this.reconcile();
+    const answered = this.actedOnRecord === acted ? [] : pending;
+    this.consentRequests = this.consentRequests.filter((r) => !answered.includes(r));
     if (this.actedOnRecord === acted) return allowed;
     // Another tab answered the banner this tab is showing (or holds for its component), or
-    // reset the choice, which asks again here as a local reset does.
+    // reset the choice, which asks again here as a local reset does. Either way it answers the
+    // requestConsent() calls made before it (a consent callback reacting to it asks anew), and
+    // their dialog shows toggles it no longer holds.
+    if (answered.length > 0) this.closePreferenceCenter(answered);
     if (this.actedOnRecord !== null) this.closeBanner();
     else this.requestBanner();
     return allowed;
@@ -1251,13 +1421,14 @@ export class ConsentManager {
   }
 
   /**
-   * Save custom preferences
+   * Save custom preferences. A category not given is refused: only the visitor's own
+   * affirmative choice grants one (CJEU C-673/17 Planet49; GDPR Recital 32).
    */
   async savePreferences(categories: Partial<Omit<ConsentCategories, "necessary">>): Promise<void> {
     const finalCategories = {
       analytics: categories.analytics ?? false,
       marketing: categories.marketing ?? false,
-      functional: categories.functional ?? true,
+      functional: categories.functional ?? false,
     };
 
     this.choose(finalCategories);
@@ -1269,6 +1440,10 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
+    // This choice answers the requests made so far; one a consent callback makes in reaction to
+    // it is asked anew once the dialog closes.
+    const answered = this.consentRequests.splice(0);
+    const closes = this.preferenceCenterCloses;
     this.impliedChoice = null;
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
@@ -1277,9 +1452,11 @@ export class ConsentManager {
     this.reconcile();
 
     // The preference centre closes either way; it would cover a banner a callback's reset
-    // just showed. The banner stays when a callback made a newer decision.
-    this.hidePreferenceCenterCallback?.();
-    this.config.onPreferenceCenterHide?.();
+    // just showed. The banner stays when a callback made a newer decision. A callback whose
+    // decision closed it already (a reset) leaves only this choice's requests to answer, so
+    // the site's hide hooks run once.
+    if (this.preferenceCenterCloses === closes) this.closePreferenceCenter(answered);
+    else this.answerRequests(answered);
     if (this.consentEpoch !== epoch) return;
     this.closeBanner();
   }
@@ -1380,6 +1557,9 @@ export class ConsentManager {
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
     this.reconcile(false);
+    // The open preference centre would cover the banner, and the requests it asks for were about
+    // the choice just cleared: they are answered false, and the banner asks afresh.
+    if (this.preferenceCenterShown || this.consentRequests.length > 0) this.closePreferenceCenter();
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
     this.requestBanner();
@@ -1628,6 +1808,11 @@ export class ConsentManager {
     this.hideBannerCallback = null;
     this.showPreferenceCenterCallback = null;
     this.hidePreferenceCenterCallback = null;
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    // No dialog will answer them now; calls still waiting for init() wake and answer false.
+    for (const request of this.consentRequests.splice(0)) request.resolve(false);
+    this.markSettled();
   }
 }
 

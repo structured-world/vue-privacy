@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
-import type { ConsentCategories, ConsentTheme } from "../core/types";
+import type { ConsentCategories, ConsentRequest, ConsentTheme } from "../core/types";
 import { getTranslations } from "../i18n/index";
 import { limitToUsed, usedCategoriesOf } from "../core/categories";
 import { injectModalStyles } from "./modal-styles";
@@ -23,11 +23,12 @@ const theme = computed(() => props.theme ?? consentManager?.getConfig().theme ??
 const modalRef = ref<HTMLElement | null>(null);
 
 const visible = ref(false);
-const categories = ref({
-  analytics: false,
-  marketing: false,
-  functional: true,
-});
+// What a feature asked for (requestConsent), read on every show: a call while open refreshes it
+const request = ref<ConsentRequest | null>(null);
+// A pre-ticked box is no consent (CJEU C-673/17 Planet49; GDPR Recital 32): an undecided visitor
+// finds every optional category unticked
+const UNTICKED = { analytics: false, marketing: false, functional: false };
+const categories = ref({ ...UNTICKED });
 
 // Only the categories the site uses are offered; the manager refuses the rest on save.
 const usedCategories = computed(() => usedCategoriesOf(consentManager?.getConfig() ?? {}));
@@ -76,14 +77,19 @@ const modalConfig = computed(() => {
   };
 });
 
-// Load current consent state when modal opens
+// Open as the manager sees it: a hide and a show in one turn (a consent callback asking again
+// as the dialog closes) leave `visible` true throughout, which Vue reports as no change at all
+let open = false;
+
+// The toggles on every opening: the visitor's stored choice, else all unticked (toggles of a
+// dialog closed without saving chose nothing)
+function loadToggles() {
+  const currentConsent = consentManager?.getConsent();
+  categories.value = currentConsent ? { ...currentConsent.categories } : { ...UNTICKED };
+}
+
 watch(visible, async (isVisible) => {
   if (isVisible) {
-    const currentConsent = consentManager?.getConsent();
-    if (currentConsent) {
-      categories.value = { ...currentConsent.categories };
-    }
-
     await nextTick();
     // Focus the modal container for screen readers; user can Tab into controls
     modalRef.value?.focus();
@@ -97,10 +103,18 @@ injectModalStyles();
 onMounted(() => {
   if (consentManager) {
     consentManager.onShowPreferenceCenter(() => {
+      // A request joining the open dialog shows its reason; the toggles stay as the visitor set them
+      request.value = consentManager.getConsentRequest();
+      if (!open) {
+        open = true;
+        loadToggles();
+      }
       visible.value = true;
     });
 
     consentManager.onHidePreferenceCenter(() => {
+      open = false;
+      request.value = null;
       visible.value = false;
     });
 
@@ -138,8 +152,9 @@ async function handleRejectAll() {
 }
 
 function handleClose() {
-  visible.value = false;
-  consentManager?.getConfig().onPreferenceCenterHide?.();
+  // The manager hides the dialog and answers a pending requestConsent() with the choice in effect
+  if (consentManager) consentManager.hidePreferenceCenter();
+  else visible.value = false;
   emit("close");
 }
 
@@ -206,6 +221,10 @@ function handleKeydown(e: KeyboardEvent) {
             <p v-if="modalConfig.description" class="consent-modal__description">
               {{ modalConfig.description }}
             </p>
+            <!-- Why a feature asks for a category: the site's own text -->
+            <p v-for="reason in request?.reasons ?? []" :key="reason" class="consent-modal__reason">
+              {{ reason }}
+            </p>
           </div>
 
           <div class="consent-modal__body">
@@ -232,7 +251,14 @@ function handleKeydown(e: KeyboardEvent) {
             </div>
 
             <!-- The optional categories the site uses -->
-            <div v-for="category in usedCategories" :key="category" class="consent-modal__category">
+            <div
+              v-for="category in usedCategories"
+              :key="category"
+              class="consent-modal__category"
+              :class="{
+                'consent-modal__category--requested': request?.categories.includes(category),
+              }"
+            >
               <div class="consent-modal__category-header">
                 <h3 class="consent-modal__category-name">
                   {{ modalConfig.categories[category].name }}

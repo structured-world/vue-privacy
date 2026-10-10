@@ -196,6 +196,7 @@ See [Ecommerce Tracking](/guide/ecommerce) for full parameter documentation.
 
 | Format | Size | Gzipped |
 |--------|------|---------|
-| IIFE (CDN) | ~31 kB | ~11 kB |
-| UMD (require) | ~31 kB | ~11 kB |
-| ES module | ~47 kB | ~13 kB |
+| UMD (`<script>` tag and `require`) | ~97 kB | ~31 kB |
+| ES modules (main entry with its chunks) | ~98 kB | ~29 kB |
+
+Both include all 31 locales.

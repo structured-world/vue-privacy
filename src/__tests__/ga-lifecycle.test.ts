@@ -755,10 +755,11 @@ describe("Google Analytics lifecycle in ConsentManager", () => {
     pending[0]();
     await settle();
     expect(set).toHaveBeenCalledTimes(2);
+    // functional was not given, so the second choice refuses it
     expect(set.mock.calls[1]?.[1].categories).toEqual({
       analytics: true,
       marketing: false,
-      functional: true,
+      functional: false,
     });
   });
 

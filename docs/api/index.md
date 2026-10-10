@@ -49,7 +49,7 @@ The consent signals, the stored choice and the closed banner take effect at once
 
 #### `savePreferences(categories): Promise<void>`
 
-Save specific category preferences. Every choice is stored, a refusal included.
+Save specific category preferences. Every choice is stored, a refusal included; a category not given is refused.
 
 ```typescript
 await manager.savePreferences({
