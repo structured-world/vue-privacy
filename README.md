@@ -4,9 +4,10 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![npm downloads](https://img.shields.io/npm/dm/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
+[![npm total downloads](https://img.shields.io/npm/dt/@structured-world/vue-privacy.svg?label=total%20downloads)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![bundle size](https://img.shields.io/bundlephobia/minzip/@structured-world/vue-privacy)](https://bundlephobia.com/package/@structured-world/vue-privacy)
 [![CI](https://github.com/structured-world/vue-privacy/actions/workflows/ci.yml/badge.svg)](https://github.com/structured-world/vue-privacy/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 **[Documentation](https://privacy.sw.foundation)** · [GitHub](https://github.com/structured-world/vue-privacy) · [npm](https://www.npmjs.com/package/@structured-world/vue-privacy)
@@ -15,19 +16,20 @@ GDPR-compliant cookie consent with **Google Consent Mode v2** support for Vue 3,
 
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
 - **GDPR & CCPA** — Compliant with EU GDPR and California Consumer Privacy Act
-- **GDPR Roaming Protection** — Re-prompt consent when EU user travels to non-EU region
+- **GDPR Roaming Protection** — Ask again when a choice made outside consent jurisdictions meets a visitor now inside one
 - **Consent Jurisdictions** — Ask visitors in the EEA and the UK (Switzerland on request), detected by country via Cloudflare headers, IP API, or timezone; a failed lookup asks too
-- **Consent Banner** — Customizable GDPR/CCPA banner with dark mode support
+- **Consent Banner** — Customizable GDPR/CCPA banner; follows the system's dark mode or a pinned light or dark theme
 - **Preference Center** — OneTrust-style modal with category toggles (necessary, analytics, marketing, functional)
+- **Ask Again When Needed** — A feature that needs a refused category (sign-in, an embedded video) asks for it again, saying why
 - **Script Blocking** — Block third-party scripts until consent is granted
-- **i18n** — 31 built-in locales: every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh
+- **i18n** — 31 built-in locales: every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh; follows the browser's preferred languages and the site's language switcher
 - **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
 - **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
 - **UMD/CDN** — Use via `<script>` tag, no build tools needed
 - **TypeScript** — Full type safety
-- **Lightweight** — ~11kB gzip (UMD), no external dependencies
+- **No runtime dependencies** — ~31 kB gzip (UMD, all 31 locales included)
 - **SSR Safe** — Works with server-side rendering
 - **Accessible** — ARIA-compliant components with focus trap
 
@@ -186,16 +188,10 @@ interface ConsentConfig {
   // system's colour scheme; 'light' and 'dark' pin one whatever the system prefers.
   theme?: 'auto' | 'light' | 'dark';
 
-  // Consent categories
-  categories?: {
-    analytics?: boolean;  // Default: false
-    marketing?: boolean;  // Default: false
-    functional?: boolean; // Default: true
-  };
-
   // Optional categories the site actually uses (default: all three). The preference centre
-  // shows only these; every other category is always refused, so e.g. ['analytics'] keeps
-  // ad_storage, ad_user_data and ad_personalization denied even after "Accept all".
+  // shows only these, unticked until the visitor ticks one (a pre-ticked box is no consent:
+  // CJEU C-673/17 Planet49); every other category is always refused, so e.g. ['analytics']
+  // keeps ad_storage, ad_user_data and ad_personalization denied even after "Accept all".
   usedCategories?: ('analytics' | 'marketing' | 'functional')[];
 
   // Banner UI
@@ -239,6 +235,12 @@ interface ConsentConfig {
   // Region detection mode
   euDetection?: 'auto' | 'cloudflare' | 'worker' | 'api' | 'always' | 'never';
 
+  // Worker geo endpoint (e.g. '/api/geo'), used by 'worker' and 'auto'
+  geoUrl?: string;
+
+  // Custom geo-detection provider, in place of euDetection
+  geoDetector?: GeoDetector;
+
   // Jurisdictions whose visitors are asked for consent. Default: ['EEA', 'UK']
   consentJurisdictions?: ('EEA' | 'UK' | 'CH')[];
 
@@ -248,12 +250,19 @@ interface ConsentConfig {
   // Consent version (changing resets all consents)
   version?: string;
 
+  // CCPA mode: visitors in covered US states see no banner and opt out through your own
+  // "Do Not Sell" link (isCCPAUser(), doNotSellText). Default: false
+  ccpaEnabled?: boolean;
+  doNotSellText?: string;
+
   // Callbacks
   onConsentChange?: (consent: StoredConsent) => void;
   onBannerShow?: () => void;
   onBannerHide?: () => void;
   onPreferenceCenterShow?: () => void;
   onPreferenceCenterHide?: () => void;
+  onCCPAUser?: () => void;
+  onGoogleAnalyticsError?: (error: unknown) => void; // gtag.js failed to load; consent still works
 }
 ```
 
@@ -305,6 +314,7 @@ const {
   hasConsent,
   resetConsent,
   showPreferenceCenter,
+  requestConsent, // ask again for a refused category a feature needs, saying why
   // GA4 event tracking
   trackEvent,
   trackPurchase,
@@ -396,6 +406,11 @@ await manager.savePreferences({ analytics: true, marketing: false });
 // Preference center
 manager.showPreferenceCenter();
 
+// A feature that needs a refused category asks again, saying why; true once granted
+const allowed = await manager.requestConsent('functional', {
+  reason: 'Sign-in needs functional cookies to keep you logged in.',
+});
+
 // Check state
 const consent = manager.getConsent();
 const asked = manager.isConsentRequired(); // isEUUser() is an alias
@@ -462,15 +477,18 @@ Refusing is as easy and as visible as accepting by default: "Accept all" and "Re
 | GDPR roaming protection | ✅ |
 | GA4 integration | ✅ |
 | GA4 event tracking (ecommerce, conversions) | ✅ |
-| EU geo-detection | ✅ |
+| Consent jurisdiction detection (EEA, UK, optional CH) | ✅ |
 | Script blocking | ✅ |
+| Only the categories the site uses | ✅ |
+| Ask again for a refused category a feature needs | ✅ |
 | i18n (31 locales, every EU and EEA language) | ✅ |
+| Language switching at run time | ✅ |
 | Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
 | Vanilla JS entry point | ✅ |
 | UMD/CDN build | ✅ |
 | Remote consent storage | ✅ |
 | Retry on rate limit (KV storage) | ✅ |
-| Dark mode support | ✅ |
+| Dark mode, pinned light or dark theme | ✅ |
 
 ## Planned
 

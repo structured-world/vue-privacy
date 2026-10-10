@@ -6,7 +6,7 @@
 import { getTranslations } from "../i18n/index";
 import { escapeHtml } from "./utils";
 import { usedCategoriesOf } from "../core/categories";
-import { CONSENT_THEMES, DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
+import { CONSENT_THEMES, type OptionalCategory } from "../core/types";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption.
@@ -22,6 +22,8 @@ export const MODAL_CSS = `/* Vue Privacy - Vanilla Modal Styles */
 .consent-modal__header{padding:1.5rem 3rem 1.5rem 1.5rem;border-bottom:1px solid var(--consent-modal-border,#e0e0e0)}
 .consent-modal__title{margin:0 0 .5rem;font-size:1.25rem;font-weight:600;color:var(--consent-modal-text,#1a1a1a)}
 .consent-modal__description{margin:0;font-size:.875rem;color:var(--consent-modal-text-secondary,#666);line-height:1.5}
+.consent-modal__reason{margin:.75rem 0 0;font-size:.875rem;font-weight:500;color:var(--consent-modal-text,#1a1a1a);line-height:1.5}
+.consent-modal__category--requested{border-left:3px solid var(--consent-link,#0066cc);padding-left:.75rem}
 .consent-modal__close{position:absolute;top:1rem;right:1rem;background:transparent;border:none;font-size:1.5rem;color:var(--consent-modal-text-secondary,#666);cursor:pointer;padding:.25rem;width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;border-radius:4px;line-height:1;font-family:inherit}
 .consent-modal__close:hover{background:var(--consent-modal-border,#e0e0e0)}
 .consent-modal__close:focus-visible{outline:2px solid var(--consent-link,#0066cc);outline-offset:2px}
@@ -206,6 +208,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
       <div class="consent-modal__header">
         <h2 id="consent-modal-title" class="consent-modal__title">${escapeHtml(title)}</h2>
         ${description ? `<p class="consent-modal__description">${escapeHtml(description)}</p>` : ""}
+        <div class="consent-modal__reasons"></div>
       </div>
       <div class="consent-modal__body">
         <!-- Necessary (always on) -->
@@ -245,8 +248,34 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
       input.checked = checked.get(category) ?? false;
     }
     modalEl = overlayEl.querySelector(".consent-modal") as HTMLElement;
+    showRequest();
     // The focused control went with the old markup; keep focus inside the open dialog.
     if (hadFocus) modalEl.focus();
+  }
+
+  /**
+   * What a feature asked for (requestConsent): its reasons above the categories, the site's own
+   * text, and the categories it needs highlighted; nothing once the request is answered.
+   */
+  function showRequest() {
+    const request = manager.getConsentRequest();
+    const reasonsEl = overlayEl.querySelector(".consent-modal__reasons") as HTMLElement;
+    reasonsEl.replaceChildren(
+      ...(request?.reasons ?? []).map((reason) => {
+        const p = document.createElement("p");
+        p.className = "consent-modal__reason";
+        p.textContent = reason;
+        return p;
+      })
+    );
+    for (const [category, input] of inputs) {
+      input
+        .closest(".consent-modal__category")
+        ?.classList.toggle(
+          "consent-modal__category--requested",
+          request?.categories.includes(category) ?? false
+        );
+    }
   }
 
   render();
@@ -260,10 +289,10 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Load current consent state into toggles
   function loadCurrentConsent() {
     const current = manager.getConsent()?.categories;
-    // Default values from manager config while the visitor has not chosen
-    const defaults = { ...DEFAULT_CONFIG.categories, ...manager.getConfig().categories };
+    // A visitor who has not chosen finds every optional category unticked: a pre-ticked box is
+    // no consent (CJEU C-673/17 Planet49; GDPR Recital 32)
     for (const [category, input] of inputs) {
-      input.checked = current ? current[category] : defaults[category];
+      input.checked = current ? current[category] : false;
     }
   }
 
@@ -282,8 +311,9 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     const action = target.closest("[data-action]")?.getAttribute("data-action");
 
     if (action === "close") {
-      hide();
-      manager.getConfig().onPreferenceCenterHide?.();
+      // The manager hides the dialog and answers a pending requestConsent() with the choice in
+      // effect.
+      manager.hidePreferenceCenter();
       onClose?.();
     } else if (action === "accept-all") {
       // Hide immediately for consistent UX, then run async manager call
@@ -306,8 +336,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   function handleOverlayClick(e: Event) {
     if (e.target === overlayEl) {
-      hide();
-      manager.getConfig().onPreferenceCenterHide?.();
+      manager.hidePreferenceCenter();
       onClose?.();
     }
   }
@@ -317,8 +346,7 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     if (!visible) return;
 
     if (e.key === "Escape") {
-      hide();
-      manager.getConfig().onPreferenceCenterHide?.();
+      manager.hidePreferenceCenter();
       onClose?.();
       return;
     }
@@ -354,6 +382,9 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // Show/hide functions
   function show() {
+    // A requestConsent() call while the dialog is open shows its reason without reopening it;
+    // the toggles stay as the visitor set them
+    showRequest();
     if (visible) return;
     visible = true;
     // Store currently focused element to restore on hide
@@ -397,9 +428,12 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
     }
   }
 
+  // Through the manager, as every close is: it reaches this dialog's callbacks and answers a
+  // pending requestConsent() on close. With nothing open the manager does nothing, so hide()
+  // before show() or twice reports no close.
   return {
-    show,
-    hide,
+    show: () => manager.showPreferenceCenter(),
+    hide: () => manager.hidePreferenceCenter(),
     isVisible: () => visible,
     destroy,
   };

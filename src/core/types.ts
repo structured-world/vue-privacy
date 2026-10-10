@@ -447,6 +447,24 @@ export type ConsentTheme = "auto" | "light" | "dark";
 /** Every {@link ConsentTheme}, for checking a value that came from untyped JavaScript. */
 export const CONSENT_THEMES: readonly ConsentTheme[] = ["auto", "light", "dark"];
 
+/** Options of `requestConsent()`. */
+export interface ConsentRequestOptions {
+  /**
+   * Why the feature needs the category, shown above the categories in the preference centre.
+   * The site's own text, in the visitor's language: the library translates only its buttons.
+   */
+  reason?: string;
+}
+
+/**
+ * The pending `requestConsent()` calls, as the preference centre shows them: the categories
+ * asked for, in display order, and the distinct reasons, in the order asked.
+ */
+export interface ConsentRequest {
+  categories: OptionalCategory[];
+  reasons: string[];
+}
+
 /**
  * Main plugin configuration
  */
@@ -480,9 +498,6 @@ export interface ConsentConfig {
    * @default "auto"
    */
   theme?: ConsentTheme;
-
-  /** Consent categories to manage */
-  categories?: Partial<Omit<ConsentCategories, "necessary">>;
 
   /**
    * The optional categories the site actually uses. The preference centres show only these
@@ -683,17 +698,11 @@ export interface BannerConfigDefaults {
  * Default configuration values
  */
 export const DEFAULT_CONFIG: {
-  categories: Omit<ConsentCategories, "necessary">;
   banner: BannerConfigDefaults;
   cookie: CookieConfigDefaults;
   euDetection: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
   version: string;
 } = {
-  categories: {
-    analytics: false,
-    marketing: false,
-    functional: true,
-  },
   banner: {
     title: "Cookie Consent",
     message:

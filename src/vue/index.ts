@@ -196,6 +196,9 @@ export function useConsent() {
     getGeoResult: () => manager.getGeoResult(),
     /** Programmatically show the preference center modal */
     showPreferenceCenter: () => manager.showPreferenceCenter(),
+    /** Ask for a category a feature needs, saying why; resolves whether it is granted */
+    requestConsent: (...args: Parameters<typeof manager.requestConsent>) =>
+      manager.requestConsent(...args),
     /** Get the underlying manager instance */
     manager,
   };

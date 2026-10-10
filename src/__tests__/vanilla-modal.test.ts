@@ -260,7 +260,7 @@ describe("createModal", () => {
     expect(onSave).toHaveBeenCalledWith({
       analytics: true,
       marketing: false,
-      functional: true, // Default value
+      functional: false, // unticked until the visitor ticks it
     });
 
     modal.destroy();
@@ -337,6 +337,41 @@ describe("createModal", () => {
 
     modal.destroy();
     expect(document.querySelector(".consent-modal-overlay")).toBeNull();
+  });
+
+  it("hide() of a modal that is not open does not report a close", () => {
+    // onPreferenceCenterHide reports a dialog closing; nothing closes before show() or twice
+    const onHide = vi.fn();
+    manager.getConfig().onPreferenceCenterHide = onHide;
+    const modal = createModal({ manager });
+
+    modal.hide();
+    expect(onHide).not.toHaveBeenCalled();
+    modal.show();
+    modal.hide();
+    modal.hide();
+    expect(onHide).toHaveBeenCalledOnce();
+    modal.destroy();
+  });
+
+  it("destroy() of an open modal finishes when a hide hook throws", () => {
+    // The close that destroying an open dialog causes runs the site's hook; its failure must not
+    // leave the dialog's callbacks registered or its DOM in the page.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    manager.getConfig().onPreferenceCenterHide = () => {
+      throw new Error("hook failed");
+    };
+    const modal = createModal({ manager });
+    modal.show();
+
+    expect(() => modal.destroy()).not.toThrow();
+    expect(document.querySelector(".consent-modal-overlay")).toBeNull();
+    expect(document.getElementById(CONTAINER_ID)).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[vue-privacy] preference centre hide hook failed",
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
   });
 
   it("destroy() removes auto-created container", () => {

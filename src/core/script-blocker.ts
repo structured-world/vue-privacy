@@ -125,7 +125,7 @@ export function initScriptBlocker(manager: ConsentManager): () => void {
 }
 
 /**
- * Manually unblock scripts for given categories.
+ * Manually unblock scripts for given categories; a category not given stays blocked.
  * Useful for UMD/CDN users who don't use ConsentManager.
  */
 export function unblockScriptsByCategory(
@@ -134,6 +134,6 @@ export function unblockScriptsByCategory(
   unblockMatchingScripts({
     analytics: categories.analytics ?? false,
     marketing: categories.marketing ?? false,
-    functional: categories.functional ?? true,
+    functional: categories.functional ?? false,
   });
 }

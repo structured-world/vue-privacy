@@ -127,12 +127,13 @@ export interface VanillaBannerInstance {
  */
 export interface VanillaModalInstance {
   /**
-   * Show the modal
+   * Show the modal: `manager.showPreferenceCenter()`
    */
   show: () => void;
 
   /**
-   * Hide the modal
+   * Hide the modal without a choice: `manager.hidePreferenceCenter()`, which answers a pending
+   * `requestConsent()` from the choice in effect
    */
   hide: () => void;
 
