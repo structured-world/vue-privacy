@@ -260,7 +260,7 @@ describe("createModal", () => {
     expect(onSave).toHaveBeenCalledWith({
       analytics: true,
       marketing: false,
-      functional: true, // Default value
+      functional: false, // unticked until the visitor ticks it
     });
 
     modal.destroy();

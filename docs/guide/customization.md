@@ -108,16 +108,8 @@ createConsentPlugin({
 });
 ```
 
-## Default Categories
+## Categories Start Unticked
 
-```typescript
-createConsentPlugin({
-  categories: {
-    analytics: false,   // Default: denied
-    marketing: false,   // Default: denied
-    functional: true,   // Default: granted
-  },
-});
-```
+A visitor who has not chosen finds every optional category (`analytics`, `marketing`, `functional`) unticked in the preference centre, and only the visitor's own tick grants one: a pre-ticked box the visitor has to untick to refuse is not valid consent (CJEU, Planet49, C-673/17; GDPR Recital 32). There is no setting to pre-tick a category, and `savePreferences()` refuses a category it is not given.
 
-The `necessary` category is always `true` and cannot be changed.
+The `necessary` category is always `true` and cannot be changed. Storage the visitor explicitly asked for, such as the language they picked, is exempt from consent (ePrivacy Directive, Art. 5(3)) and belongs there, not in `functional`.

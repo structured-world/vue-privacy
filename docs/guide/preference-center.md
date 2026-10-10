@@ -54,9 +54,9 @@ The modal displays four cookie categories:
 | **Necessary** | Always on | No (disabled) |
 | **Analytics** | Off | Yes |
 | **Marketing** | Off | Yes |
-| **Functional** | On | Yes |
+| **Functional** | Off | Yes |
 
-Each category shows a name and description, translated to the user's locale.
+Every optional category starts unticked for a visitor who has not chosen: a pre-ticked box is not valid consent (CJEU, Planet49, C-673/17). Each category shows a name and description, translated to the user's locale.
 
 ### Only the categories your site uses
 

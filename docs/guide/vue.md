@@ -98,10 +98,10 @@ const analytics = ref(consent.value?.categories.analytics ?? false);
 const marketing = ref(consent.value?.categories.marketing ?? false);
 
 async function save() {
+  // A category left out (functional here) is refused
   await savePreferences({
     analytics: analytics.value,
     marketing: marketing.value,
-    functional: true,
   });
 }
 </script>

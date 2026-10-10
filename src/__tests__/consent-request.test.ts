@@ -399,7 +399,7 @@ describe("requestConsent in the preference centres", () => {
 
   it("Vue: toggles of a dialog closed without saving do not come back on the next open", async () => {
     // An undecided visitor ticks marketing, then closes: nothing was chosen, so the next open
-    // starts from the defaults again, as the vanilla dialog does.
+    // starts unticked again, as the vanilla dialog does.
     const m = manager();
     await m.init();
     const app = createApp({ render: () => h(ConsentPreferenceModal) });
@@ -421,7 +421,8 @@ describe("requestConsent in the preference centres", () => {
     app.unmount();
   });
 
-  it("Vue: a request joining the open dialog of an undecided visitor unticks its category", async () => {
+  it("Vue: a request joining the open dialog keeps the visitor's own tick", async () => {
+    // Only the visitor ticks a box; a request arriving after that tick must not undo it.
     const m = manager();
     await m.init();
     const app = createApp({ render: () => h(ConsentPreferenceModal) });
@@ -433,11 +434,12 @@ describe("requestConsent in the preference centres", () => {
     void m.requestConsent("marketing", { reason: VIDEO });
     await nextTick();
     await nextTick();
-    // functional keeps its default while nothing asks for it
-    expect(functional().checked).toBe(true);
+    expect(functional().checked).toBe(false);
+    functional().checked = true;
+    functional().dispatchEvent(new Event("change"));
     void m.requestConsent("functional", { reason: SIGN_IN });
     await nextTick();
-    expect(functional().checked).toBe(false);
+    expect(functional().checked).toBe(true);
     app.unmount();
   });
 
@@ -503,7 +505,7 @@ describe("requestConsent in the preference centres", () => {
     modal.destroy();
   });
 
-  it("vanilla: a request joining the open dialog of an undecided visitor unticks its category", async () => {
+  it("vanilla: a request joining the open dialog keeps the visitor's own tick", async () => {
     const m = manager();
     await m.init();
     const modal = createModal({ manager: m });
@@ -511,9 +513,10 @@ describe("requestConsent in the preference centres", () => {
       document.querySelector('[data-category="functional"]') as HTMLInputElement;
 
     void m.requestConsent("marketing", { reason: VIDEO });
-    expect(functional().checked).toBe(true);
-    void m.requestConsent("functional", { reason: SIGN_IN });
     expect(functional().checked).toBe(false);
+    functional().checked = true;
+    void m.requestConsent("functional", { reason: SIGN_IN });
+    expect(functional().checked).toBe(true);
     modal.destroy();
   });
 

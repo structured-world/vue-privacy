@@ -188,16 +188,10 @@ interface ConsentConfig {
   // system's colour scheme; 'light' and 'dark' pin one whatever the system prefers.
   theme?: 'auto' | 'light' | 'dark';
 
-  // Consent categories
-  categories?: {
-    analytics?: boolean;  // Default: false
-    marketing?: boolean;  // Default: false
-    functional?: boolean; // Default: true
-  };
-
   // Optional categories the site actually uses (default: all three). The preference centre
-  // shows only these; every other category is always refused, so e.g. ['analytics'] keeps
-  // ad_storage, ad_user_data and ad_personalization denied even after "Accept all".
+  // shows only these, unticked until the visitor ticks one (a pre-ticked box is no consent:
+  // CJEU C-673/17 Planet49); every other category is always refused, so e.g. ['analytics']
+  // keeps ad_storage, ad_user_data and ad_personalization denied even after "Accept all".
   usedCategories?: ('analytics' | 'marketing' | 'functional')[];
 
   // Banner UI

@@ -6,7 +6,7 @@
 import { getTranslations } from "../i18n/index";
 import { escapeHtml } from "./utils";
 import { usedCategoriesOf } from "../core/categories";
-import { CONSENT_THEMES, DEFAULT_CONFIG, type OptionalCategory } from "../core/types";
+import { CONSENT_THEMES, type OptionalCategory } from "../core/types";
 import type { VanillaModalOptions, VanillaModalInstance, VanillaTheme } from "./types";
 
 // Raw CSS string for inline injection or external stylesheet consumption.
@@ -160,8 +160,6 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Toggle inputs of the shown (used) categories, and the dialog: replaced by every render
   let inputs = new Map<OptionalCategory, HTMLInputElement>();
   let modalEl: HTMLElement;
-  // The categories of the requestConsent() calls the dialog shows
-  let requestedShown: OptionalCategory[] = [];
 
   // The dialog in the manager's current locale, keeping the toggles the visitor set; the clicks
   // are delegated to overlayEl, so they survive a re-render.
@@ -261,7 +259,6 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
    */
   function showRequest() {
     const request = manager.getConsentRequest();
-    requestedShown = request?.categories ?? [];
     const reasonsEl = overlayEl.querySelector(".consent-modal__reasons") as HTMLElement;
     reasonsEl.replaceChildren(
       ...(request?.reasons ?? []).map((reason) => {
@@ -292,14 +289,10 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Load current consent state into toggles
   function loadCurrentConsent() {
     const current = manager.getConsent()?.categories;
-    // Default values from manager config while the visitor has not chosen; a category a feature
-    // asks for (requestConsent) starts unticked, so granting it takes the visitor's own click
-    const defaults = { ...DEFAULT_CONFIG.categories, ...manager.getConfig().categories };
-    const requested = manager.getConsentRequest()?.categories ?? [];
+    // A visitor who has not chosen finds every optional category unticked: a pre-ticked box is
+    // no consent (CJEU C-673/17 Planet49; GDPR Recital 32)
     for (const [category, input] of inputs) {
-      input.checked = current
-        ? current[category]
-        : defaults[category] && !requested.includes(category);
+      input.checked = current ? current[category] : false;
     }
   }
 
@@ -389,20 +382,10 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
 
   // Show/hide functions
   function show() {
-    // A requestConsent() call while the dialog is open shows its reason without reopening it,
-    // and its category starts unticked for an undecided visitor, as on opening
-    const before = requestedShown;
+    // A requestConsent() call while the dialog is open shows its reason without reopening it;
+    // the toggles stay as the visitor set them
     showRequest();
-    if (visible) {
-      if (!manager.getConsent()) {
-        for (const [category, input] of inputs) {
-          if (requestedShown.includes(category) && !before.includes(category)) {
-            input.checked = false;
-          }
-        }
-      }
-      return;
-    }
+    if (visible) return;
     visible = true;
     // Store currently focused element to restore on hide
     previouslyFocusedElement = document.activeElement as HTMLElement | null;

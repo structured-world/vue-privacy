@@ -14,12 +14,6 @@ describe("DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG.banner.rejectAll).toBe("Reject All");
   });
 
-  it("should have default category settings", () => {
-    expect(DEFAULT_CONFIG.categories.analytics).toBe(false);
-    expect(DEFAULT_CONFIG.categories.marketing).toBe(false);
-    expect(DEFAULT_CONFIG.categories.functional).toBe(true);
-  });
-
   it("should have auto EU detection by default", () => {
     expect(DEFAULT_CONFIG.euDetection).toBe("auto");
   });

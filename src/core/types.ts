@@ -499,9 +499,6 @@ export interface ConsentConfig {
    */
   theme?: ConsentTheme;
 
-  /** Consent categories to manage */
-  categories?: Partial<Omit<ConsentCategories, "necessary">>;
-
   /**
    * The optional categories the site actually uses. The preference centres show only these
    * (besides `necessary`), and every other category is always refused: no choice, implied
@@ -701,17 +698,11 @@ export interface BannerConfigDefaults {
  * Default configuration values
  */
 export const DEFAULT_CONFIG: {
-  categories: Omit<ConsentCategories, "necessary">;
   banner: BannerConfigDefaults;
   cookie: CookieConfigDefaults;
   euDetection: "auto" | "cloudflare" | "worker" | "api" | "always" | "never";
   version: string;
 } = {
-  categories: {
-    analytics: false,
-    marketing: false,
-    functional: true,
-  },
   banner: {
     title: "Cookie Consent",
     message:

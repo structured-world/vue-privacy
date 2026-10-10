@@ -254,7 +254,6 @@ export class ConsentManager {
     this.config = {
       ...config,
       locale: this.locale,
-      categories: { ...DEFAULT_CONFIG.categories, ...config.categories },
       banner: this.localizedBanner(),
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
@@ -1375,13 +1374,14 @@ export class ConsentManager {
   }
 
   /**
-   * Save custom preferences
+   * Save custom preferences. A category not given is refused: only the visitor's own
+   * affirmative choice grants one (CJEU C-673/17 Planet49; GDPR Recital 32).
    */
   async savePreferences(categories: Partial<Omit<ConsentCategories, "necessary">>): Promise<void> {
     const finalCategories = {
       analytics: categories.analytics ?? false,
       marketing: categories.marketing ?? false,
-      functional: categories.functional ?? true,
+      functional: categories.functional ?? false,
     };
 
     this.choose(finalCategories);

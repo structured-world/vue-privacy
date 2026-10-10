@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
-import { DEFAULT_CONFIG } from "../core/types";
 import type { ConsentCategories, ConsentRequest, ConsentTheme } from "../core/types";
 import { getTranslations } from "../i18n/index";
 import { limitToUsed, usedCategoriesOf } from "../core/categories";
@@ -26,11 +25,10 @@ const modalRef = ref<HTMLElement | null>(null);
 const visible = ref(false);
 // What a feature asked for (requestConsent), read on every show: a call while open refreshes it
 const request = ref<ConsentRequest | null>(null);
-const categories = ref({
-  analytics: false,
-  marketing: false,
-  functional: true,
-});
+// A pre-ticked box is no consent (CJEU C-673/17 Planet49; GDPR Recital 32): an undecided visitor
+// finds every optional category unticked
+const UNTICKED = { analytics: false, marketing: false, functional: false };
+const categories = ref({ ...UNTICKED });
 
 // Only the categories the site uses are offered; the manager refuses the rest on save.
 const usedCategories = computed(() => usedCategoriesOf(consentManager?.getConfig() ?? {}));
@@ -86,16 +84,8 @@ watch(visible, async (isVisible) => {
     if (currentConsent) {
       categories.value = { ...currentConsent.categories };
     } else {
-      // An undecided visitor starts from the defaults on every open (toggles of a dialog closed
-      // without saving chose nothing); a category a feature asks for (requestConsent) starts
-      // unticked, so granting it takes the visitor's own click
-      const requested = request.value?.categories ?? [];
-      const defaults = { ...DEFAULT_CONFIG.categories, ...consentManager?.getConfig().categories };
-      categories.value = {
-        analytics: defaults.analytics && !requested.includes("analytics"),
-        marketing: defaults.marketing && !requested.includes("marketing"),
-        functional: defaults.functional && !requested.includes("functional"),
-      };
+      // Every open: toggles of a dialog closed without saving chose nothing
+      categories.value = { ...UNTICKED };
     }
 
     await nextTick();
@@ -111,15 +101,8 @@ injectModalStyles();
 onMounted(() => {
   if (consentManager) {
     consentManager.onShowPreferenceCenter(() => {
-      const before = request.value?.categories ?? [];
+      // A request joining the open dialog shows its reason; the toggles stay as the visitor set them
       request.value = consentManager.getConsentRequest();
-      // A request joining the open dialog: its category starts unticked for an undecided visitor
-      // too (the opening above does it for the first ones)
-      if (visible.value && !consentManager.getConsent()) {
-        for (const category of request.value?.categories ?? []) {
-          if (!before.includes(category)) categories.value[category] = false;
-        }
-      }
       visible.value = true;
     });
 
