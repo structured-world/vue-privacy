@@ -222,6 +222,80 @@ describe("requestConsent", () => {
     expect(show).not.toHaveBeenCalled();
   });
 
+  it("answers pending callers even when a hide callback throws", async () => {
+    const { m } = await refusedManager();
+    m.getConfig().onPreferenceCenterHide = () => {
+      throw new Error("site callback failed");
+    };
+    const answer = m.requestConsent("functional");
+
+    expect(() => m.hidePreferenceCenter()).toThrow("site callback failed");
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it("answers false after destroy() instead of waiting for a dialog that cannot come", async () => {
+    const { m } = await refusedManager();
+    m.destroy();
+
+    const answer = m.requestConsent("functional");
+    expect(await settled(answer)).toBe(true);
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it("does not trust a stored grant before init() checked where it was given", async () => {
+    // Granted outside consent jurisdictions; the visitor is now in the EEA, where init()'s roaming
+    // check rejects that grant.
+    const outside = manager({}, false);
+    await outside.init();
+    await outside.acceptAll();
+    const m = manager();
+    const show = vi.fn();
+    m.onShowPreferenceCenter(show);
+
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+    expect(await settled(answer)).toBe(false);
+    await m.init();
+    await Promise.resolve();
+    expect(show).toHaveBeenCalled();
+    expect(m.getConsentRequest()?.categories).toEqual(["functional"]);
+    m.hidePreferenceCenter();
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it("answers a request made before init() once init() settled a valid grant", async () => {
+    const m = manager();
+    const answer = m.requestConsent("functional");
+    await m.init();
+    await m.acceptAll();
+    await expect(answer).resolves.toBe(true);
+  });
+
+  it("keeps a request a consent callback makes during a choice open, and asks it", async () => {
+    // The video feature asks for marketing when the visitor grants functional for sign-in.
+    const { m, show } = await refusedManager();
+    let video: Promise<boolean> | undefined;
+    m.onConsentChange((categories) => {
+      if (categories.functional && !categories.marketing && !video) {
+        video = m.requestConsent("marketing", { reason: VIDEO });
+      }
+    });
+    const signIn = m.requestConsent("functional", { reason: SIGN_IN });
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+
+    await m.savePreferences({ analytics: false, marketing: false, functional: true });
+    await expect(signIn).resolves.toBe(true);
+    expect(video).toBeDefined();
+    expect(await settled(video as Promise<boolean>)).toBe(false);
+    expect(m.getConsentRequest()).toEqual({ categories: ["marketing"], reasons: [VIDEO] });
+    // The answered dialog closed, then opened again for the new question.
+    expect(hide).toHaveBeenCalledOnce();
+    expect(show.mock.invocationCallOrder.at(-1)).toBeGreaterThan(hide.mock.invocationCallOrder[0]);
+
+    await m.acceptAll();
+    await expect(video).resolves.toBe(true);
+  });
+
   it("answers false to pending callers when the manager is destroyed", async () => {
     const { m } = await refusedManager();
     const answer = m.requestConsent("functional");
@@ -283,6 +357,33 @@ describe("requestConsent in the preference centres", () => {
     app.unmount();
   });
 
+  it("Vue: an undecided visitor gets the requested category unticked", async () => {
+    // functional defaults to on in the dialog; a request for it must not arrive pre-ticked.
+    const m = manager();
+    await m.init();
+    const app = createApp({ render: () => h(ConsentPreferenceModal) });
+    app.provide("consentManager", m);
+    app.mount(document.body.appendChild(document.createElement("div")));
+
+    void m.requestConsent("functional", { reason: SIGN_IN });
+    await nextTick();
+    await nextTick();
+    expect(
+      (document.querySelector('[data-category="functional"]') as HTMLInputElement).checked
+    ).toBe(false);
+    app.unmount();
+  });
+
+  it("Vue: unmounting the dialog while a request is open answers it", async () => {
+    const { m, app } = await vueDialog();
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+    await nextTick();
+
+    app.unmount();
+    await expect(answer).resolves.toBe(false);
+    expect(m.getConsentRequest()).toBeNull();
+  });
+
   it("Vue: useConsent() exposes requestConsent", async () => {
     const m = manager();
     await m.init();
@@ -321,6 +422,31 @@ describe("requestConsent in the preference centres", () => {
     await expect(video).resolves.toBe(false);
     expect(modal.isVisible()).toBe(false);
     modal.destroy();
+  });
+
+  it("vanilla: an undecided visitor gets the requested category unticked", async () => {
+    const m = manager();
+    await m.init();
+    const modal = createModal({ manager: m });
+
+    void m.requestConsent("functional", { reason: SIGN_IN });
+    expect(
+      (document.querySelector('[data-category="functional"]') as HTMLInputElement).checked
+    ).toBe(false);
+    modal.destroy();
+  });
+
+  it("vanilla: destroying the dialog while a request is open answers it", async () => {
+    const { m, modal } = await vanillaDialog();
+    const answer = m.requestConsent("functional");
+
+    modal.destroy();
+    await expect(answer).resolves.toBe(false);
+    // A dialog created later is not left believing one is open.
+    const next = createModal({ manager: m });
+    void m.requestConsent("functional");
+    expect(next.isVisible()).toBe(true);
+    next.destroy();
   });
 
   it("vanilla: a later dialog the visitor opens shows no stale reason", async () => {

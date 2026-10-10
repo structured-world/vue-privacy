@@ -289,10 +289,14 @@ export function createModal(options: VanillaModalOptions): VanillaModalInstance 
   // Load current consent state into toggles
   function loadCurrentConsent() {
     const current = manager.getConsent()?.categories;
-    // Default values from manager config while the visitor has not chosen
+    // Default values from manager config while the visitor has not chosen; a category a feature
+    // asks for (requestConsent) starts unticked, so granting it takes the visitor's own click
     const defaults = { ...DEFAULT_CONFIG.categories, ...manager.getConfig().categories };
+    const requested = manager.getConsentRequest()?.categories ?? [];
     for (const [category, input] of inputs) {
-      input.checked = current ? current[category] : defaults[category];
+      input.checked = current
+        ? current[category]
+        : defaults[category] && !requested.includes(category);
     }
   }
 

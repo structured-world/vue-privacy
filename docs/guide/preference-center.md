@@ -122,6 +122,7 @@ async function signIn() {
 - A call while the preference centre is open joins it instead of opening a second one; every caller gets its own answer.
 - The reason is your own text, in the visitor's language; the library translates its buttons only.
 - A category outside `usedCategories` is refused by every choice, so the call rejects.
+- A call made before `init()` settled the consent waits for it: a stored grant counts only once the roaming check has confirmed it. The preference centre then waits for its component, as the banner does, if none is mounted yet; a dialog removed while open (unmounted, destroyed) answers its callers from the choice in effect, and after `destroy()` the call answers `false`.
 
 Without Vue, the same method is on the manager: `await manager.requestConsent('functional', { reason })`. A custom preference centre reads what is asked with `manager.getConsentRequest()` when it is shown, and closes through `manager.hidePreferenceCenter()` so the pending callers get their answer.
 

@@ -213,6 +213,12 @@ export class ConsentManager {
   private preferenceCenterPending = false;
   /** The preference centre was asked to show, and no choice or close followed yet. */
   private preferenceCenterShown = false;
+  /** Wakes the requestConsent() calls made before the consent was settled. */
+  private markSettled: () => void = () => {};
+  /** Resolves once the consent is settled (init(), a choice or a reset), or on destroy(). */
+  private readonly settled = new Promise<void>((resolve) => {
+    this.markSettled = resolve;
+  });
   /** requestConsent() callers waiting for the visitor's answer, in the order they asked. */
   private consentRequests: Array<{
     category: OptionalCategory;
@@ -286,7 +292,19 @@ export class ConsentManager {
    * fires immediately (same race-condition handling as banner).
    */
   onShowPreferenceCenter(callback: (() => void) | null): void {
+    // An open dialog going away with its component (unmount, destroy) is closed without a choice:
+    // pending requestConsent() callers get their answer, and the next dialog is not left
+    // believing one is open.
+    const removesOpenDialog =
+      callback === null &&
+      this.showPreferenceCenterCallback !== null &&
+      this.preferenceCenterShown &&
+      !this.preferenceCenterPending;
     this.showPreferenceCenterCallback = callback;
+    if (removesOpenDialog) {
+      this.closePreferenceCenter();
+      return;
+    }
     if (callback && this.preferenceCenterPending) {
       this.preferenceCenterPending = false;
       callback();
@@ -338,6 +356,8 @@ export class ConsentManager {
    * centre opens with `reason` above the categories and the category highlighted, never
    * pre-ticked; the answer is whether the category is granted after the visitor's choice, and
    * `false` when the visitor closes it. A call while the preference centre is open joins it.
+   * A call made before init() settled the consent waits for it, and the preference centre
+   * waits for its component, if none is mounted yet; after destroy() it answers `false`.
    * @throws (rejects) for a category outside `usedCategories`, which no choice can grant
    */
   requestConsent(
@@ -348,6 +368,12 @@ export class ConsentManager {
       return Promise.reject(
         new Error(`'${category}' is not one of usedCategories: no choice can grant it`)
       );
+    }
+    if (this.destroyed) return Promise.resolve(false);
+    // A stored grant counts once init() has checked where it was given (the roaming check): a
+    // grant made outside consent jurisdictions is no consent for a visitor now inside one.
+    if (!this.consentSettled) {
+      return this.settled.then(() => this.requestConsent(category, options));
     }
     if (this.consentInEffect().categories?.[category] === true) return Promise.resolve(true);
     return new Promise((resolve) => {
@@ -378,17 +404,29 @@ export class ConsentManager {
 
   /**
    * The preference centre's question is answered or dismissed: close it, drop a request its
-   * component never got, and answer each requestConsent() caller from the consent now in effect.
+   * component never got, and answer the requestConsent() callers it was asking for (all pending
+   * ones by default) from the consent now in effect, even when a hide callback throws.
    */
-  private closePreferenceCenter(): void {
-    const requests = this.consentRequests;
-    this.consentRequests = [];
+  private closePreferenceCenter(requests = this.consentRequests.splice(0)): void {
     this.preferenceCenterShown = false;
     this.preferenceCenterPending = false;
-    this.hidePreferenceCenterCallback?.();
-    this.config.onPreferenceCenterHide?.();
-    const categories = this.consentInEffect().categories;
-    for (const request of requests) request.resolve(categories?.[request.category] === true);
+    try {
+      this.hidePreferenceCenterCallback?.();
+      this.config.onPreferenceCenterHide?.();
+    } finally {
+      const categories = this.consentInEffect().categories;
+      for (const request of requests) request.resolve(categories?.[request.category] === true);
+      // A request a callback made meanwhile (one reacting to this very choice) is a new question.
+      if (this.consentRequests.length > 0 && !this.preferenceCenterShown && !this.destroyed) {
+        this.showPreferenceCenter();
+      }
+    }
+  }
+
+  /** The visitor's consent is settled; wakes the requestConsent() calls waiting for it. */
+  private settle(): void {
+    this.consentSettled = true;
+    this.markSettled();
   }
 
   /**
@@ -458,7 +496,7 @@ export class ConsentManager {
     try {
       await this.decideInitialConsent();
     } finally {
-      this.consentSettled = true;
+      this.settle();
       // The script blocker ignored scripts added before this point (an allowed script may add
       // more while init() finishes); with the consent settled they are scanned once more.
       const settled = this.scriptBlockerCleanup ? this.getConsent() : null;
@@ -1166,7 +1204,7 @@ export class ConsentManager {
    *   loader it calls on every start), which comes back with every load.
    */
   private reconcile(final = true, restoring = false): boolean {
-    this.consentSettled = true;
+    this.settle();
     const epoch = this.consentEpoch;
     const { choice, categories, signals } = this.consentInEffect();
     if (choice !== null && choice !== this.pageChoice) {
@@ -1349,6 +1387,9 @@ export class ConsentManager {
    */
   private choose(categories: Omit<ConsentCategories, "necessary">): void {
     const epoch = ++this.consentEpoch;
+    // This choice answers the requests made so far; one a consent callback makes in reaction to
+    // it is asked anew once the dialog closes.
+    const answered = this.consentRequests.splice(0);
     this.impliedChoice = null;
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
@@ -1358,7 +1399,7 @@ export class ConsentManager {
 
     // The preference centre closes either way; it would cover a banner a callback's reset
     // just showed. The banner stays when a callback made a newer decision.
-    this.closePreferenceCenter();
+    this.closePreferenceCenter(answered);
     if (this.consentEpoch !== epoch) return;
     this.closeBanner();
   }
@@ -1707,8 +1748,11 @@ export class ConsentManager {
     this.hideBannerCallback = null;
     this.showPreferenceCenterCallback = null;
     this.hidePreferenceCenterCallback = null;
-    // No dialog will answer them now.
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    // No dialog will answer them now; calls still waiting for init() wake and answer false.
     for (const request of this.consentRequests.splice(0)) request.resolve(false);
+    this.markSettled();
   }
 }
 

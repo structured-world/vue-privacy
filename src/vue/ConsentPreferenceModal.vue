@@ -84,6 +84,10 @@ watch(visible, async (isVisible) => {
     const currentConsent = consentManager?.getConsent();
     if (currentConsent) {
       categories.value = { ...currentConsent.categories };
+    } else {
+      // A category a feature asks for (requestConsent) starts unticked for an undecided visitor,
+      // so granting it takes the visitor's own click
+      for (const category of request.value?.categories ?? []) categories.value[category] = false;
     }
 
     await nextTick();
