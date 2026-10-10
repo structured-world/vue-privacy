@@ -27,11 +27,17 @@ function manager(config: ConsentConfig = {}, consentRequired = true): ConsentMan
   return m;
 }
 
-/** A manager whose visitor refused everything, with a preference centre callback pair. */
-async function refusedManager(config: ConsentConfig = {}) {
+/** A manager whose visitor refused everything. */
+async function refusedVisitor(config: ConsentConfig = {}): Promise<ConsentManager> {
   const m = manager(config);
   await m.init();
   await m.rejectAll();
+  return m;
+}
+
+/** A refused visitor's manager with a preference centre callback pair. */
+async function refusedManager(config: ConsentConfig = {}) {
+  const m = await refusedVisitor(config);
   const show = vi.fn();
   m.onShowPreferenceCenter(show);
   m.onHidePreferenceCenter(vi.fn());
@@ -225,16 +231,26 @@ describe("requestConsent", () => {
   });
 });
 
+/** The Vue preference centre, mounted for a refused visitor. */
+async function vueDialog() {
+  const m = await refusedVisitor();
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const app = createApp({ render: () => h(ConsentPreferenceModal) });
+  app.provide("consentManager", m);
+  app.mount(host);
+  return { m, app };
+}
+
+/** The vanilla preference centre, created for a refused visitor. */
+async function vanillaDialog() {
+  const m = await refusedVisitor();
+  return { m, modal: createModal({ manager: m }) };
+}
+
 describe("requestConsent in the preference centres", () => {
   it("Vue: shows the reason, highlights the category, and closing answers false", async () => {
-    const m = manager();
-    await m.init();
-    await m.rejectAll();
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const app = createApp({ render: () => h(ConsentPreferenceModal) });
-    app.provide("consentManager", m);
-    app.mount(host);
+    const { m, app } = await vueDialog();
 
     const answer = m.requestConsent("functional", { reason: SIGN_IN });
     await nextTick();
@@ -255,14 +271,7 @@ describe("requestConsent in the preference centres", () => {
   });
 
   it("Vue: granting in the dialog answers true", async () => {
-    const m = manager();
-    await m.init();
-    await m.rejectAll();
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const app = createApp({ render: () => h(ConsentPreferenceModal) });
-    app.provide("consentManager", m);
-    app.mount(host);
+    const { m, app } = await vueDialog();
 
     const answer = m.requestConsent("functional", { reason: SIGN_IN });
     await nextTick();
@@ -293,10 +302,7 @@ describe("requestConsent in the preference centres", () => {
   });
 
   it("vanilla: shows the reasons, highlights the categories, and Escape answers false", async () => {
-    const m = manager();
-    await m.init();
-    await m.rejectAll();
-    const modal = createModal({ manager: m });
+    const { m, modal } = await vanillaDialog();
 
     const signIn = m.requestConsent("functional", { reason: SIGN_IN });
     const video = m.requestConsent("marketing", { reason: VIDEO });
@@ -318,10 +324,7 @@ describe("requestConsent in the preference centres", () => {
   });
 
   it("vanilla: a later dialog the visitor opens shows no stale reason", async () => {
-    const m = manager();
-    await m.init();
-    await m.rejectAll();
-    const modal = createModal({ manager: m });
+    const { m, modal } = await vanillaDialog();
     void m.requestConsent("functional", { reason: SIGN_IN });
     (document.querySelector(".consent-modal__close") as HTMLButtonElement).click();
 
@@ -332,10 +335,7 @@ describe("requestConsent in the preference centres", () => {
   });
 
   it("vanilla: granting in the dialog answers true and stores it", async () => {
-    const m = manager();
-    await m.init();
-    await m.rejectAll();
-    const modal = createModal({ manager: m });
+    const { m, modal } = await vanillaDialog();
     const answer = m.requestConsent("functional", { reason: SIGN_IN });
 
     (document.querySelector('[data-category="functional"]') as HTMLInputElement).checked = true;
