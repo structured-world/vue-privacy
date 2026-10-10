@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, inject, watch, nextTick } from "vue";
 import type { ConsentManager } from "../core/consent-manager";
-import type { ConsentCategories, ConsentTheme } from "../core/types";
+import type { ConsentCategories, ConsentRequest, ConsentTheme } from "../core/types";
 import { getTranslations } from "../i18n/index";
 import { limitToUsed, usedCategoriesOf } from "../core/categories";
 import { injectModalStyles } from "./modal-styles";
@@ -23,6 +23,8 @@ const theme = computed(() => props.theme ?? consentManager?.getConfig().theme ??
 const modalRef = ref<HTMLElement | null>(null);
 
 const visible = ref(false);
+// What a feature asked for (requestConsent), read on every show: a call while open refreshes it
+const request = ref<ConsentRequest | null>(null);
 const categories = ref({
   analytics: false,
   marketing: false,
@@ -97,10 +99,12 @@ injectModalStyles();
 onMounted(() => {
   if (consentManager) {
     consentManager.onShowPreferenceCenter(() => {
+      request.value = consentManager.getConsentRequest();
       visible.value = true;
     });
 
     consentManager.onHidePreferenceCenter(() => {
+      request.value = null;
       visible.value = false;
     });
 
@@ -138,8 +142,9 @@ async function handleRejectAll() {
 }
 
 function handleClose() {
-  visible.value = false;
-  consentManager?.getConfig().onPreferenceCenterHide?.();
+  // The manager hides the dialog and answers a pending requestConsent() with the choice in effect
+  if (consentManager) consentManager.hidePreferenceCenter();
+  else visible.value = false;
   emit("close");
 }
 
@@ -206,6 +211,10 @@ function handleKeydown(e: KeyboardEvent) {
             <p v-if="modalConfig.description" class="consent-modal__description">
               {{ modalConfig.description }}
             </p>
+            <!-- Why a feature asks for a category: the site's own text -->
+            <p v-for="reason in request?.reasons ?? []" :key="reason" class="consent-modal__reason">
+              {{ reason }}
+            </p>
           </div>
 
           <div class="consent-modal__body">
@@ -232,7 +241,14 @@ function handleKeydown(e: KeyboardEvent) {
             </div>
 
             <!-- The optional categories the site uses -->
-            <div v-for="category in usedCategories" :key="category" class="consent-modal__category">
+            <div
+              v-for="category in usedCategories"
+              :key="category"
+              class="consent-modal__category"
+              :class="{
+                'consent-modal__category--requested': request?.categories.includes(category),
+              }"
+            >
               <div class="consent-modal__category-header">
                 <h3 class="consent-modal__category-name">
                   {{ modalConfig.categories[category].name }}

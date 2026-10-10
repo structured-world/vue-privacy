@@ -447,6 +447,24 @@ export type ConsentTheme = "auto" | "light" | "dark";
 /** Every {@link ConsentTheme}, for checking a value that came from untyped JavaScript. */
 export const CONSENT_THEMES: readonly ConsentTheme[] = ["auto", "light", "dark"];
 
+/** Options of `requestConsent()`. */
+export interface ConsentRequestOptions {
+  /**
+   * Why the feature needs the category, shown above the categories in the preference centre.
+   * The site's own text, in the visitor's language: the library translates only its buttons.
+   */
+  reason?: string;
+}
+
+/**
+ * The pending `requestConsent()` calls, as the preference centre shows them: the categories
+ * asked for, in display order, and the distinct reasons, in the order asked.
+ */
+export interface ConsentRequest {
+  categories: OptionalCategory[];
+  reasons: string[];
+}
+
 /**
  * Main plugin configuration
  */

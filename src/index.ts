@@ -76,6 +76,8 @@ export type {
   ConsentConfig,
   ConsentCategories,
   ConsentJurisdiction,
+  ConsentRequest,
+  ConsentRequestOptions,
   ConsentTheme,
   OptionalCategory,
   StoredConsent,

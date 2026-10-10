@@ -97,6 +97,34 @@ await manager.init();
 manager.showPreferenceCenter();
 ```
 
+## Asking Again When a Feature Needs a Category
+
+A refusal is stored for the consent cookie's lifetime, so the banner does not ask on every page. A feature that cannot work without a refused category asks again at the moment it is needed, and says why, with `requestConsent(category, { reason })`:
+
+```vue
+<script setup>
+import { useConsent } from '@structured-world/vue-privacy/vue';
+
+const { requestConsent } = useConsent();
+
+async function signIn() {
+  const allowed = await requestConsent('functional', {
+    reason: 'Sign-in needs functional cookies to keep you logged in.',
+  });
+  if (!allowed) return; // the visitor kept the refusal: stay signed out
+  // ...sign in
+}
+</script>
+```
+
+- A category already in effect (granted by the visitor, or outside consent jurisdictions) answers `true` at once and shows nothing.
+- Otherwise the preference centre opens with the reason above the categories and the requested category highlighted, never pre-ticked. The promise answers whether the category is granted after the visitor's choice, which is stored like any other; closing the dialog answers `false` and keeps the stored refusal.
+- A call while the preference centre is open joins it instead of opening a second one; every caller gets its own answer.
+- The reason is your own text, in the visitor's language; the library translates its buttons only.
+- A category outside `usedCategories` is refused by every choice, so the call rejects.
+
+Without Vue, the same method is on the manager: `await manager.requestConsent('functional', { reason })`. A custom preference centre reads what is asked with `manager.getConsentRequest()` when it is shown, and closes through `manager.hidePreferenceCenter()` so the pending callers get their answer.
+
 ## Customizing Text
 
 Override preference center text via config:

@@ -10,6 +10,9 @@ import type {
   GA4PurchaseParams,
   GA4GenerateLeadParams,
   GoogleConsentSignals,
+  ConsentRequest,
+  ConsentRequestOptions,
+  OptionalCategory,
 } from "./types";
 import { CONSENT_THEMES, DEFAULT_CONFIG } from "./types";
 import { detectLocale, getTranslations, resolveLocale, type LocaleOptions } from "../i18n/index";
@@ -41,7 +44,7 @@ import {
 } from "./gtag";
 import { createGeoDetector, GeoDetectionError } from "../geo/index";
 import { knownCountry, requiresConsent, DEFAULT_CONSENT_JURISDICTIONS } from "../geo/jurisdictions";
-import { limitToUsed } from "./categories";
+import { limitToUsed, OPTIONAL_CATEGORIES, usedCategoriesOf } from "./categories";
 import { reloadPage } from "./page";
 
 /**
@@ -208,6 +211,14 @@ export class ConsentManager {
   private consentEpoch = 0;
   private bannerPending = false;
   private preferenceCenterPending = false;
+  /** The preference centre was asked to show, and no choice or close followed yet. */
+  private preferenceCenterShown = false;
+  /** requestConsent() callers waiting for the visitor's answer, in the order they asked. */
+  private consentRequests: Array<{
+    category: OptionalCategory;
+    reason: string | undefined;
+    resolve: (granted: boolean) => void;
+  }> = [];
   private consentChangeListeners: Array<
     (categories: Omit<ConsentCategories, "necessary">) => void
   > = [];
@@ -303,12 +314,81 @@ export class ConsentManager {
    * Programmatically show the preference center modal
    */
   showPreferenceCenter(): void {
+    this.preferenceCenterShown = true;
     if (this.showPreferenceCenterCallback) {
       this.showPreferenceCenterCallback();
     } else {
       this.preferenceCenterPending = true;
     }
     this.config.onPreferenceCenterShow?.();
+  }
+
+  /**
+   * Close the preference centre without a choice (its close button, Escape, a click outside):
+   * the stored choice stands, and each pending requestConsent() caller gets its answer from it.
+   */
+  hidePreferenceCenter(): void {
+    this.closePreferenceCenter();
+  }
+
+  /**
+   * Ask for a category a feature needs, at the moment it is needed: signing in needs
+   * `functional`, an embedded video `marketing`. A category in effect (granted by the visitor,
+   * or by the jurisdiction) answers `true` at once and shows nothing. Otherwise the preference
+   * centre opens with `reason` above the categories and the category highlighted, never
+   * pre-ticked; the answer is whether the category is granted after the visitor's choice, and
+   * `false` when the visitor closes it. A call while the preference centre is open joins it.
+   * @throws (rejects) for a category outside `usedCategories`, which no choice can grant
+   */
+  requestConsent(
+    category: OptionalCategory,
+    options: ConsentRequestOptions = {}
+  ): Promise<boolean> {
+    if (!usedCategoriesOf(this.config).includes(category)) {
+      return Promise.reject(
+        new Error(`'${category}' is not one of usedCategories: no choice can grant it`)
+      );
+    }
+    if (this.consentInEffect().categories?.[category] === true) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      this.consentRequests.push({ category, reason: options.reason, resolve });
+      if (this.preferenceCenterShown) {
+        // Open already: the dialog reads the request again, and the site's show callback, which
+        // reports an opening, does not run a second time.
+        this.showPreferenceCenterCallback?.();
+      } else {
+        this.showPreferenceCenter();
+      }
+    });
+  }
+
+  /**
+   * The pending requestConsent() calls the preference centre shows (null: none), for the
+   * built-in dialogs and a site's own one.
+   */
+  getConsentRequest(): ConsentRequest | null {
+    if (this.consentRequests.length === 0) return null;
+    const asked = new Set(this.consentRequests.map((r) => r.category));
+    const reasons = this.consentRequests.flatMap((r) => (r.reason ? [r.reason] : []));
+    return {
+      categories: OPTIONAL_CATEGORIES.filter((c) => asked.has(c)),
+      reasons: [...new Set(reasons)],
+    };
+  }
+
+  /**
+   * The preference centre's question is answered or dismissed: close it, drop a request its
+   * component never got, and answer each requestConsent() caller from the consent now in effect.
+   */
+  private closePreferenceCenter(): void {
+    const requests = this.consentRequests;
+    this.consentRequests = [];
+    this.preferenceCenterShown = false;
+    this.preferenceCenterPending = false;
+    this.hidePreferenceCenterCallback?.();
+    this.config.onPreferenceCenterHide?.();
+    const categories = this.consentInEffect().categories;
+    for (const request of requests) request.resolve(categories?.[request.category] === true);
   }
 
   /**
@@ -1278,8 +1358,7 @@ export class ConsentManager {
 
     // The preference centre closes either way; it would cover a banner a callback's reset
     // just showed. The banner stays when a callback made a newer decision.
-    this.hidePreferenceCenterCallback?.();
-    this.config.onPreferenceCenterHide?.();
+    this.closePreferenceCenter();
     if (this.consentEpoch !== epoch) return;
     this.closeBanner();
   }
@@ -1628,6 +1707,8 @@ export class ConsentManager {
     this.hideBannerCallback = null;
     this.showPreferenceCenterCallback = null;
     this.hidePreferenceCenterCallback = null;
+    // No dialog will answer them now.
+    for (const request of this.consentRequests.splice(0)) request.resolve(false);
   }
 }
 

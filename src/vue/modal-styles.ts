@@ -49,6 +49,20 @@ const MODAL_CSS = `
   line-height: 1.5;
 }
 
+/* Why a feature asks for a category (requestConsent), and the category it asks for */
+.consent-modal__reason {
+  margin: 0.75rem 0 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--consent-modal-text, #1a1a1a);
+  line-height: 1.5;
+}
+
+.consent-modal__category--requested {
+  border-left: 3px solid var(--consent-link, #0066cc);
+  padding-left: 0.75rem;
+}
+
 /* Close button */
 .consent-modal__close {
   position: absolute;

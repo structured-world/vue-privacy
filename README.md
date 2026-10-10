@@ -305,6 +305,7 @@ const {
   hasConsent,
   resetConsent,
   showPreferenceCenter,
+  requestConsent, // ask again for a refused category a feature needs, saying why
   // GA4 event tracking
   trackEvent,
   trackPurchase,
@@ -395,6 +396,11 @@ await manager.savePreferences({ analytics: true, marketing: false });
 
 // Preference center
 manager.showPreferenceCenter();
+
+// A feature that needs a refused category asks again, saying why; true once granted
+const allowed = await manager.requestConsent('functional', {
+  reason: 'Sign-in needs functional cookies to keep you logged in.',
+});
 
 // Check state
 const consent = manager.getConsent();
