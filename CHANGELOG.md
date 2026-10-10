@@ -4,6 +4,34 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.0.0](https://github.com/structured-world/vue-privacy/compare/v1.11.0...v2.0.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* the euDetection option is renamed geoDetection, and isEUUser() is removed (use isConsentRequired()).
+* **consent:** the categories option and DEFAULT_CONFIG.categories are removed; savePreferences() refuses and unblockScriptsByCategory() keeps blocked a category they are not given (both granted functional before).
+
+### Features
+
+* **consent:** ask again for a refused category; optional categories start unticked ([#236](https://github.com/structured-world/vue-privacy/issues/236)) ([6d8d8fe](https://github.com/structured-world/vue-privacy/commit/6d8d8fed6cf18a73415d6e39653253560abe6673)), closes [#213](https://github.com/structured-world/vue-privacy/issues/213) [#233](https://github.com/structured-world/vue-privacy/issues/233)
+* **consent:** offer and grant only the categories a site uses ([#226](https://github.com/structured-world/vue-privacy/issues/226)) ([78be812](https://github.com/structured-world/vue-privacy/commit/78be81265f0dc61420a1e3586ed158f25f9b4278)), closes [#200](https://github.com/structured-world/vue-privacy/issues/200)
+* **ga:** pass Google Analytics config and set fields through ([#227](https://github.com/structured-world/vue-privacy/issues/227)) ([26207b3](https://github.com/structured-world/vue-privacy/commit/26207b363ef51c0b978234907b5c3ede103a9276)), closes [#198](https://github.com/structured-world/vue-privacy/issues/198)
+* **i18n:** locales for every EU and EEA language, and language switching ([#230](https://github.com/structured-world/vue-privacy/issues/230)) ([341237c](https://github.com/structured-world/vue-privacy/commit/341237c8bac3218f190ce7d3d15b396d3f8a3386)), closes [#204](https://github.com/structured-world/vue-privacy/issues/204)
+* **ui:** make refusing consent as easy and visible as accepting ([#225](https://github.com/structured-world/vue-privacy/issues/225)) ([7b74c64](https://github.com/structured-world/vue-privacy/commit/7b74c64e3ded5cf29e1690b31d03502f9c5ee581)), closes [#201](https://github.com/structured-world/vue-privacy/issues/201)
+* **ui:** theme option to pin the consent dialog palette ([#231](https://github.com/structured-world/vue-privacy/issues/231)) ([d68e02a](https://github.com/structured-world/vue-privacy/commit/d68e02aa4c404c585b4d66f75bec52486b24f04f)), closes [#202](https://github.com/structured-world/vue-privacy/issues/202)
+
+
+### Bug Fixes
+
+* **consent:** reload for a previous manager's tag after a restored refusal ([#223](https://github.com/structured-world/vue-privacy/issues/223)) ([dc01943](https://github.com/structured-world/vue-privacy/commit/dc0194392f4f9d844662fa8e2fcbc32acb94caed)), closes [#222](https://github.com/structured-world/vue-privacy/issues/222)
+* **geo:** require consent across the EEA and the UK, and on lookup failure ([#228](https://github.com/structured-world/vue-privacy/issues/228)) ([fcfe2a5](https://github.com/structured-world/vue-privacy/commit/fcfe2a5f9e395b4cf6a6ab97c57e8c7000af102e)), closes [#203](https://github.com/structured-world/vue-privacy/issues/203) [#229](https://github.com/structured-world/vue-privacy/issues/229)
+
+
+### Refactoring
+
+* name region detection after consent jurisdictions; bring the docs up to date ([#237](https://github.com/structured-world/vue-privacy/issues/237)) ([422bf3f](https://github.com/structured-world/vue-privacy/commit/422bf3f398dcf3458a775f27ab24c911779a6c08)), closes [#234](https://github.com/structured-world/vue-privacy/issues/234) [#235](https://github.com/structured-world/vue-privacy/issues/235)
+
 ## [1.10.1](https://github.com/structured-world/vue-privacy/compare/v1.10.0...v1.10.1) (2026-10-06)
 
 ### Bug Fixes
