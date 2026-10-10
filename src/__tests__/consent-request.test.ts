@@ -565,6 +565,33 @@ describe("requestConsent in the preference centres", () => {
     app.unmount();
   });
 
+  it("Vue: a dialog reopened in the same turn shows the stored choice, not the old toggles", async () => {
+    // The visitor ticks marketing, then rejects all; a consent callback asks for marketing again
+    // at once. The new prompt must not carry the old dialog's unsaved tick.
+    const { m, app } = await vueDialog();
+    let video: Promise<boolean> | undefined;
+    m.onConsentChange((categories) => {
+      if (!categories.marketing && !video) video = m.requestConsent("marketing", { reason: VIDEO });
+    });
+    const marketing = () =>
+      document.querySelector('[data-category="marketing"]') as HTMLInputElement;
+
+    m.showPreferenceCenter();
+    await nextTick();
+    marketing().checked = true;
+    marketing().dispatchEvent(new Event("change"));
+    // The tick renders, as between two clicks in a browser
+    await nextTick();
+    (document.querySelector(".consent-modal__btn--reject-all") as HTMLButtonElement).click();
+    await nextTick();
+    await nextTick();
+
+    expect(video).toBeDefined();
+    expect(m.getConsentRequest()?.categories).toEqual(["marketing"]);
+    expect(marketing().checked).toBe(false);
+    app.unmount();
+  });
+
   it("Vue: unmounting the dialog while a request is open answers it", async () => {
     const { m, app } = await vueDialog();
     const answer = m.requestConsent("functional", { reason: SIGN_IN });

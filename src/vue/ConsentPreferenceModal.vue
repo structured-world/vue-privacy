@@ -77,17 +77,19 @@ const modalConfig = computed(() => {
   };
 });
 
-// Load current consent state when modal opens
+// Open as the manager sees it: a hide and a show in one turn (a consent callback asking again
+// as the dialog closes) leave `visible` true throughout, which Vue reports as no change at all
+let open = false;
+
+// The toggles on every opening: the visitor's stored choice, else all unticked (toggles of a
+// dialog closed without saving chose nothing)
+function loadToggles() {
+  const currentConsent = consentManager?.getConsent();
+  categories.value = currentConsent ? { ...currentConsent.categories } : { ...UNTICKED };
+}
+
 watch(visible, async (isVisible) => {
   if (isVisible) {
-    const currentConsent = consentManager?.getConsent();
-    if (currentConsent) {
-      categories.value = { ...currentConsent.categories };
-    } else {
-      // Every open: toggles of a dialog closed without saving chose nothing
-      categories.value = { ...UNTICKED };
-    }
-
     await nextTick();
     // Focus the modal container for screen readers; user can Tab into controls
     modalRef.value?.focus();
@@ -103,10 +105,15 @@ onMounted(() => {
     consentManager.onShowPreferenceCenter(() => {
       // A request joining the open dialog shows its reason; the toggles stay as the visitor set them
       request.value = consentManager.getConsentRequest();
+      if (!open) {
+        open = true;
+        loadToggles();
+      }
       visible.value = true;
     });
 
     consentManager.onHidePreferenceCenter(() => {
+      open = false;
       request.value = null;
       visible.value = false;
     });
