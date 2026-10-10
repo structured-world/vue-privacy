@@ -376,13 +376,27 @@ export class ConsentManager {
     }
     if (this.consentInEffect().categories?.[category] === true) return Promise.resolve(true);
     return new Promise((resolve) => {
-      this.consentRequests.push({ category, reason: options.reason, resolve });
-      if (this.preferenceCenterShown) {
-        // Open already: the dialog reads the request again, and the site's show callback, which
-        // reports an opening, does not run a second time.
-        this.showPreferenceCenterCallback?.();
-      } else {
-        this.showPreferenceCenter();
+      const request = { category, reason: options.reason, resolve };
+      this.consentRequests.push(request);
+      const opening = !this.preferenceCenterShown;
+      try {
+        if (opening) {
+          this.showPreferenceCenter();
+        } else {
+          // Open already: the dialog reads the request again, and the site's show callback, which
+          // reports an opening, does not run a second time.
+          this.showPreferenceCenterCallback?.();
+        }
+      } catch (error) {
+        // A site's dialog or show callback failed: the visitor was not asked, so nothing is
+        // granted, and the request is dropped instead of waiting on a dialog that did not open.
+        console.error("[vue-privacy] preference centre failed to open", error);
+        this.consentRequests = this.consentRequests.filter((r) => r !== request);
+        if (opening) {
+          this.preferenceCenterShown = false;
+          this.preferenceCenterPending = false;
+        }
+        resolve(false);
       }
     });
   }
@@ -1506,6 +1520,9 @@ export class ConsentManager {
     // init() stops instead of restoring or granting what it read before the reset.
     this.consentEpoch++;
     this.reconcile(false);
+    // The open preference centre would cover the banner, and the requests it asks for were about
+    // the choice just cleared: they are answered false, and the banner asks afresh.
+    if (this.preferenceCenterShown || this.consentRequests.length > 0) this.closePreferenceCenter();
     // A pending init() stops after this reset, so with no banner mounted yet the reset itself
     // leaves the banner pending for the component that mounts later.
     this.requestBanner();

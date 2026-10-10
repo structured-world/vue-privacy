@@ -319,6 +319,52 @@ describe("requestConsent", () => {
     expect(m.getConsentRequest()).toBeNull();
   });
 
+  it("a reset answers the open request false and closes its dialog before the banner asks", async () => {
+    const { m } = await refusedManager();
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const showBanner = vi.fn();
+    m.onShowBanner(showBanner);
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    m.resetConsent();
+    await expect(answer).resolves.toBe(false);
+    expect(hide).toHaveBeenCalledOnce();
+    expect(hide.mock.invocationCallOrder[0]).toBeLessThan(showBanner.mock.invocationCallOrder[0]);
+    expect(m.getConsentRequest()).toBeNull();
+  });
+
+  it("a throwing show callback leaves no stale request: it answers false and the next call asks", async () => {
+    const { m } = await refusedManager();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    m.onShowPreferenceCenter(() => {
+      throw new Error("site dialog failed");
+    });
+
+    await expect(m.requestConsent("functional")).resolves.toBe(false);
+    expect(error).toHaveBeenCalled();
+    expect(m.getConsentRequest()).toBeNull();
+
+    const show = vi.fn();
+    m.onShowPreferenceCenter(show);
+    void m.requestConsent("functional");
+    expect(show).toHaveBeenCalledOnce();
+  });
+
+  it("a throwing onPreferenceCenterShow leaves no stale request either", async () => {
+    const { m, show } = await refusedManager();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    m.getConfig().onPreferenceCenterShow = () => {
+      throw new Error("site callback failed");
+    };
+
+    await expect(m.requestConsent("functional")).resolves.toBe(false);
+    expect(m.getConsentRequest()).toBeNull();
+    m.getConfig().onPreferenceCenterShow = undefined;
+    void m.requestConsent("functional");
+    expect(show).toHaveBeenCalledTimes(2);
+  });
+
   it("answers false to pending callers when the manager is destroyed", async () => {
     const { m } = await refusedManager();
     const answer = m.requestConsent("functional");
