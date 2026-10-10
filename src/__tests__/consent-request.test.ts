@@ -365,6 +365,42 @@ describe("requestConsent", () => {
     expect(show).toHaveBeenCalledTimes(2);
   });
 
+  it("a throwing onPreferenceCenterShow closes the dialog its component already showed", async () => {
+    // The request already answered false; a dialog left open would ask a question nobody waits on.
+    const { m } = await refusedManager();
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    m.getConfig().onPreferenceCenterShow = () => {
+      throw new Error("site callback failed");
+    };
+
+    await expect(m.requestConsent("functional", { reason: SIGN_IN })).resolves.toBe(false);
+    expect(hide).toHaveBeenCalledOnce();
+  });
+
+  it("a dialog that fails to open and to close still answers false and reports both", async () => {
+    const { m } = await refusedManager();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    m.onShowPreferenceCenter(() => {
+      throw new Error("site dialog failed to open");
+    });
+    m.onHidePreferenceCenter(() => {
+      throw new Error("site dialog failed to close");
+    });
+
+    await expect(m.requestConsent("functional")).resolves.toBe(false);
+    expect(error).toHaveBeenCalledWith(
+      "[vue-privacy] preference centre failed to open",
+      expect.any(Error)
+    );
+    expect(error).toHaveBeenCalledWith(
+      "[vue-privacy] preference centre failed to close",
+      expect.any(Error)
+    );
+    expect(m.getConsentRequest()).toBeNull();
+  });
+
   it("a reset made in another tab answers the open request and closes its dialog (basic mode)", async () => {
     const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST2" };
     const { m } = await refusedManager(config);
@@ -403,6 +439,37 @@ describe("requestConsent", () => {
     expect(await settled(video as Promise<boolean>)).toBe(false);
     expect(m.getConsentRequest()).toEqual({ categories: ["marketing"], reasons: [VIDEO] });
     expect(show.mock.calls.length).toBeGreaterThan(shownBefore);
+  });
+
+  it("closes the dialog once when a callback resets while following another tab (basic mode)", async () => {
+    // The callback's reset closes the dialog and asks with the banner itself; following the other
+    // tab must not do either a second time.
+    const config: ConsentConfig = { consentMode: "basic", gaId: "G-REQUEST4" };
+    const { m } = await refusedManager(config);
+    const hide = vi.fn();
+    m.onHidePreferenceCenter(hide);
+    const onBannerShow = vi.fn();
+    m.getConfig().onBannerShow = onBannerShow;
+    let reset = false;
+    m.onConsentChange((categories) => {
+      if (categories.functional && !reset) {
+        reset = true;
+        m.resetConsent();
+      }
+    });
+    const answer = m.requestConsent("functional", { reason: SIGN_IN });
+
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 1000);
+    const otherTab = manager(config);
+    await otherTab.init();
+    await otherTab.savePreferences({ functional: true });
+    window.dispatchEvent(new Event("focus"));
+
+    expect(reset).toBe(true);
+    // The reset cleared the grant the other tab made
+    await expect(answer).resolves.toBe(false);
+    expect(hide).toHaveBeenCalledOnce();
+    expect(onBannerShow).toHaveBeenCalledOnce();
   });
 
   it("a dialog that fails when it mounts late answers every waiting request false", async () => {

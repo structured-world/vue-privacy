@@ -333,6 +333,14 @@ export class ConsentManager {
     this.preferenceCenterShown = false;
     this.preferenceCenterPending = false;
     for (const request of this.consentRequests.splice(0)) request.resolve(false);
+    // The component may show the dialog already (the site's onPreferenceCenterShow failed after
+    // it did): its question is answered, so it closes. The site's hide hook stays silent, as its
+    // show hook never completed.
+    try {
+      this.hidePreferenceCenterCallback?.();
+    } catch (hideError) {
+      console.error("[vue-privacy] preference centre failed to close", hideError);
+    }
   }
 
   /**
@@ -1292,8 +1300,12 @@ export class ConsentManager {
   private syncFromOutside(): boolean {
     if (!this.consentSettled) return false;
     const acted = this.actedOnRecord;
+    const epoch = this.consentEpoch;
     const pending = [...this.consentRequests];
     const allowed = this.reconcile();
+    // A consent callback answered the change with its own decision (a reset, a choice), which
+    // closed the dialog, answered these requests and showed or closed the banner itself.
+    if (this.consentEpoch !== epoch) return allowed;
     const answered = this.actedOnRecord === acted ? [] : pending;
     this.consentRequests = this.consentRequests.filter((r) => !answered.includes(r));
     if (this.actedOnRecord === acted) return allowed;

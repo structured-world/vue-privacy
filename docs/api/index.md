@@ -121,11 +121,29 @@ if (manager.isInitialized()) {
 
 #### `resetConsent(): void`
 
-Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses.
+Forget the stored choice and show the banner again. The consent signals go back to `denied` until the user chooses. An open preference centre closes first, and its pending `requestConsent()` calls answer `false`.
 
 ```typescript
 manager.resetConsent();
 ```
+
+#### `requestConsent(category, options?): Promise<boolean>`
+
+Ask again for an optional category a feature needs, at the moment it is needed, with `options.reason` shown above the categories. A category in effect (granted by the visitor, or by the jurisdiction) resolves `true` at once and shows nothing. Otherwise the preference centre opens with the category highlighted, never pre-ticked, and the promise resolves whether the category is granted after the visitor's choice; closing the dialog resolves `false` and keeps the stored refusal. A call while the dialog is open joins it, and each caller gets its own answer. A call before `init()` settled waits for it; after `destroy()` it resolves `false`. Rejects for a category outside `usedCategories`, which no choice can grant. See [Asking again](/guide/preference-center#asking-again-when-a-feature-needs-a-category).
+
+```typescript
+const allowed = await manager.requestConsent("functional", {
+  reason: "Sign-in needs functional cookies to keep you logged in.",
+});
+```
+
+#### `getConsentRequest(): ConsentRequest | null`
+
+What the open preference centre is asked for: the requested `categories` and the sites' `reasons`, for a custom dialog to show; `null` when no request is pending.
+
+#### `hidePreferenceCenter(): void`
+
+Close the preference centre without a choice (a custom dialog's close button, Escape, a click outside). The stored choice stands, and each pending `requestConsent()` call is answered from it.
 
 ## Google Tag Functions
 
