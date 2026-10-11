@@ -310,6 +310,41 @@ describe("ConsentManager with remote storage", () => {
     }
   );
 
+  // A refusal clears consent_uid. When a consent callback replaces it at once with a grant, the
+  // refusal's write is dropped, and the grant must still go to the shared record the refusal took
+  // over, not to a new one.
+  it("keeps the shared ID when a callback replaces a refusal", async () => {
+    const local = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=shared-account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    let replaced = false;
+    const manager: ConsentManager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics || replaced) return;
+        replaced = true;
+        void manager.acceptAll();
+      },
+    });
+
+    await manager.init();
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalled());
+    expect(mockStorage.set.mock.calls.map((call) => call[0])).toEqual(["shared-account"]);
+    expect(mockStorage.set.mock.calls[0][1].categories.analytics).toBe(true);
+  });
+
   // A choice made before init() is supported too; its write must also go to the shared ID.
   it("writes a choice made before init() to a shared consent_uid", async () => {
     cookieStore = "consent_uid=shared-account";

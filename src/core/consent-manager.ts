@@ -902,6 +902,10 @@ export class ConsentManager {
 
     this.storeAndConfirm(record);
     if (!hasNonNecessary) {
+      // The ID stays this page's record once its cookie is gone: a choice that replaces this
+      // refusal before its write runs (a consent callback's) drops that write and must update
+      // the same record.
+      if (this.remoteStorage) this.userId ??= recordId;
       // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
       // an earlier remote grant, should the remote write of this refusal fail.
       clearConsentUid(this.config);
@@ -1486,7 +1490,8 @@ export class ConsentManager {
     this.impliedChoice = null;
     // This page's earlier choice reached the cookie, which is gone now where it is visible:
     // another tab reset. The remote record it named is abandoned, as after a local reset; the
-    // next write starts from whatever ID the cookie names now.
+    // next write starts from whatever ID the cookie names now. A choice init() restored counts
+    // too: reconcile() made it this page's choice and marked the cookie confirmed.
     if (
       this.pageChoice !== null &&
       this.cookieConfirmed &&
