@@ -11,6 +11,7 @@ import ConsentDebugPanel from "./components/ConsentDebugPanel.vue";
 // visitor allows analytics, and asking everyone needs no country lookup, so no third party
 // sees the visitor's address before a choice. The site measures visits only, so only
 // analytics is offered. GitHub Pages serves no API: the choice stays in the consent cookie.
+// docs/privacy.md tells visitors what this setup does: change the two together.
 const consentTheme = enhanceWithConsent(DefaultTheme, {
   gaId: "G-DX5Y29J2QQ",
   consentMode: "basic",
