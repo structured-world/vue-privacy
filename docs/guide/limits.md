@@ -28,7 +28,7 @@ Cloudflare headers, an IP lookup and the browser time zone give the visitor's li
 
 ## CCPA Support Is a Building Block
 
-With `ccpaEnabled` set, `isCCPAUser()` tells you after region detection that a visitor is in a covered US state, and the "Do Not Sell" label comes from `doNotSellText` or the locale's translation. The site renders the link, honours the opt-out across its systems and covers what the state laws require beyond that; the list of covered states does not track every US privacy law.
+With `ccpaEnabled` set, `isCCPAUser()` tells you after region detection that a visitor is in a covered US state, and the "Do Not Sell" label comes from `doNotSellText` or the locale's translation. It needs the visitor's state, which only the Worker endpoint (`geoUrl`) and the IP API supply: Cloudflare headers and the time zone give a country only, and `geoDetection: 'always'` looks nothing up, so with those `isCCPAUser()` stays `false`. The site renders the link, honours the opt-out across its systems and covers what the state laws require beyond that; the list of covered states does not track every US privacy law.
 
 ## Remote Storage Syncs What You Link
 

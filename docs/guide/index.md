@@ -44,7 +44,7 @@ app.use(createConsentPlugin({
 
 This handles: gtag.js loading, Consent Mode v2 signals, region detection, the consent banner in 31 languages, and consent persistence. VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router.
 
-For the strictest promise, the library's Google tag silent until the visitor allows analytics, add `consentMode: 'basic'` (and `geoDetection: 'always'` to ask every visitor). This site runs that setup. [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode) explains the difference.
+To keep the library's Google tag silent until the visitor allows analytics, add `consentMode: 'basic'` (and `geoDetection: 'always'` to ask every visitor). This site runs that setup. [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode) explains the difference.
 
 ## What It Does
 

@@ -70,11 +70,19 @@ const issueUrl = computed(() => {
 
 const tooLong = computed(() => issueUrl.value.length > MAX_ISSUE_URL_LENGTH);
 
+// The address just opened: shown as a link too, since a blocked pop-up cannot be told apart
+// (window.open() with noopener returns null either way) and the form is cleared.
+const openedUrl = ref("");
+const openedLinkRef = ref<HTMLElement | null>(null);
+
 function submit() {
   if (!isValid.value || tooLong.value) return;
-  window.open(issueUrl.value, "_blank", "noopener");
+  openedUrl.value = issueUrl.value;
+  window.open(openedUrl.value, "_blank", "noopener");
   state.value = "opened";
   resetForm();
+  // The submit button is gone: keep keyboard focus inside the dialog.
+  nextTick(() => openedLinkRef.value?.focus());
 }
 
 const panelRef = ref<HTMLElement | null>(null);
@@ -213,6 +221,9 @@ onUnmounted(() => {
           <polyline points="22 4 12 14.01 9 11.01" />
         </svg>
         <p>Thanks! Review and submit the issue in the GitHub tab that just opened.</p>
+        <a ref="openedLinkRef" :href="openedUrl" target="_blank" rel="noopener" class="bug-link">
+          No tab opened? Open the issue on GitHub
+        </a>
       </div>
 
       <!-- Form -->
@@ -515,6 +526,11 @@ onUnmounted(() => {
   font-size: 15px;
   color: var(--vp-c-text-1);
   margin: 0;
+}
+
+.bug-link {
+  font-size: 13px;
+  color: var(--vp-c-brand-1);
 }
 
 /* Footer */
