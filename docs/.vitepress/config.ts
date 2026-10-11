@@ -6,7 +6,7 @@ const hostname = "https://privacy.sw.foundation";
 
 // The site's description: the docs home, its JSON-LD, and every page without its own
 const siteDescription =
-  "GDPR cookie consent banner for Vue 3, Nuxt, VitePress and Quasar: Google Consent Mode v2 for GA4, 31 languages, region detection and SPA page tracking.";
+  "Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking: Google Consent Mode v2 with a basic mode that loads its Google tag only after consent, 31 languages, no backend required.";
 
 // Page title mappings for breadcrumbs
 const pageTitles: Record<string, string> = {
@@ -29,6 +29,7 @@ const pageTitles: Record<string, string> = {
   analytics: "Analytics Overview",
   ecommerce: "Ecommerce Tracking",
   platform: "Privacy Platform",
+  limits: "Limits",
   types: "Types",
 };
 
@@ -232,6 +233,7 @@ export default defineConfig({
             { text: "Script Blocking", link: "/guide/script-blocking" },
             { text: "Consent Jurisdictions", link: "/guide/consent-jurisdictions" },
             { text: "Customization", link: "/guide/customization" },
+            { text: "Limits", link: "/guide/limits" },
           ],
         },
         {

@@ -60,7 +60,21 @@ That's it! The banner automatically shows for visitors in a [consent jurisdictio
 
 ### 3. SPA Page Tracking (Vue Router)
 
-For single-page apps with Vue Router, use `trackPageView` to track navigations:
+Add `router` to the plugin registration from step 1 (install the plugin once): each client-side navigation then sends a page view, with `ga4Title` from the route meta as its title, and a route's `ga4Event` is sent as a separate event:
+
+```typescript
+// main.ts: step 1's registration, with the router
+import router from './router'; // your Vue Router instance
+
+app.use(router);
+app.use(createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  geoDetection: 'auto',
+  router,
+}));
+```
+
+For custom logic, leave `router` out and track navigations yourself with `trackPageView`:
 
 ```vue
 <!-- App.vue or a layout component -->
@@ -109,6 +123,7 @@ import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(createConsentPlugin({
     gaId: 'G-XXXXXXXXXX',
+    router: nuxtApp.$router, // page views on every client-side navigation
   }));
 });
 ```
@@ -143,6 +158,6 @@ await manager.rejectAll();
 3. **Consent defaults** — visitors there (or whose lookup failed) start with `denied`, others with `granted`
 4. **Banner display** — shows only for visitors in consent jurisdictions without stored consent
 5. **User choice** — consent stored in cookie, Google Consent Mode signals updated
-6. **Page tracking** — automatic in VitePress and Quasar; use `trackPageView()` with Vue Router (see example above)
+6. **Page tracking**: automatic in VitePress and Quasar, and in Vue 3 and Nuxt once the router is passed to the plugin; `trackPageView()` is only for an app that tracks navigations itself instead (use one or the other, not both, or each navigation is counted twice)
 
 Visitors elsewhere get analytics enabled without seeing the banner.

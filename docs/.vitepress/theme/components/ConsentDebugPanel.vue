@@ -18,7 +18,8 @@ const geoLog = ref<GeoDetectionLogEntry[]>([]);
 const consent = ref<StoredConsent | null>(null);
 const googleSignals = ref<GoogleConsentSignals | null>(null);
 const rawPreferences = ref("");
-const rawUid = ref("");
+const consentMode = ref("advanced");
+const tagPresent = ref(false);
 const showCookies = ref(false);
 const showGeoLog = ref(false);
 
@@ -27,7 +28,7 @@ const methodLabels: Record<string, string> = {
   worker: "Cloudflare Worker",
   api: "IP API (ipapi.co)",
   fallback: "Timezone Heuristic",
-  manual: "Manual Override",
+  manual: "Set by geoDetection",
   stored: "Stored Choice",
 };
 
@@ -47,6 +48,11 @@ function refresh() {
   geoResult.value = consentApi.getGeoResult();
   geoLog.value = consentApi.manager.getGeoDetectionLog();
   consent.value = consentApi.getConsent();
+  consentMode.value = consentApi.manager.getConfig().consentMode ?? "advanced";
+  // Whether the Google tag script element is on the page at all (not whether it loaded).
+  tagPresent.value =
+    typeof document !== "undefined" &&
+    document.querySelector('script[src*="googletagmanager.com/gtag/js"]') !== null;
 
   if (consent.value) {
     googleSignals.value = categoriesToGoogleSignals(consent.value.categories);
@@ -55,7 +61,6 @@ function refresh() {
   }
 
   rawPreferences.value = getCookieValue("consent_preferences");
-  rawUid.value = getCookieValue("consent_uid");
 }
 
 function resetConsent() {
@@ -262,6 +267,14 @@ onMounted(() => {
         <!-- Google Consent Mode -->
         <div class="debug-section">
           <div class="debug-section-title">Google Consent Mode v2</div>
+          <div class="debug-row">
+            <span class="debug-label">Mode</span>
+            <span class="val-code">{{ consentMode }}</span>
+          </div>
+          <div class="debug-row">
+            <span class="debug-label">Google tag on the page</span>
+            <span :class="tagPresent ? 'val-yes' : 'val-no'">{{ tagPresent ? "Yes" : "No" }}</span>
+          </div>
           <template v-if="googleSignals">
             <div class="debug-row" v-for="(val, key) in googleSignals" :key="key">
               <span class="debug-label">{{ key }}</span>
@@ -281,10 +294,6 @@ onMounted(() => {
             Cookies {{ showCookies ? "▾" : "▸" }}
           </button>
           <div v-if="showCookies" class="debug-cookies">
-            <div class="debug-row">
-              <span class="debug-label">consent_uid</span>
-              <span class="val-code val-mono">{{ rawUid || "(empty)" }}</span>
-            </div>
             <div class="debug-cookie-raw">
               <span class="debug-label">consent_preferences</span>
               <pre class="val-pre">{{ rawPreferences || "(empty)" }}</pre>
@@ -450,11 +459,6 @@ onMounted(() => {
   font-family: var(--vp-font-family-mono);
   font-size: 12px;
   color: var(--vp-c-text-1);
-}
-
-.val-mono {
-  font-size: 11px;
-  word-break: break-all;
 }
 
 .debug-note {

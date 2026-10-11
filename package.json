@@ -1,7 +1,7 @@
 {
   "name": "@structured-world/vue-privacy",
   "version": "2.0.1",
-  "description": "GDPR cookie consent banner and Google Analytics (GA4) for Vue 3, Nuxt, VitePress and Quasar: Google Consent Mode v2, 31 languages, region detection, CCPA, script blocking and SPA page tracking.",
+  "description": "Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking: Google Consent Mode v2 for GA4 with a basic mode that loads its Google tag only after consent, 31 languages, script blocking and SPA page tracking.",
   "license": "Apache-2.0",
   "author": "Dmitry Prudnikov <mail@polaz.com>",
   "packageManager": "yarn@4.12.0",

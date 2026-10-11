@@ -3,6 +3,12 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vitepress";
 
 const MIN_DESCRIPTION_LENGTH = 10;
+// The site is static (GitHub Pages): a report becomes a prefilled GitHub issue the reader
+// reviews and submits there, with no server of ours in between.
+const NEW_ISSUE_URL = "https://github.com/structured-world/vue-privacy/issues/new";
+// GitHub answers a longer prefilled new-issue address with 414 URI Too Long; the form stays
+// filled and asks for a shorter report instead.
+const MAX_ISSUE_URL_LENGTH = 8000;
 
 const CATEGORIES = [
   "Documentation is wrong/outdated",
@@ -14,15 +20,12 @@ const CATEGORIES = [
 
 const route = useRoute();
 
-type WidgetState = "collapsed" | "expanded" | "submitting" | "success" | "error";
+type WidgetState = "collapsed" | "expanded" | "opened";
 
 const state = ref<WidgetState>("collapsed");
 const description = ref("");
 const expected = ref("");
 const category = ref("");
-const honeypot = ref("");
-const errorMessage = ref("");
-const abortController = ref<AbortController | null>(null);
 
 const categories = CATEGORIES;
 
@@ -43,14 +46,9 @@ function resetForm() {
   description.value = "";
   expected.value = "";
   category.value = "";
-  honeypot.value = "";
-  errorMessage.value = "";
 }
 
 function closeWidget() {
-  // Abort any in-flight request to prevent state updates after close
-  abortController.value?.abort();
-  abortController.value = null;
   state.value = "collapsed";
   resetForm();
   nextTick(() => {
@@ -58,67 +56,33 @@ function closeWidget() {
   });
 }
 
-async function submit() {
-  if (!isValid.value) return;
+/** The GitHub new-issue address with the report's title and body filled in. */
+const issueUrl = computed(() => {
+  const text = description.value.trim();
+  const summary = text.split("\n")[0].slice(0, 80);
+  const lines = [`**Page:** ${currentPage.value}`];
+  if (category.value) lines.push(`**Category:** ${category.value}`);
+  lines.push("", "### What happened", text);
+  if (expected.value.trim()) lines.push("", "### What I expected", expected.value.trim());
+  const params = new URLSearchParams({ title: `[docs] ${summary}`, body: lines.join("\n") });
+  return `${NEW_ISSUE_URL}?${params}`;
+});
 
-  // Abort any previous in-flight request
-  abortController.value?.abort();
-  // Capture local reference to avoid race condition with rapid close/resubmit
-  const controller = new AbortController();
-  abortController.value = controller;
+const tooLong = computed(() => issueUrl.value.length > MAX_ISSUE_URL_LENGTH);
 
-  state.value = "submitting";
-  errorMessage.value = "";
+// The address just opened: shown as a link too, since a blocked pop-up cannot be told apart
+// (window.open() with noopener returns null either way) and the form is cleared.
+const openedUrl = ref("");
+const openedLinkRef = ref<HTMLElement | null>(null);
 
-  try {
-    const response = await fetch("/api/report-bug", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        page: currentPage.value,
-        description: description.value.trim(),
-        expected: expected.value.trim() || undefined,
-        category: category.value || undefined,
-        honeypot: honeypot.value,
-      }),
-      signal: controller.signal,
-    });
-
-    // Guard: ignore response if widget was closed during request
-    if (state.value !== "submitting") return;
-
-    if (response.ok) {
-      state.value = "success";
-      resetForm();
-      setTimeout(() => {
-        // Only auto-collapse if still showing success
-        if (state.value === "success") {
-          state.value = "collapsed";
-        }
-      }, 3000);
-    } else {
-      const data = await response.json().catch(() => ({}));
-      // Guard: ignore if widget was closed while parsing response
-      if (state.value !== "submitting") return;
-      errorMessage.value = (data as { error?: string }).error || "Something went wrong";
-      state.value = "error";
-    }
-  } catch (e) {
-    // Silently ignore aborted requests (user closed widget)
-    if (e instanceof DOMException && e.name === "AbortError") {
-      return;
-    }
-    // Guard: ignore error if widget was closed during request
-    if (state.value !== "submitting") return;
-
-    errorMessage.value = "Network error. Please try again.";
-    state.value = "error";
-  } finally {
-    // Only clear if this is still our controller (not replaced by a new request)
-    if (abortController.value === controller) {
-      abortController.value = null;
-    }
-  }
+function submit() {
+  if (!isValid.value || tooLong.value) return;
+  openedUrl.value = issueUrl.value;
+  window.open(openedUrl.value, "_blank", "noopener");
+  state.value = "opened";
+  resetForm();
+  // The submit button is gone: keep keyboard focus inside the dialog.
+  nextTick(() => openedLinkRef.value?.focus());
 }
 
 const panelRef = ref<HTMLElement | null>(null);
@@ -133,8 +97,10 @@ function handleKeydown(e: KeyboardEvent) {
 
   // Focus trap when dialog is open
   if (e.key === "Tab" && state.value !== "collapsed" && panelRef.value) {
+    // Disabled controls take no focus: one left last (the submit button of an invalid form)
+    // would let Tab leave the dialog instead of wrapping.
     const focusable = panelRef.value.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
     if (focusable.length === 0) return;
 
@@ -238,8 +204,8 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Success state -->
-      <div v-if="state === 'success'" class="bug-success">
+      <!-- Issue opened on GitHub -->
+      <div v-if="state === 'opened'" class="bug-success">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           width="32"
@@ -256,22 +222,14 @@ onUnmounted(() => {
           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
           <polyline points="22 4 12 14.01 9 11.01" />
         </svg>
-        <p>Thanks! We'll look into it.</p>
+        <p>Thanks! Review and submit the issue in the GitHub tab that just opened.</p>
+        <a ref="openedLinkRef" :href="openedUrl" target="_blank" rel="noopener" class="bug-link">
+          No tab opened? Open the issue on GitHub
+        </a>
       </div>
 
       <!-- Form -->
       <form v-else @submit.prevent="submit" class="bug-form">
-        <!-- Honeypot (hidden from users) -->
-        <input
-          v-model="honeypot"
-          type="text"
-          name="website"
-          autocomplete="off"
-          tabindex="-1"
-          class="bug-honeypot"
-          aria-hidden="true"
-        />
-
         <div class="bug-field">
           <label for="bug-description">What happened? <span class="required">*</span></label>
           <textarea
@@ -280,7 +238,6 @@ onUnmounted(() => {
             placeholder="Describe what went wrong or was confusing..."
             rows="3"
             required
-            :disabled="state === 'submitting'"
           />
           <span
             v-if="description.length > 0 && description.trim().length < MIN_DESCRIPTION_LENGTH"
@@ -299,37 +256,30 @@ onUnmounted(() => {
             v-model="expected"
             placeholder="What should have happened instead..."
             rows="2"
-            :disabled="state === 'submitting'"
           />
         </div>
 
         <div class="bug-field">
           <label for="bug-category">Category <span class="optional">(optional)</span></label>
-          <select id="bug-category" v-model="category" :disabled="state === 'submitting'">
+          <select id="bug-category" v-model="category">
             <option value="">Select...</option>
             <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
           </select>
         </div>
 
-        <div v-if="state === 'error' && errorMessage" class="bug-error">
-          {{ errorMessage }}
-        </div>
+        <span v-if="tooLong" class="field-hint">
+          Too long for a prefilled GitHub issue: shorten it, or paste the details into the issue
+          after it opens.
+        </span>
 
         <div class="bug-actions">
-          <button type="submit" class="bug-submit" :disabled="!isValid || state === 'submitting'">
-            <span v-if="state === 'submitting'" class="spinner" aria-hidden="true" />
-            {{ state === "submitting" ? "Sending..." : "Send Report" }}
+          <button type="submit" class="bug-submit" :disabled="!isValid || tooLong">
+            Continue on GitHub
           </button>
         </div>
 
         <div class="bug-footer">
-          <a
-            href="https://github.com/structured-world/vue-privacy/issues/new"
-            target="_blank"
-            rel="noopener"
-          >
-            Or report on GitHub
-          </a>
+          Opens a prefilled issue; a GitHub account is needed to submit it.
         </div>
       </form>
     </div>
@@ -517,16 +467,6 @@ onUnmounted(() => {
   color: var(--vp-c-danger-1);
 }
 
-/* Honeypot: visually hidden but accessible to bots */
-.bug-honeypot {
-  position: absolute;
-  left: -9999px;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-}
-
 /* Actions */
 .bug-actions {
   margin-top: 4px;
@@ -556,30 +496,6 @@ onUnmounted(() => {
 .bug-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Error */
-.bug-error {
-  padding: 8px 10px;
-  background: var(--vp-c-danger-soft);
-  color: var(--vp-c-danger-1);
-  border-radius: 6px;
-  font-size: 13px;
 }
 
 /* Success */
@@ -614,21 +530,17 @@ onUnmounted(() => {
   margin: 0;
 }
 
+.bug-link {
+  font-size: 13px;
+  color: var(--vp-c-brand-1);
+}
+
 /* Footer */
 .bug-footer {
   text-align: center;
   padding-top: 4px;
-}
-
-.bug-footer a {
   font-size: 12px;
   color: var(--vp-c-text-3);
-  text-decoration: none;
-}
-
-.bug-footer a:hover {
-  color: var(--vp-c-brand-1);
-  text-decoration: underline;
 }
 
 /* Mobile responsive */
