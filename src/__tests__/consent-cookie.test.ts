@@ -204,6 +204,56 @@ describe("the consent cookie", () => {
     }
   });
 
+  it("treats a consent cookie with malformed fields as absent, granting nothing", async () => {
+    // Regression: the field values were passed on unchecked and read by truthiness, so a
+    // category stored as the string "false" (by hand, by another app under the same name, by a
+    // corrupted write) counted as a grant. A record that is not what the library writes is no
+    // choice: the visitor is asked again.
+    const valid = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: 42,
+      version: "1.0",
+      consentRequired: true,
+    };
+    const granted = { analytics: true, marketing: true, functional: true };
+    // Records as JSON text: a number that overflows to Infinity has no JSON.stringify form.
+    const malformed: string[] = [
+      { ...valid, categories: { analytics: "false", marketing: false, functional: false } },
+      { ...valid, categories: { analytics: 1, marketing: false, functional: false } },
+      { ...valid, categories: { analytics: false, marketing: null, functional: false } },
+      // A category missing (or all of them) is no stored choice, not a refusal or a grant.
+      { ...valid, categories: {} },
+      { ...valid, categories: { analytics: true } },
+      { ...valid, timestamp: "42" },
+      { ...valid, version: 1 },
+      { ...valid, consentRequired: "true" },
+      { categories: valid.categories, timestamp: 42, version: "1.0", isEU: "yes" },
+      // A present but malformed flag is not replaced by its earlier name.
+      { ...valid, categories: granted, consentRequired: null, isEU: true },
+    ].map((record) => JSON.stringify(record));
+    malformed.push(
+      JSON.stringify({ ...valid, categories: granted }).replace(
+        '"timestamp":42',
+        '"timestamp":1e400'
+      )
+    );
+    for (const record of malformed) {
+      cookieStore = `consent_preferences=${encodeURIComponent(record)}`;
+      const showBanner = vi.fn();
+      const manager = new ConsentManager({
+        version: "1.0",
+        geoDetector: detecting({ consentRequired: true, countryCode: "DE", method: "api" }),
+      });
+      manager.onShowBanner(showBanner);
+
+      await manager.init();
+
+      expect({ record, banner: showBanner.mock.calls.length }).toEqual({ record, banner: 1 });
+      expect({ record, consent: manager.getConsent() }).toEqual({ record, consent: null });
+      manager.destroy();
+    }
+  });
+
   it("leaves a cookie of the current format as it is on load", async () => {
     // A rewrite on every load would restart the cookie's lifetime with each visit.
     cookieStore = `consent_preferences=${encodeURIComponent(

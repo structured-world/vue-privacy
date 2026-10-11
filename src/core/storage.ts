@@ -199,6 +199,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The categories every written record holds. */
+const OPTIONAL_CATEGORIES = ["analytics", "marketing", "functional"] as const;
+
+/**
+ * Whether a parsed cookie has the fields and types the library writes. Categories are read by
+ * truthiness downstream, so a string "false" would count as a grant and a missing one as a
+ * refusal nobody made: anything else is no choice, and the visitor is asked again.
+ */
+function hasStoredTypes(record: Record<string, unknown>, categories: Record<string, unknown>) {
+  const isFlag = (value: unknown) => value === undefined || typeof value === "boolean";
+  return (
+    OPTIONAL_CATEGORIES.every((category) => typeof categories[category] === "boolean") &&
+    Object.values(categories).every((granted) => typeof granted === "boolean") &&
+    // JSON.stringify writes no Infinity, so an overflowing literal (1e400) was never ours.
+    Number.isFinite(record.timestamp) &&
+    typeof record.version === "string" &&
+    // Each flag present is checked itself: a malformed consentRequired is not replaced by isEU.
+    isFlag(record.consentRequired) &&
+    isFlag(record.isEU)
+  );
+}
+
 /** The fields the consent cookie holds. */
 const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
 
@@ -221,6 +243,7 @@ function parseConsentCookie(
   // Valid JSON that is no consent record (null, a number, a record without categories, written
   // by hand or by another app under the same name) counts as no cookie.
   if (!isRecord(parsed) || !isRecord(parsed.categories)) return null;
+  if (!hasStoredTypes(parsed, parsed.categories)) return null;
   const stored = parsed as unknown as StoredConsent & { isEU?: boolean };
   const consentRequired = stored.consentRequired ?? stored.isEU;
   return {
