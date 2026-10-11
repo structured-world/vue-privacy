@@ -187,6 +187,36 @@ describe("initScriptBlocker with ConsentManager", () => {
     manager.destroy();
   });
 
+  // A node created in a same-origin iframe keeps that window's prototypes when moved here, so a
+  // check against this window's Element class would miss it.
+  it("unblocks a granted script created in another window", async () => {
+    document.cookie = "consent_preferences=; max-age=0; path=/";
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
+      },
+    });
+    await manager.init();
+    await manager.acceptAll();
+
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const other = frame.contentDocument as Document;
+    const script = other.createElement("script");
+    script.type = "text/plain";
+    script.setAttribute("data-consent-category", "analytics");
+    script.setAttribute("src", "https://example.com/framed.js");
+    const container = other.createElement("div");
+    container.appendChild(script);
+    document.body.appendChild(container);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      document.querySelector('script[src="https://example.com/framed.js"]')?.getAttribute("type")
+    ).not.toBe("text/plain");
+    manager.destroy();
+  });
+
   it("keeps a refused script blocked when added inside a container", async () => {
     document.cookie = "consent_preferences=; max-age=0; path=/";
     const manager = new ConsentManager({

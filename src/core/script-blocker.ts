@@ -70,10 +70,11 @@ function observeNewScripts(
     for (const mutation of mutations) {
       for (const node of Array.from(mutation.addedNodes)) {
         // The blocked script itself, or one inside an added container (a component, a fragment).
-        if (
-          node instanceof Element &&
-          (node.matches(BLOCKED_SELECTOR) || node.querySelector(BLOCKED_SELECTOR) !== null)
-        ) {
+        // nodeType, not instanceof Element: a node made in a same-origin iframe keeps that
+        // window's prototypes when moved here.
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const element = node as Element;
+        if (element.matches(BLOCKED_SELECTOR) || element.querySelector(BLOCKED_SELECTOR) !== null) {
           found = true;
           break;
         }
