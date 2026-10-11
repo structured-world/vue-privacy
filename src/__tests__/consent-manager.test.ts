@@ -275,6 +275,41 @@ describe("ConsentManager with remote storage", () => {
     expect(consent!.categories.analytics).toBe(true);
   });
 
+  // A site links devices by giving them one consent_uid (the signed-in account's ID) before
+  // init(). Regression: with a local choice on the device, init() restored it from the cookie and
+  // never took the ID, so the next choice created a new remote record instead of updating the
+  // shared one, and the other device never saw it.
+  it.each([
+    ["a grant", true],
+    ["a refusal", false],
+  ])(
+    "writes the next choice to a shared consent_uid when %s is stored locally",
+    async (_, granted) => {
+      const local = {
+        categories: { analytics: granted, marketing: granted, functional: granted },
+        timestamp: Date.now(),
+        version: "1.0",
+        consentRequired: true,
+      };
+      cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=shared-account`;
+      const mockStorage = {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue("shared-account"),
+      };
+      const manager = new ConsentManager({
+        storage: mockStorage,
+        geoDetector: createMockGeoDetector(true),
+        version: "1.0",
+      });
+
+      await manager.init();
+      await (granted ? manager.rejectAll() : manager.acceptAll());
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("shared-account");
+    }
+  );
+
   it("blocks remote storage restore and shows banner when user roamed to EU", async () => {
     // User has consent_uid from previous session (consent given outside EU)
     cookieStore = "consent_uid=existing-user-id";

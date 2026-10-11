@@ -32,7 +32,7 @@ With `ccpaEnabled` set, `isCCPAUser()` tells you after region detection that a v
 
 ## Remote Storage Syncs What You Link
 
-The remote record is named by the `consent_uid` cookie, which belongs to one browser. To carry a choice to another device, the site has to give both devices the same ID, for example with `setConsentUid()` and the signed-in user's account ID. The manager reads the ID once, in `init()`: set it before that, or reload the page after a sign-in, else this page keeps writing to the record it started with. The shared ID is picked up only on a device with no local choice yet: where the consent cookie already holds one, the next choice starts a new record ([#251](https://github.com/structured-world/vue-privacy/issues/251)). Even then a remote record is restored only outside consent jurisdictions: it does not keep where the choice was made, so a visitor in the EEA or the UK is asked again on the new device.
+The remote record is named by the `consent_uid` cookie, which belongs to one browser. To carry a choice to another device, the site has to give both devices the same ID, for example with `setConsentUid()` and the signed-in user's account ID. The manager reads the ID once, in `init()`: set it before that, or reload the page after a sign-in, else this page keeps writing to the record it started with. A device that already holds a local choice keeps it on load (the remote record is read only where the consent cookie is missing), and its next choice updates the shared record. Even then a remote record is restored only outside consent jurisdictions: it does not keep where the choice was made, so a visitor in the EEA or the UK is asked again on the new device.
 
 ## Translations
 

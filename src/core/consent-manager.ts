@@ -569,6 +569,10 @@ export class ConsentManager {
 
   private async decideInitialConsent(): Promise<void> {
     const epoch = this.consentEpoch;
+    // The remote record this visitor's writes go to, whatever path decides the consent below: a
+    // site that links devices sets the shared ID before init(), also where a local choice
+    // already exists and the remote record is never read.
+    if (this.remoteStorage && this.userId === null) this.userId = getConsentUid();
 
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
@@ -683,7 +687,6 @@ export class ConsentManager {
     uid: string,
     epoch: number
   ): Promise<boolean> {
-    this.userId = uid;
     const version = this.config.version ?? DEFAULT_CONFIG.version;
     try {
       const remote = await storage.get(uid, version);
