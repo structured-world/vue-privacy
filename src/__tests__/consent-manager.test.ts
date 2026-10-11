@@ -310,6 +310,44 @@ describe("ConsentManager with remote storage", () => {
     }
   );
 
+  // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made
+  // decodeURIComponent throw, and init() rejected instead of deciding the consent. An undecodable
+  // value counts as absent.
+  it("restores the local choice when consent_uid holds an undecodable value", async () => {
+    const local = {
+      categories: { analytics: true, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=%`;
+    const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+  });
+
+  it("asks again when consent_preferences holds an undecodable value", async () => {
+    cookieStore = "consent_preferences=%";
+    const showBanner = vi.fn();
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    manager.onShowBanner(showBanner);
+
+    await manager.init();
+
+    expect(manager.getConsent()).toBeNull();
+    expect(showBanner).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks remote storage restore and shows banner when user roamed to EU", async () => {
     // User has consent_uid from previous session (consent given outside EU)
     cookieStore = "consent_uid=existing-user-id";

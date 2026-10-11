@@ -126,7 +126,13 @@ export function getCookie(name: string): string | null {
   for (const cookie of cookies) {
     const [key, value] = cookie.trim().split("=");
     if (key === name) {
-      return decodeURIComponent(value);
+      // A value written raw by another app or a server (a lone `%`) does not decode; it is no
+      // value of ours, so it counts as absent instead of failing whatever reads it.
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return null;
+      }
     }
   }
   return null;
