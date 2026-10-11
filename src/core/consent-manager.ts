@@ -571,7 +571,7 @@ export class ConsentManager {
     const epoch = this.consentEpoch;
     // The remote record this visitor's writes go to, whatever path decides the consent below: a
     // site that links devices sets the shared ID before init(), also where a local choice
-    // already exists and the remote record is never read.
+    // already exists and the remote record is never read. An undecodable cookie reads as no ID.
     if (this.remoteStorage && this.userId === null) this.userId = getConsentUid();
 
     // Initialize script blocker (auto-unblocks on consent change)
