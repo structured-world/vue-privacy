@@ -18,7 +18,6 @@ const geoLog = ref<GeoDetectionLogEntry[]>([]);
 const consent = ref<StoredConsent | null>(null);
 const googleSignals = ref<GoogleConsentSignals | null>(null);
 const rawPreferences = ref("");
-const rawUid = ref("");
 const consentMode = ref("advanced");
 const tagLoaded = ref(false);
 const showCookies = ref(false);
@@ -62,7 +61,6 @@ function refresh() {
   }
 
   rawPreferences.value = getCookieValue("consent_preferences");
-  rawUid.value = getCookieValue("consent_uid");
 }
 
 function resetConsent() {
@@ -296,10 +294,6 @@ onMounted(() => {
             Cookies {{ showCookies ? "▾" : "▸" }}
           </button>
           <div v-if="showCookies" class="debug-cookies">
-            <div class="debug-row">
-              <span class="debug-label">consent_uid</span>
-              <span class="val-code val-mono">{{ rawUid || "(empty)" }}</span>
-            </div>
             <div class="debug-cookie-raw">
               <span class="debug-label">consent_preferences</span>
               <pre class="val-pre">{{ rawPreferences || "(empty)" }}</pre>
@@ -465,11 +459,6 @@ onMounted(() => {
   font-family: var(--vp-font-family-mono);
   font-size: 12px;
   color: var(--vp-c-text-1);
-}
-
-.val-mono {
-  font-size: 11px;
-  word-break: break-all;
 }
 
 .debug-note {

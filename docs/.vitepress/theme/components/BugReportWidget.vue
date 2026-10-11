@@ -6,6 +6,9 @@ const MIN_DESCRIPTION_LENGTH = 10;
 // The site is static (GitHub Pages): a report becomes a prefilled GitHub issue the reader
 // reviews and submits there, with no server of ours in between.
 const NEW_ISSUE_URL = "https://github.com/structured-world/vue-privacy/issues/new";
+// GitHub answers a longer prefilled new-issue address with 414 URI Too Long; the form stays
+// filled and asks for a shorter report instead.
+const MAX_ISSUE_URL_LENGTH = 8000;
 
 const CATEGORIES = [
   "Documentation is wrong/outdated",
@@ -54,7 +57,7 @@ function closeWidget() {
 }
 
 /** The GitHub new-issue address with the report's title and body filled in. */
-function issueUrl(): string {
+const issueUrl = computed(() => {
   const text = description.value.trim();
   const summary = text.split("\n")[0].slice(0, 80);
   const lines = [`**Page:** ${currentPage.value}`];
@@ -63,11 +66,13 @@ function issueUrl(): string {
   if (expected.value.trim()) lines.push("", "### What I expected", expected.value.trim());
   const params = new URLSearchParams({ title: `[docs] ${summary}`, body: lines.join("\n") });
   return `${NEW_ISSUE_URL}?${params}`;
-}
+});
+
+const tooLong = computed(() => issueUrl.value.length > MAX_ISSUE_URL_LENGTH);
 
 function submit() {
-  if (!isValid.value) return;
-  window.open(issueUrl(), "_blank", "noopener");
+  if (!isValid.value || tooLong.value) return;
+  window.open(issueUrl.value, "_blank", "noopener");
   state.value = "opened";
   resetForm();
 }
@@ -249,8 +254,15 @@ onUnmounted(() => {
           </select>
         </div>
 
+        <span v-if="tooLong" class="field-hint">
+          Too long for a prefilled GitHub issue: shorten it, or paste the details into the issue
+          after it opens.
+        </span>
+
         <div class="bug-actions">
-          <button type="submit" class="bug-submit" :disabled="!isValid">Continue on GitHub</button>
+          <button type="submit" class="bug-submit" :disabled="!isValid || tooLong">
+            Continue on GitHub
+          </button>
         </div>
 
         <div class="bug-footer">
