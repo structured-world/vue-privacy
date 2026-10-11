@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
-import { clearConsentUid } from "../core/storage";
+import { clearConsentUid, setConsentUid } from "../core/storage";
 
 function createMockGeoDetector(consentRequired = false, countryCode?: string, region?: string) {
   return {
@@ -527,6 +527,93 @@ describe("ConsentManager with remote storage", () => {
     } finally {
       window.history.pushState({}, "", "/");
     }
+  });
+
+  // Another tab reset and then refused: the consent cookie is back, consent_uid is not. That
+  // decision replaced the one this page kept an ID for, so the ID may name the record the reset
+  // abandoned, and the next choice must not write to it.
+  it("drops a kept ID once another tab's decision replaced this page's", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Another tab resets, then refuses: a new consent cookie, no consent_uid.
+    const later = { ...refusal, timestamp: Date.now() + 1 };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(later))}`;
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // After a sign-in on a route outside cookie.path, the ID the site sets cannot be read back on
+  // that route. The next choice must still go to it.
+  it("writes to an ID the site set on a route outside cookie.path", async () => {
+    window.history.pushState({}, "", "/other");
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+
+      setConsentUid("account", { cookie: { path: "/app" } });
+      // The browser does not show the new cookie on this route.
+      cookieStore = "";
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // The remote record of a visitor now in a consent jurisdiction is not restored: the banner asks
+  // and consent_uid goes. The answer must still update that record, or other devices linked to
+  // it keep the earlier grant.
+  it("writes the answer to the remote record a jurisdiction change did not restore", async () => {
+    cookieStore = "consent_uid=account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      }),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    expect(manager.getConsent()).toBeNull();
+
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBe("account");
   });
 
   // init() looks up the remote record a consent_uid names; another tab's reset clears both

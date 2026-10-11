@@ -343,17 +343,18 @@ export function clearConsent(config: Partial<ConsentConfig> = {}): void {
   deleteCookie(cookieName, path, config.cookie?.domain);
 }
 
-/** Writes and removals of consent_uid made on this page so far. */
-let uidRevision = 0;
+/** The site's latest setConsentUid() or clearConsentUid() on this page, and how many there were. */
+let siteUid: { revision: number; uid: string | null } = { revision: 0, uid: null };
 
 /**
- * Advanced by every setConsentUid() and clearConsentUid() on this page: a consent manager that
- * keeps an ID the cookie no longer shows tells a site's sign-out or new account apart from a
- * route that cannot see the cookie.
+ * The ID the site last set on this page (null after clearConsentUid()), with a revision advanced
+ * by each such call. A consent manager that keeps an ID the cookie does not show (cleared by a
+ * refusal, or a route outside cookie.path) tells a sign-in or sign-out apart from a route that
+ * cannot read the cookie, and learns the new ID even where it cannot read it back.
  * @internal
  */
-export function consentUidRevision(): number {
-  return uidRevision;
+export function siteConsentUid(): { revision: number; uid: string | null } {
+  return siteUid;
 }
 
 /**
@@ -367,7 +368,24 @@ export function getConsentUid(): string | null {
  * Set consent UID cookie for re-identification
  */
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
-  uidRevision++;
+  siteUid = { revision: siteUid.revision + 1, uid };
+  writeConsentUid(uid, config);
+}
+
+/**
+ * Clear consent UID cookie
+ */
+export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
+  siteUid = { revision: siteUid.revision + 1, uid: null };
+  deleteConsentUid(config);
+}
+
+/**
+ * Write the consent_uid cookie for the consent manager itself, which tracks its own record and
+ * is no sign-in or sign-out of the site.
+ * @internal
+ */
+export function writeConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
   setCookie("consent_uid", uid, {
     expiry: config.cookie?.expiry ?? DEFAULT_CONFIG.cookie.expiry,
     domain: config.cookie?.domain,
@@ -376,10 +394,10 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
 }
 
 /**
- * Clear consent UID cookie
+ * Remove the consent_uid cookie for the consent manager itself (see writeConsentUid()).
+ * @internal
  */
-export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
-  uidRevision++;
+export function deleteConsentUid(config: Partial<ConsentConfig> = {}): void {
   const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
   deleteCookie("consent_uid", path, config.cookie?.domain);
 }
