@@ -5,8 +5,8 @@ const BANNER_CSS = `
   right: 0;
   z-index: 9999;
   padding: 1rem;
-  background: var(--consent-bg, #ffffff);
-  color: var(--consent-text, #1a1a1a);
+  background: var(--consent-bg, var(--_consent-bg, #ffffff));
+  color: var(--consent-text, var(--_consent-text, #1a1a1a));
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
   font-family: var(--consent-font, system-ui, -apple-system, sans-serif);
 }
@@ -45,11 +45,11 @@ const BANNER_CSS = `
   margin: 0 0 1rem;
   font-size: 0.875rem;
   line-height: 1.5;
-  color: var(--consent-text-secondary, #666666);
+  color: var(--consent-text-secondary, var(--_consent-text-secondary, #666666));
 }
 
 .consent-banner__privacy-link {
-  color: var(--consent-link, #0066cc);
+  color: var(--consent-link, var(--_consent-link, #0066cc));
   text-decoration: underline;
 }
 
@@ -92,7 +92,7 @@ const BANNER_CSS = `
 
 .consent-banner__btn--customize {
   background: transparent;
-  color: var(--consent-link, #0066cc);
+  color: var(--consent-link, var(--_consent-link, #0066cc));
   border: 1px solid currentColor;
 }
 
@@ -123,21 +123,23 @@ const BANNER_CSS = `
 }
 
 /* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never.
+   It sets the private --_consent-* properties, which the rules read only after the public
+   ones: a site's own --consent-* colours win under every theme.
    The link colour keeps the privacy link and the customize button at 4.5:1 or more on the dark
    background (WCAG 2.1 SC 1.4.3); the light palette's #0066cc reaches 3.1:1 there. */
 .consent-banner[data-consent-theme="dark"] {
-  --consent-bg: #1a1a1a;
-  --consent-text: #ffffff;
-  --consent-text-secondary: #a0a0a0;
-  --consent-link: #66b3ff;
+  --_consent-bg: #1a1a1a;
+  --_consent-text: #ffffff;
+  --_consent-text-secondary: #a0a0a0;
+  --_consent-link: #66b3ff;
 }
 
 @media (prefers-color-scheme: dark) {
   .consent-banner[data-consent-theme="auto"] {
-    --consent-bg: #1a1a1a;
-    --consent-text: #ffffff;
-    --consent-text-secondary: #a0a0a0;
-    --consent-link: #66b3ff;
+    --_consent-bg: #1a1a1a;
+    --_consent-text: #ffffff;
+    --_consent-text-secondary: #a0a0a0;
+    --_consent-link: #66b3ff;
   }
 }
 

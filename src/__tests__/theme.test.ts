@@ -19,12 +19,24 @@ const LIGHT_BG = "#ffffff";
 const DARK_BG = "#1a1a1a";
 
 /**
- * The background the stylesheet resolves for `el`: its variable, else the light default, as a
- * six-digit hex colour (the minified stylesheets write `#fff`).
+ * The colour a stylesheet resolves for `variable` on `el` when the site sets none: the public
+ * property if the stylesheet sets it, else the palette's private one (`--_consent-…`), else the
+ * light default, as a six-digit hex colour (the minified stylesheets write `#fff`).
  */
-function background(css: string, el: Element, variable: string, prefersDark: boolean): string {
-  const value = customProperties(css, el, prefersDark)[variable] ?? LIGHT_BG;
+function resolved(
+  css: string,
+  el: Element,
+  variable: string,
+  prefersDark: boolean,
+  fallback: string
+): string {
+  const vars = customProperties(css, el, prefersDark);
+  const value = vars[variable] ?? vars[variable.replace(/^--/, "--_")] ?? fallback;
   return /^#[0-9a-f]{3}$/i.test(value) ? value.replace(/[0-9a-f]/gi, (d) => d + d) : value;
+}
+
+function background(css: string, el: Element, variable: string, prefersDark: boolean): string {
+  return resolved(css, el, variable, prefersDark, LIGHT_BG);
 }
 
 type Theme = NonNullable<ConsentConfig["theme"]>;
@@ -134,9 +146,8 @@ describe("theme", () => {
     }
 
     function linkContrast(css: string, el: Element, bgVariable: string, prefersDark: boolean) {
-      const vars = customProperties(css, el, prefersDark);
       return contrast(
-        vars["--consent-link"] ?? DEFAULT_LINK,
+        resolved(css, el, "--consent-link", prefersDark, DEFAULT_LINK),
         background(css, el, bgVariable, prefersDark)
       );
     }
@@ -179,6 +190,135 @@ describe("theme", () => {
           linkContrast(css, overlay, "--consent-modal-bg", prefersDark)
         ).toBeGreaterThanOrEqual(4.5);
       }
+      banner.destroy();
+      modal.destroy();
+    });
+  });
+
+  // A site styles the dialogs through the public --consent-* properties, usually on :root. A
+  // palette that set those same properties on the component's element (or wrote them onto
+  // :root) would override the site's colours: the palettes keep to private --_consent-* ones,
+  // which the stylesheets read only where the site sets nothing.
+  describe("site colours outrank every palette", () => {
+    const cdnFile = (name: string) =>
+      readFileSync(resolve(import.meta.dirname, "../vanilla", name), "utf8");
+    const publicProperties = (vars: Record<string, string>) =>
+      Object.keys(vars).filter((name) => name.startsWith("--consent-"));
+
+    it.each<[Theme, boolean]>([
+      ["light", false],
+      ["light", true],
+      ["dark", false],
+      ["dark", true],
+      ["auto", false],
+      ["auto", true],
+    ])("theme %s, system dark %s: no stylesheet sets a public property", async (theme, dark) => {
+      const vue = await mountVue({ theme });
+      for (const [css, el] of [
+        [consentBannerCSS, vue.banner],
+        [consentModalCSS, vue.overlay],
+      ] as const) {
+        expect(publicProperties(customProperties(css, el, dark))).toEqual([]);
+        expect(publicProperties(customProperties(css, document.documentElement, dark))).toEqual([]);
+      }
+      vue.unmount();
+
+      const manager = createConsentManager({ theme, geoDetection: "never" });
+      const banner = createBanner({ manager });
+      const modal = createModal({ manager });
+      const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
+      const overlay = document.querySelector(".consent-modal-overlay") as HTMLElement;
+      for (const [css, el] of [
+        [BANNER_CSS, bannerEl],
+        [cdnFile("banner.css"), bannerEl],
+        [MODAL_CSS, overlay],
+        [cdnFile("modal.css"), overlay],
+      ] as const) {
+        expect(publicProperties(customProperties(css, el, dark))).toEqual([]);
+        expect(publicProperties(customProperties(css, document.documentElement, dark))).toEqual([]);
+      }
+      banner.destroy();
+      modal.destroy();
+    });
+
+    // The site's colours on :root reach the element by inheritance; the element's own
+    // declarations (the palette) win over inherited ones, so resolving the rule's var() chain
+    // against both shows what the visitor sees. A palette that set public properties, or a rule
+    // that read the palette before the site, resolves to the palette here.
+    const SITE: Record<string, string> = {
+      "--consent-bg": "#123456",
+      "--consent-link": "#ff8800",
+      "--consent-modal-bg": "#654321",
+    };
+    const DARK: Record<string, string> = {
+      "--consent-bg": DARK_BG,
+      "--consent-link": "#66b3ff",
+      "--consent-modal-bg": DARK_BG,
+    };
+
+    /** A rule's declaration of `property` for exactly `selector`, from the stylesheet text. */
+    function declaration(css: string, selector: string, property: string): string {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&");
+      const rule = new RegExp(`(?:^|[}\\s])${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+      const value = rule && new RegExp(`(?:^|[;{\\s])${property}\\s*:\\s*([^;]+)`).exec(rule[1]);
+      if (!value) throw new Error(`no ${property} for ${selector}`);
+      return value[1].trim();
+    }
+
+    /** Resolves a var() chain the way the cascade does, from the custom properties in `env`. */
+    function resolveVar(value: string, env: Record<string, string>): string {
+      const m = /^var\(\s*(--[\w-]+)\s*(?:,\s*([\s\S]*))?\)$/.exec(value.trim());
+      if (!m) return value.trim();
+      if (env[m[1]] !== undefined) return env[m[1]];
+      return m[2] === undefined ? "" : resolveVar(m[2], env);
+    }
+
+    function seen(
+      css: string,
+      themed: Element,
+      selector: string,
+      property: string,
+      prefersDark: boolean,
+      site: Record<string, string>
+    ): string {
+      const env = { ...site, ...customProperties(css, themed, prefersDark) };
+      return resolveVar(declaration(css, selector, property), env);
+    }
+
+    it.each<[Theme, boolean]>([
+      ["dark", false],
+      ["auto", true],
+    ])("theme %s, system dark %s: the visitor sees the site's colours", async (theme, dark) => {
+      const vue = await mountVue({ theme });
+      const sheets: [string, Element, string, string, string][] = [
+        [consentBannerCSS, vue.banner, ".consent-banner", "background", "--consent-bg"],
+        [consentBannerCSS, vue.banner, ".consent-banner__privacy-link", "color", "--consent-link"],
+        [consentModalCSS, vue.overlay, ".consent-modal", "background", "--consent-modal-bg"],
+      ];
+      const check = () => {
+        for (const [css, el, selector, property, variable] of sheets) {
+          expect(seen(css, el, selector, property, dark, SITE)).toBe(SITE[variable]);
+          // Without site colours the dark palette still applies.
+          expect(seen(css, el, selector, property, dark, {})).toBe(DARK[variable]);
+        }
+      };
+      check();
+      vue.unmount();
+
+      const manager = createConsentManager({ theme, geoDetection: "never" });
+      const banner = createBanner({ manager });
+      const modal = createModal({ manager });
+      const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
+      const overlay = document.querySelector(".consent-modal-overlay") as HTMLElement;
+      sheets.length = 0;
+      for (const css of [BANNER_CSS, cdnFile("banner.css")]) {
+        sheets.push([css, bannerEl, ".consent-banner", "background", "--consent-bg"]);
+        sheets.push([css, bannerEl, ".consent-banner__privacy-link", "color", "--consent-link"]);
+      }
+      for (const css of [MODAL_CSS, cdnFile("modal.css")]) {
+        sheets.push([css, overlay, ".consent-modal", "background", "--consent-modal-bg"]);
+      }
+      check();
       banner.destroy();
       modal.destroy();
     });
