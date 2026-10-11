@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
+import { clearConsentUid } from "../core/storage";
 
 function createMockGeoDetector(consentRequired = false, countryCode?: string, region?: string) {
   return {
@@ -461,6 +462,71 @@ describe("ConsentManager with remote storage", () => {
 
     await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
     expect(mockStorage.set.mock.calls[0][0]).toBe("new-identity");
+  });
+
+  // A refusal restored with a signed-in account's ID keeps that ID once its cookie is gone. When
+  // the site then signs the visitor out with clearConsentUid(), the next choice must not write
+  // to the account's record.
+  it("drops a kept ID when the site clears consent_uid", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    clearConsentUid();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // With cookie.path set, a client-side route outside it cannot see consent_uid. A choice made
+  // there must still update the record the page saw on a route inside the path.
+  it("keeps the record ID on a route outside cookie.path", async () => {
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    window.history.pushState({}, "", "/app/page");
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+
+      // The route leaves /app: the browser no longer sends either cookie to this page.
+      window.history.pushState({}, "", "/other");
+      cookieStore = "";
+      await manager.rejectAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
   });
 
   // init() looks up the remote record a consent_uid names; another tab's reset clears both

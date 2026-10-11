@@ -343,6 +343,19 @@ export function clearConsent(config: Partial<ConsentConfig> = {}): void {
   deleteCookie(cookieName, path, config.cookie?.domain);
 }
 
+/** Writes and removals of consent_uid made on this page so far. */
+let uidRevision = 0;
+
+/**
+ * Advanced by every setConsentUid() and clearConsentUid() on this page: a consent manager that
+ * keeps an ID the cookie no longer shows tells a site's sign-out or new account apart from a
+ * route that cannot see the cookie.
+ * @internal
+ */
+export function consentUidRevision(): number {
+  return uidRevision;
+}
+
 /**
  * Get consent UID from cookie (used for KV re-identification)
  */
@@ -354,6 +367,7 @@ export function getConsentUid(): string | null {
  * Set consent UID cookie for re-identification
  */
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
+  uidRevision++;
   setCookie("consent_uid", uid, {
     expiry: config.cookie?.expiry ?? DEFAULT_CONFIG.cookie.expiry,
     domain: config.cookie?.domain,
@@ -365,6 +379,7 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
  * Clear consent UID cookie
  */
 export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
+  uidRevision++;
   const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
   deleteCookie("consent_uid", path, config.cookie?.domain);
 }
