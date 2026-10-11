@@ -1,11 +1,11 @@
 ---
 layout: home
-description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking. Google Consent Mode v2 with a basic mode that sends nothing to Google before consent, 31 languages, no backend required.
+description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking. Google Consent Mode v2 with a basic mode that loads its Google tag only after consent, 31 languages, no backend required.
 
 hero:
   name: "Vue Privacy"
   text: Consent that controls tracking
-  tagline: Cookie consent for Vue 3, Nuxt, Quasar and VitePress where the visitor's choice decides what runs, across page navigation, reloads, open tabs and changed minds. Google Consent Mode v2, with a basic mode that sends nothing to Google before consent. Open source, no backend required.
+  tagline: Cookie consent for Vue 3, Nuxt, Quasar and VitePress where the visitor's choice decides what runs, across page navigation, reloads, open tabs and changed minds. Google Consent Mode v2, with a basic mode that loads its Google tag only after consent. Open source, no backend required.
   actions:
     - theme: brand
       text: Get Started
@@ -20,7 +20,7 @@ hero:
 features:
   - icon: "\U0001F6E1️"
     title: Nothing Reaches Google Before Consent
-    details: "With consentMode: 'basic', no gtag.js, no dataLayer entry and no request leaves the page until the visitor allows analytics. Withdrawing stops the tag and deletes the Google Analytics cookies. This site runs that mode: open the Network tab and check."
+    details: "With consentMode: 'basic', the Google tag the library loads stays off the page (no gtag.js, no dataLayer entry, no request) until the visitor allows analytics. Withdrawing stops it and deletes the Google Analytics cookies. This site runs that mode: open the Network tab and check."
     link: /guide/consent-mode
     linkText: How the two modes differ
   - icon: "\U0001F501"

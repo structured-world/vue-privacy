@@ -4,7 +4,7 @@ description: Privacy policy for the Vue Privacy documentation site. Information 
 
 # Privacy Policy
 
-**Last updated:** February 2026
+**Last updated:** October 2026
 
 This site ([privacy.sw.foundation](https://privacy.sw.foundation)) is the documentation site for the open-source **@structured-world/vue-privacy** library, operated by [structured.world](https://structured.world).
 
@@ -12,7 +12,7 @@ This site ([privacy.sw.foundation](https://privacy.sw.foundation)) is the docume
 
 ### Analytics (with consent)
 
-When you accept analytics cookies, we use **Google Analytics 4** (GA4) to understand how visitors use our documentation. This includes:
+When you allow analytics, we use **Google Analytics 4** (GA4) to understand how visitors use our documentation. Until then the site loads nothing from Google and sends it nothing (the library's basic mode); withdrawing switches it off again and deletes its cookies. With your consent, GA4 receives:
 
 - Pages visited and time spent
 - Referral source (how you found us)
@@ -23,19 +23,13 @@ When you accept analytics cookies, we use **Google Analytics 4** (GA4) to unders
 
 ### Consent Preferences
 
-Your consent choice is stored:
-
-- **Locally** in a browser cookie (`consent_preferences`, 365 days)
-- **Remotely** in a Cloudflare KV store (anonymous UUID, no personal data)
-
-This allows us to remember your preference across visits.
+Your consent choice is stored only in your browser, in the `consent_preferences` cookie (365 days), so the site remembers it across visits. It is not sent anywhere. The site does not look up your location: every visitor is asked.
 
 ## Cookies Used
 
 | Cookie | Purpose | Duration | Category |
 |--------|---------|----------|----------|
 | `consent_preferences` | Stores your consent choices, when you made them, and whether you made them where consent is required (no location) | 365 days | Necessary |
-| `consent_uid` | Anonymous ID for remote consent sync | 365 days | Necessary |
 | `_ga`, `_ga_*` | Google Analytics tracking | 2 years | Analytics |
 
 ## Your Rights
@@ -48,8 +42,8 @@ You can:
 
 ## Third-Party Services
 
-- **Google Analytics** — [Google Privacy Policy](https://policies.google.com/privacy)
-- **Cloudflare** — [Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)
+- **GitHub Pages** hosts the site and, like any web host, receives your IP address with each request: [GitHub Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)
+- **Google Analytics**, only after you allow analytics: [Google Privacy Policy](https://policies.google.com/privacy)
 
 ## Contact
 

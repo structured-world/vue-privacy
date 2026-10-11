@@ -6,7 +6,7 @@ const hostname = "https://privacy.sw.foundation";
 
 // The site's description: the docs home, its JSON-LD, and every page without its own
 const siteDescription =
-  "Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking: Google Consent Mode v2 with a basic mode that sends nothing to Google before consent, 31 languages, no backend required.";
+  "Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking: Google Consent Mode v2 with a basic mode that loads its Google tag only after consent, 31 languages, no backend required.";
 
 // Page title mappings for breadcrumbs
 const pageTitles: Record<string, string> = {

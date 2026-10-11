@@ -1,5 +1,5 @@
 ---
-description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls Google Analytics 4. Google Consent Mode v2, a basic mode that sends nothing before consent, region detection and 31 languages.
+description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls Google Analytics 4. Google Consent Mode v2, a basic mode that loads its Google tag only after consent, region detection and 31 languages.
 ---
 
 # Getting Started Guide
@@ -13,7 +13,7 @@ A consent banner on its own controls nothing. The usual failures are in what hap
 - The Google tag loads before the visitor chooses, or keeps sending requests after a refusal
 - A refusal is lost on a client-side navigation, a reload or in a second tab
 - Withdrawing consent leaves the analytics tag running and its cookies in place
-- Google requires **Consent Mode v2** signals for visitors in the EEA and the UK (since March 2024), and they have to follow every change of mind
+- Since March 2024 Google requires **Consent Mode v2** signals for visitors in the EEA to keep its advertising and measurement features, GA4 data used in Google Ads among them, and the signals have to follow every change of mind
 
 Getting all of this right by hand is a lot of code for "I want Google Analytics, but only with consent".
 
@@ -44,11 +44,11 @@ app.use(createConsentPlugin({
 
 This handles: gtag.js loading, Consent Mode v2 signals, region detection, the consent banner in 31 languages, and consent persistence. VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router.
 
-For the strictest promise, nothing sent to Google before the visitor allows analytics, add `consentMode: 'basic'` (and `geoDetection: 'always'` to ask every visitor). This site runs that setup. [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode) explains the difference.
+For the strictest promise, the library's Google tag silent until the visitor allows analytics, add `consentMode: 'basic'` (and `geoDetection: 'always'` to ask every visitor). This site runs that setup. [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode) explains the difference.
 
 ## What It Does
 
-1. **Loads Google Analytics under the choice**: in advanced mode (the default) with every signal `denied` until consent; in basic mode only after the visitor allows analytics
+1. **Loads Google Analytics under the choice**: advanced mode (the default) loads it for everyone, with every signal `denied` until consent in consent jurisdictions and granted elsewhere; basic mode loads it only after the visitor allows analytics
 2. **Detects the visitor's country** via Cloudflare headers, a Worker endpoint, IP API, or the browser time zone, unless every visitor is asked
 3. **Shows the consent banner** to visitors who need it (EEA and UK by default, without prior consent; also when the lookup fails)
 4. **Stores the choice** in a cookie (365 days) and keeps Google Consent Mode signals in step with every change
@@ -85,7 +85,7 @@ Multiple detection methods with automatic fallback, each giving the visitor's co
 
 ### SPA Page Tracking
 
-VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router to `createConsentPlugin` ([Quick Start](/guide/quick-start#_3-spa-page-tracking-vue-router)). No manual `gtag` calls are needed: a `page_view` with the right `page_path` and `page_title` follows each navigation, and nothing is sent while analytics is not allowed.
+VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router to `createConsentPlugin` ([Quick Start](/guide/quick-start#_3-spa-page-tracking-vue-router)). No manual `gtag` calls are needed: a `page_view` with the right `page_path` and `page_title` follows each navigation. In basic mode nothing is sent before the visitor allows analytics (the last page view is sent once on the grant); in advanced mode a page view before a choice goes to Google as a cookieless ping.
 
 ### Framework Agnostic Core
 

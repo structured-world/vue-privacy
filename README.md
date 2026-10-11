@@ -1,6 +1,6 @@
 # @structured-world/vue-privacy
 
-Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visitor's choice controls tracking. **Google Consent Mode v2** for GA4, with a basic mode that sends nothing to Google before consent; 31 languages, no backend required.
+Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visitor's choice controls tracking. **Google Consent Mode v2** for GA4, with a basic mode that loads its Google tag only after consent; 31 languages, no backend required.
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![npm downloads](https://img.shields.io/npm/dm/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
@@ -14,7 +14,7 @@ Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visit
 
 ## Features
 
-- **Nothing Before Consent** — With `consentMode: 'basic'` no Google tag, `dataLayer` entry or request leaves the page until the visitor allows analytics; withdrawal switches the tag off and deletes its cookies
+- **Nothing Before Consent** — With `consentMode: 'basic'` the Google tag the library loads (from `gaId`) stays off the page, with no `dataLayer` entry or request, until the visitor allows analytics; withdrawal switches it off and deletes its cookies. Tags and scripts the site loads itself are its own to gate
 - **Holds Across the SPA Lifecycle** — Reloads, client-side navigation and slow lookups never override a newer choice; in basic mode a choice or reset in another tab is followed
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
 - **GDPR & CCPA Building Blocks** — A fair banner and stored choice for the GDPR, CCPA state detection and "Do Not Sell" text; compliance still depends on the whole site ([Limits](https://privacy.sw.foundation/guide/limits))
