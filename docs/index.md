@@ -1,36 +1,45 @@
 ---
 layout: home
-description: GDPR cookie consent banner and Google Analytics 4 for Vue 3, Nuxt, VitePress and Quasar. Google Consent Mode v2, 31 languages, region detection, refusing as easy as accepting, and SPA page tracking.
+description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls tracking. Google Consent Mode v2 with a basic mode that loads its Google tag only after consent, 31 languages, no backend required.
 
 hero:
   name: "Vue Privacy"
-  text: Cookie Consent and Google Analytics for Vue
-  tagline: A GDPR cookie consent banner with Google Consent Mode v2 for GA4, in 31 languages. One line for VitePress and Quasar, a plugin for Vue 3 and Nuxt, a script tag anywhere else.
+  text: Consent that controls tracking
+  tagline: Cookie consent for Vue 3, Nuxt, Quasar and VitePress where the visitor's choice decides what runs, across page navigation, reloads, open tabs and changed minds. Google Consent Mode v2, with a basic mode that loads its Google tag only after consent. Open source, no backend required.
   actions:
     - theme: brand
       text: Get Started
       link: /guide/
     - theme: alt
+      text: Basic vs Advanced Mode
+      link: /guide/consent-mode
+    - theme: alt
       text: View on GitHub
       link: https://github.com/structured-world/vue-privacy
 
 features:
-  - icon: "\U0001F4CA"
-    title: Google Analytics in One Line
-    details: Pass your GA4 measurement ID and you're done. Loads gtag.js, configures Consent Mode v2, and tracks page views on every navigation in VitePress, Quasar and Vue Router apps.
-  - icon: "\U0001F512"
-    title: Google Consent Mode v2
-    details: All four signals (analytics_storage, ad_storage, ad_user_data, ad_personalization), so Google receives the visitor's choice where its EU user consent policy requires it. Advanced mode with cookieless pings, or basic mode that loads nothing before consent.
-  - icon: "\U0001F30D"
-    title: Consent Jurisdictions
-    details: Asks visitors in the EEA and the UK (Switzerland on request), found through Cloudflare headers, a Worker, IP geolocation or the time zone. A failed lookup asks rather than guesses.
+  - icon: "\U0001F6E1️"
+    title: Nothing Reaches Google Before Consent
+    details: "With consentMode: 'basic', the Google tag the library loads stays off the page (no gtag.js, no dataLayer entry, no request) until the visitor allows analytics. Withdrawing stops it and deletes the Google Analytics cookies. This site runs that mode: open the Network tab and check."
+    link: /guide/consent-mode
+    linkText: How the two modes differ
+  - icon: "\U0001F501"
+    title: Holds Across the SPA Lifecycle
+    details: The choice survives reloads and client-side navigation, a slow region lookup or remote storage read never overrides a newer choice, and in basic mode a choice or reset made in another tab is followed here.
+  - icon: "\U0001F511"
+    title: Asks When a Feature Needs It
+    details: "A feature that needs a refused category asks at that moment, saying why: requestConsent('functional', { reason }). Nothing is asked up front that the site does not use."
+    link: /guide/preference-center#asking-again-when-a-feature-needs-a-category
+    linkText: Consent on demand
   - icon: "⚖️"
     title: Fair by Design
-    details: Refusing takes one click, as accepting does. Nothing is pre-ticked. A feature that needs a refused category asks again at that moment, saying why.
-  - icon: "\U0001F5E3️"
-    title: 31 Languages
-    details: Every official EU language plus Norwegian, Icelandic, Japanese, Korean, Russian, Ukrainian and Chinese, chosen from the browser's languages or your site's switcher.
+    details: Refusing takes one click, as accepting does, in the same style. Nothing is pre-ticked. Offer only the categories the site really uses.
+  - icon: "\U0001F30D"
+    title: Ask Everyone, or Where the Law Requires
+    details: Ask every visitor, or only in the EEA and the UK (Switzerland on request), found through Cloudflare headers, a Worker, IP geolocation or the time zone. A failed lookup asks rather than guesses.
+    link: /guide/consent-jurisdictions
+    linkText: Consent jurisdictions
   - icon: "\U0001F4E6"
-    title: Lightweight & SSR Safe
-    details: No runtime dependencies. Tree-shakeable exports, light and dark themes, CSS custom properties. Works with SSR and static site generation.
+    title: Vue-Native, Light, 31 Languages
+    details: A plugin and components for Vue 3, Nuxt and Quasar, one line for VitePress, a script tag anywhere else. No runtime dependencies, SSR safe, every official EU language and more.
 ---

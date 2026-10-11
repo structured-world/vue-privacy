@@ -1,21 +1,21 @@
 ---
-description: Add a GDPR cookie consent banner and Google Analytics 4 to Vue 3, Nuxt, VitePress and Quasar, with Google Consent Mode v2, region detection and 31 languages.
+description: Cookie consent for Vue 3, Nuxt, VitePress and Quasar where the visitor's choice controls Google Analytics 4. Google Consent Mode v2, a basic mode that loads its Google tag only after consent, region detection and 31 languages.
 ---
 
 # Getting Started Guide
 
-**@structured-world/vue-privacy** adds Google Analytics (GA4) to your Vue 3, VitePress, Nuxt, or Quasar app with GDPR-compliant consent built in.
+**@structured-world/vue-privacy** manages cookie consent in Vue 3, VitePress, Nuxt and Quasar apps so that the visitor's choice decides what tracking runs, and adds Google Analytics (GA4) under that choice.
 
 ## The Problem
 
-Since March 2024, Google requires **Consent Mode v2** for websites using Google Analytics or Google Ads with visitors in the EEA and the UK. Setting this up correctly means:
+A consent banner on its own controls nothing. The usual failures are in what happens around it:
 
-- Loading `gtag.js` with the right consent defaults **before** any tracking
-- Showing a cookie consent banner to visitors where the law requires consent
-- Updating consent signals when the user makes a choice
-- Handling SPA navigation (Vue Router, VitePress) so page views are tracked correctly
+- The Google tag loads before the visitor chooses, or keeps sending requests after a refusal
+- A refusal is lost on a client-side navigation, a reload or in a second tab
+- Withdrawing consent leaves the analytics tag running and its cookies in place
+- Since March 2024 Google requires **Consent Mode v2** signals for visitors in the EEA to keep its advertising and measurement features, GA4 data used in Google Ads among them, and the signals have to follow every change of mind
 
-That's a lot of boilerplate for "I just want Google Analytics on my site".
+Getting all of this right by hand is a lot of code for "I want Google Analytics, but only with consent".
 
 ## The Solution
 
@@ -31,27 +31,30 @@ export default enhanceWithConsent(DefaultTheme, {
 });
 ```
 
-Three lines for Vue 3:
+A few lines for Vue 3:
 
 ```typescript
 import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
+  router, // page views on every client-side navigation
 }));
 ```
 
-This handles: gtag.js loading, Consent Mode v2 defaults, region detection, the consent banner in 31 languages, and consent persistence. For SPA page tracking, VitePress and Quasar include automatic router integration; Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)).
+This handles: gtag.js loading, Consent Mode v2 signals, region detection, the consent banner in 31 languages, and consent persistence. VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router.
+
+To keep the library's Google tag silent until the visitor allows analytics, add `consentMode: 'basic'` (and `geoDetection: 'always'` to ask every visitor). This site runs that setup. [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode) explains the difference.
 
 ## What It Does
 
-1. **Loads Google Analytics** with proper Consent Mode v2 defaults (`denied` where consent is required)
-2. **Detects the visitor's country** via Cloudflare headers, a Worker endpoint, IP API, or the browser time zone
-3. **Shows consent banner** only to visitors who need it (EEA and UK by default, without prior consent; also when the lookup fails)
-4. **Stores consent** in a cookie (365 days) and updates Google Consent Mode signals
-5. **Tracks SPA navigation** automatically (VitePress, Quasar) or via simple route watching (Vue Router)
+1. **Loads Google Analytics under the choice**: advanced mode (the default) loads it for everyone, with every signal `denied` until consent in consent jurisdictions and granted elsewhere; basic mode loads it only after the visitor allows analytics
+2. **Detects the visitor's country** via Cloudflare headers, a Worker endpoint, IP API, or the browser time zone, unless every visitor is asked
+3. **Shows the consent banner** to visitors who need it (EEA and UK by default, without prior consent; also when the lookup fails)
+4. **Stores the choice** in a cookie (365 days) and keeps Google Consent Mode signals in step with every change
+5. **Tracks SPA navigation** automatically (VitePress, Quasar) or through the router you pass (Vue 3, Nuxt)
 
-Visitors outside consent jurisdictions get analytics enabled silently without seeing a banner.
+Visitors outside consent jurisdictions get analytics enabled without a banner in advanced mode; in basic mode they are measured only after they allow analytics themselves. What the library does not do is listed under [Limits](/guide/limits).
 
 ## Key Features
 
@@ -82,7 +85,7 @@ Multiple detection methods with automatic fallback, each giving the visitor's co
 
 ### SPA Page Tracking
 
-For single-page apps, VitePress and Quasar provide automatic page view tracking on navigation. Vue Router requires simple route watching via `trackPageView()` (see [Quick Start](/guide/quick-start#spa-page-tracking-vue-router)). No manual `gtag` calls required — the adapters send `page_view` events with correct `page_path` and `page_title` after each navigation.
+VitePress and Quasar track page views on navigation by themselves; a Vue 3 or Nuxt app passes its router to `createConsentPlugin` ([Quick Start](/guide/quick-start#_3-spa-page-tracking-vue-router)). No manual `gtag` calls are needed: a `page_view` with the right `page_path` and `page_title` follows each navigation. In basic mode nothing is sent before the visitor allows analytics (the last page view is sent once on the grant); in advanced mode a page view before a choice goes to Google as a cookieless ping.
 
 ### Framework Agnostic Core
 
@@ -101,3 +104,4 @@ await manager.init();
 - [Quick Start](/guide/quick-start) — get running in 2 minutes
 - [VitePress Integration](/guide/vitepress) — one-line setup for docs sites
 - [Vue 3 Integration](/guide/vue) — plugin, composables, components
+- [Limits](/guide/limits) — what the library does not cover

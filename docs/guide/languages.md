@@ -24,6 +24,8 @@ The consent banner and the preference centre speak the visitor's language: 31 lo
 
 They cover every official language of the EU, the EEA's Norwegian and Icelandic, and Japanese, Korean, Russian, Ukrainian and Chinese. The "Do Not Sell My Personal Information" text for [CCPA](/guide/consent-jurisdictions) stays English in every locale, as the phrase the law uses.
 
+Every locale has every key, which a test checks, but most translations have not been reviewed by native speakers, Irish and Maltese least of all. Review the language your visitors read, override any string through the `banner` and `preferenceCenter` options, and send corrections as a pull request.
+
 ## How the Language Is Chosen
 
 1. `locale`, when the site sets it, is shown as given.
