@@ -4,6 +4,13 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.0.1](https://github.com/structured-world/vue-privacy/compare/v2.0.0...v2.0.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **ui:** let site colours win over the built-in palettes ([#240](https://github.com/structured-world/vue-privacy/issues/240)) ([7c83fbc](https://github.com/structured-world/vue-privacy/commit/7c83fbcd4bbf253043d2d7edc537e4c40f81f94a)), closes [#239](https://github.com/structured-world/vue-privacy/issues/239)
+
 ## [2.0.0](https://github.com/structured-world/vue-privacy/compare/v1.11.0...v2.0.0) (2026-10-10)
 
 
