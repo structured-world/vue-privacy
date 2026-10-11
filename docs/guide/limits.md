@@ -16,7 +16,7 @@ The library gives you the mechanics: a banner where refusing is as easy as accep
 
 ## "Nothing Before Consent" Means Basic Mode
 
-The default `consentMode: 'advanced'` loads the Google tag before the choice with every signal denied, and the tag sends cookieless pings, as Google designs Consent Mode. Only `consentMode: 'basic'` keeps the Google tag off the page until the visitor allows analytics. See [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode).
+The default `consentMode: 'advanced'` loads the Google tag before the choice. Where consent is required (or the region lookup fails) every signal starts denied and the tag sends cookieless pings, as Google designs Consent Mode; a visitor found outside consent jurisdictions gets every category granted without a banner, and the tag measures in full. Only `consentMode: 'basic'` keeps the Google tag off the page until the visitor allows analytics. See [Basic and Advanced Mode](/guide/consent-mode#basic-and-advanced-mode).
 
 ## Withdrawal Stops Collection, It Does Not Recall It
 
@@ -32,7 +32,7 @@ With `ccpaEnabled` set, `isCCPAUser()` tells you after region detection that a v
 
 ## Remote Storage Syncs What You Link
 
-The remote record is named by the `consent_uid` cookie, which belongs to one browser. To carry a choice to another device, the site has to give both devices the same ID, for example with `setConsentUid()` and the signed-in user's account ID. Even then a remote record is restored only outside consent jurisdictions: it does not keep where the choice was made, so a visitor in the EEA or the UK is asked again on the new device.
+The remote record is named by the `consent_uid` cookie, which belongs to one browser. To carry a choice to another device, the site has to give both devices the same ID, for example with `setConsentUid()` and the signed-in user's account ID. The manager reads the ID once, in `init()`: set it before that, or reload the page after a sign-in, else this page keeps writing to the record it started with. Even then a remote record is restored only outside consent jurisdictions: it does not keep where the choice was made, so a visitor in the EEA or the UK is asked again on the new device.
 
 ## Translations
 

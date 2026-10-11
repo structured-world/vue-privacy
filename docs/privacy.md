@@ -23,13 +23,16 @@ When you allow analytics, we use **Google Analytics 4** (GA4) to understand how 
 
 ### Consent Preferences
 
-Your consent choice is stored only in your browser, in the `consent_preferences` cookie (365 days), so the site remembers it across visits. It is not sent anywhere. The site does not look up your location: every visitor is asked.
+Your consent choice is stored only in your browser, in the `consent_preferences` cookie (365 days), so the site remembers it across visits; no copy is kept on a server. The site does not look up your location: every visitor is asked.
+
+Before October 2026 the site also kept a copy of a grant in a Cloudflare KV store, named by an anonymous `consent_uid` cookie. That store is no longer used, and the site neither reads nor sets `consent_uid`; a copy of the cookie set earlier stays in your browser until it expires (365 days after it was set) or you delete it.
 
 ## Cookies Used
 
 | Cookie | Purpose | Duration | Category |
 |--------|---------|----------|----------|
 | `consent_preferences` | Stores your consent choices, when you made them, and whether you made them where consent is required (no location) | 365 days | Necessary |
+| `consent_uid` | Only if set before October 2026: an anonymous ID for the remote copy of a grant, no longer read or set | Up to 365 days from when it was set | Necessary |
 | `_ga`, `_ga_*` | Google Analytics tracking | 2 years | Analytics |
 
 ## Your Rights
