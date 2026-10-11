@@ -215,17 +215,30 @@ describe("the consent cookie", () => {
       version: "1.0",
       consentRequired: true,
     };
-    const malformed: Record<string, unknown>[] = [
+    const granted = { analytics: true, marketing: true, functional: true };
+    // Records as JSON text: a number that overflows to Infinity has no JSON.stringify form.
+    const malformed: string[] = [
       { ...valid, categories: { analytics: "false", marketing: false, functional: false } },
       { ...valid, categories: { analytics: 1, marketing: false, functional: false } },
       { ...valid, categories: { analytics: false, marketing: null, functional: false } },
+      // A category missing (or all of them) is no stored choice, not a refusal or a grant.
+      { ...valid, categories: {} },
+      { ...valid, categories: { analytics: true } },
       { ...valid, timestamp: "42" },
       { ...valid, version: 1 },
       { ...valid, consentRequired: "true" },
       { categories: valid.categories, timestamp: 42, version: "1.0", isEU: "yes" },
-    ];
+      // A present but malformed flag is not replaced by its earlier name.
+      { ...valid, categories: granted, consentRequired: null, isEU: true },
+    ].map((record) => JSON.stringify(record));
+    malformed.push(
+      JSON.stringify({ ...valid, categories: granted }).replace(
+        '"timestamp":42',
+        '"timestamp":1e400'
+      )
+    );
     for (const record of malformed) {
-      cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(record))}`;
+      cookieStore = `consent_preferences=${encodeURIComponent(record)}`;
       const showBanner = vi.fn();
       const manager = new ConsentManager({
         version: "1.0",
