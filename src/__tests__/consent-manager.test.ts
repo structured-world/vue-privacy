@@ -429,6 +429,64 @@ describe("ConsentManager with remote storage", () => {
     expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });
 
+  // Another tab reset and chose again since this page restored a refusal: the cookie names that
+  // tab's new record now, and this page's next choice must update it, not the abandoned one.
+  it("writes to the record another tab started after its reset", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Another tab resets, then grants: both cookies are back, naming its new record.
+    const grant = {
+      ...refusal,
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now() + 1,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=new-identity`;
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBe("new-identity");
+  });
+
+  // init() looks up the remote record a consent_uid names; another tab's reset clears both
+  // cookies while the lookup runs, and it finds nothing. That ID named no adopted record, so the
+  // next choice must not write to it.
+  it("does not keep a looked-up ID that another tab's reset cleared", async () => {
+    cookieStore = "consent_uid=old-identity";
+    const mockStorage = {
+      get: vi.fn().mockImplementation(async () => {
+        cookieStore = "";
+        return null;
+      }),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
   // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made
   // decodeURIComponent throw, and init() rejected instead of deciding the consent. An undecodable
   // value counts as absent.

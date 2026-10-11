@@ -683,7 +683,8 @@ export class ConsentManager {
     uid: string,
     epoch: number
   ): Promise<boolean> {
-    this.userId = uid;
+    // The ID is not kept here: while the record it names stays this visitor's, consent_uid names
+    // it, and a reset another tab makes during the lookup takes the cookie and leaves no ID.
     const version = this.config.version ?? DEFAULT_CONFIG.version;
     try {
       const remote = await storage.get(uid, version);
@@ -894,18 +895,18 @@ export class ConsentManager {
     // `functional` does not count: only analytics or marketing is a grant worth a remote
     // identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
-    // The record this choice updates: this page's own, or the one the consent_uid cookie names
-    // now (a site that links devices sets a shared ID, also before init() or where a local choice
-    // exists). Read before a refusal clears the cookie, and at the time of the choice, so a reset
-    // another tab made earlier leaves no ID behind. An undecodable cookie reads as no ID.
-    const recordId = this.userId ?? (this.remoteStorage ? getConsentUid() : null);
+    // The record this choice updates: the one the consent_uid cookie names now (a shared ID the
+    // site set, or a record another tab started after a reset), else the one this page kept after
+    // a refusal took the cookie. Read at the time of the choice, before a refusal clears the
+    // cookie. An undecodable cookie reads as no ID.
+    const recordId = this.remoteStorage ? (getConsentUid() ?? this.userId) : null;
 
     this.storeAndConfirm(record);
     if (!hasNonNecessary) {
       // The ID stays this page's record once its cookie is gone: a choice that replaces this
       // refusal before its write runs (a consent callback's) drops that write and must update
       // the same record.
-      if (this.remoteStorage) this.userId ??= recordId;
+      this.userId = recordId;
       // Without the refusal cookie (cleared by the visitor) consent_uid would let a visit fetch
       // an earlier remote grant, should the remote write of this refusal fail.
       clearConsentUid(this.config);
@@ -938,7 +939,8 @@ export class ConsentManager {
         .then(async () => {
           if (this.consentEpoch !== epoch) return;
           const started = ++this.remoteWritesStarted;
-          const id = await storage.set(this.userId ?? recordId, consent, controller.signal);
+          // Without an ID at the choice, the record an earlier write of this page created since.
+          const id = await storage.set(recordId ?? this.userId, consent, controller.signal);
           // A write that settled past the grace period is behind a newer one already running,
           // which keeps its own id; an id that arrived in time is still carried forward.
           if (!id || this.remoteWritesStarted !== started) return;
@@ -1372,7 +1374,7 @@ export class ConsentManager {
     if (restored && !restored.categories.analytics && !restored.categories.marketing) {
       // The cookie goes, but a shared ID the site set stays this page's record: the next
       // choice updates it instead of starting another.
-      if (this.remoteStorage) this.userId ??= getConsentUid();
+      if (this.remoteStorage) this.userId = getConsentUid() ?? this.userId;
       clearConsentUid(this.config);
     }
     this.reconcile(final, true);
