@@ -52,7 +52,7 @@ To keep the library's Google tag silent until the visitor allows analytics, add 
 2. **Detects the visitor's country** via Cloudflare headers, a Worker endpoint, IP API, or the browser time zone, unless every visitor is asked
 3. **Shows the consent banner** to visitors who need it (EEA and UK by default, without prior consent; also when the lookup fails)
 4. **Stores the choice** in a cookie (365 days) and keeps Google Consent Mode signals in step with every change
-5. **Tracks SPA navigation** automatically (VitePress, Quasar) or through the router you pass (Vue 3, Nuxt)
+5. **Tracks SPA navigation** automatically (VitePress, Quasar) or through the router you pass to the plugin ([Vue 3](/guide/quick-start#_3-spa-page-tracking-vue-router), [Nuxt](/guide/quick-start#nuxt): `router: nuxtApp.$router`)
 
 Visitors outside consent jurisdictions get analytics enabled without a banner in advanced mode; in basic mode they are measured only after they allow analytics themselves. What the library does not do is listed under [Limits](/guide/limits).
 
