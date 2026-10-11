@@ -4,7 +4,7 @@ description: Add a GDPR cookie consent banner and Google Analytics 4 to Vue 3, N
 
 # Getting Started Guide
 
-**@structured-world/vue-privacy** adds Google Analytics (GA4) to your Vue 3, VitePress, Nuxt 3, or Quasar app with GDPR-compliant consent built in.
+**@structured-world/vue-privacy** adds Google Analytics (GA4) to your Vue 3, VitePress, Nuxt, or Quasar app with GDPR-compliant consent built in.
 
 ## The Problem
 

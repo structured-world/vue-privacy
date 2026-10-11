@@ -1,5 +1,5 @@
 ---
-description: Add a GDPR cookie consent banner and Google Analytics 4 with Consent Mode v2 in minutes. Copy-paste examples for VitePress, Vue 3, Nuxt 3, Quasar and plain JavaScript.
+description: Add a GDPR cookie consent banner and Google Analytics 4 with Consent Mode v2 in minutes. Copy-paste examples for VitePress, Vue 3, Nuxt, Quasar and plain JavaScript.
 ---
 
 # Quick Start in 5 Minutes
@@ -98,12 +98,12 @@ Don't forget to add the boot file to `quasar.config.js`:
 boot: ['consent'],
 ```
 
-## Nuxt 3
+## Nuxt
 
-Nuxt 3 uses the standard Vue plugin. Create a Nuxt plugin file:
+Nuxt 4 and Nuxt 3 use the standard Vue plugin. Create a client plugin file:
 
 ```typescript
-// plugins/consent.client.ts
+// app/plugins/consent.client.ts (Nuxt 3 without the app/ directory: plugins/consent.client.ts)
 import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 export default defineNuxtPlugin((nuxtApp) => {

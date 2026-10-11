@@ -1,17 +1,19 @@
 ---
-description: Add GDPR-compliant Google Analytics to Nuxt 3 apps. Client plugin setup, ConsentBanner component, SPA page tracking, and route meta events.
+description: Add a GDPR cookie consent banner and Google Analytics 4 to Nuxt 4 and Nuxt 3 apps. Client plugin, measurement ID from runtime config, ConsentBanner component, SPA page tracking and route meta events.
 ---
 
-# Nuxt 3 Integration Guide
+# Nuxt Integration Guide
 
-vue-privacy works with Nuxt 3 via the standard Vue plugin system.
+vue-privacy works with Nuxt 4 and Nuxt 3 through the standard Vue plugin system: no Nuxt module is needed.
+
+File paths below follow Nuxt 4, whose source directory is `app/`. In a Nuxt 3 project without the `app/` directory, drop the `app/` prefix (`plugins/`, `layouts/`, `pages/`, `app.vue` at the project root).
 
 ## Setup
 
 ### 1. Create a Client Plugin
 
 ```typescript
-// plugins/consent.client.ts
+// app/plugins/consent.client.ts
 import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -23,13 +25,39 @@ export default defineNuxtPlugin((nuxtApp) => {
 ```
 
 ::: tip Client-only
-The `.client.ts` suffix ensures this plugin only runs in the browser — no SSR issues.
+The `.client.ts` suffix runs the plugin in the browser only, so server rendering never touches cookies or the consent state.
 :::
+
+### Measurement ID from Runtime Config
+
+To set the ID per environment (`NUXT_PUBLIC_GA_ID`), read it from the runtime config. `consentMode: 'basic'` requires `gaId` (the constructor throws without it), so pass both only when an ID is set; without one the banner still runs, which keeps the consent flow testable on preview builds:
+
+```typescript
+// nuxt.config.ts
+export default defineNuxtConfig({
+  runtimeConfig: {
+    public: { gaId: '' },
+  },
+});
+```
+
+```typescript
+// app/plugins/consent.client.ts
+import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
+
+export default defineNuxtPlugin((nuxtApp) => {
+  const { gaId } = useRuntimeConfig().public;
+  nuxtApp.vueApp.use(createConsentPlugin({
+    ...(gaId ? { gaId, consentMode: 'basic' as const } : {}),
+    router: nuxtApp.$router,
+  }));
+});
+```
 
 ### 2. Add the Banner
 
 ```vue
-<!-- layouts/default.vue or app.vue -->
+<!-- app/layouts/default.vue or app/app.vue -->
 <script setup>
 import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </script>
@@ -47,7 +75,7 @@ import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 Pass the router to the plugin for automatic tracking:
 
 ```typescript
-// plugins/consent.client.ts
+// app/plugins/consent.client.ts
 import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -65,7 +93,7 @@ This automatically tracks all page views and fires `ga4Event` from route meta.
 If you need custom tracking logic, use the composable with watch:
 
 ```vue
-<!-- app.vue or layouts/default.vue -->
+<!-- app/app.vue or app/layouts/default.vue -->
 <script setup>
 import { useConsent } from '@structured-world/vue-privacy/vue';
 import { watch } from 'vue';
@@ -87,7 +115,7 @@ watch(() => route.path, (path, oldPath) => {
 All standard options are supported:
 
 ```typescript
-// plugins/consent.client.ts
+// app/plugins/consent.client.ts
 export default defineNuxtPlugin((nuxtApp) => {
   nuxtApp.vueApp.use(createConsentPlugin({
     gaId: 'G-XXXXXXXXXX',
@@ -108,7 +136,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 
 ## Event Tracking
 
-Track custom events, conversions, and ecommerce in your components:
+Track custom events, conversions, and ecommerce in your components. Call `useConsent()` in `<script setup>` and use what it returns in handlers: like any composable built on `inject()`, it works only during setup, and inside a click handler it throws.
 
 ```vue
 <script setup>
@@ -152,7 +180,7 @@ async function onCheckout(order) {
 Define events in page meta to fire automatically when using the router option:
 
 ```vue
-<!-- pages/signup/complete.vue -->
+<!-- app/pages/signup/complete.vue -->
 <script setup>
 definePageMeta({
   ga4Title: 'Registration Complete',
@@ -167,4 +195,4 @@ See [Ecommerce Tracking](/guide/ecommerce) for the full guide.
 
 ## Why Not a Nuxt Module?
 
-vue-privacy uses the standard Vue plugin API, which works perfectly with Nuxt 3's `defineNuxtPlugin`. A dedicated Nuxt module would add complexity without significant benefit — the Vue plugin already handles everything including SSR safety (via the `.client.ts` suffix).
+vue-privacy uses the standard Vue plugin API, which Nuxt's `defineNuxtPlugin` loads as is. A dedicated Nuxt module would add a layer without adding anything: the client plugin already keeps the consent code out of server rendering (the `.client.ts` suffix).
