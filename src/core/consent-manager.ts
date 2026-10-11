@@ -1484,6 +1484,18 @@ export class ConsentManager {
     const answered = this.consentRequests.splice(0);
     const closes = this.preferenceCenterCloses;
     this.impliedChoice = null;
+    // This page's earlier choice reached the cookie, which is gone now where it is visible:
+    // another tab reset. The remote record it named is abandoned, as after a local reset; the
+    // next write starts from whatever ID the cookie names now.
+    if (
+      this.pageChoice !== null &&
+      this.cookieConfirmed &&
+      this.cookieInScope() &&
+      getStoredConsent(this.config) === null
+    ) {
+      this.userId = null;
+      this.identityGeneration++;
+    }
     this.pageChoice = this.choiceRecord(categories);
     // Stored before the callbacks run: they see this choice, and a decision they make
     // themselves (a reset, another choice) is the last one written.

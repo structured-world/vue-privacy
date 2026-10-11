@@ -365,6 +365,35 @@ describe("ConsentManager with remote storage", () => {
     expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });
 
+  // After init(), a page holding a record ID (here kept from a restored refusal) must drop it
+  // when another tab resets: the next choice starts a new record, not the abandoned one.
+  it("forgets the record ID after another tab's reset", async () => {
+    const local = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Another tab resets: both cookies go.
+    cookieStore = "";
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
   // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made
   // decodeURIComponent throw, and init() rejected instead of deciding the consent. An undecodable
   // value counts as absent.
