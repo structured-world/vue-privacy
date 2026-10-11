@@ -6,12 +6,14 @@ description: Add a GDPR cookie consent banner and Google Analytics 4 to Nuxt 4 a
 
 vue-privacy works with Nuxt 4 and Nuxt 3 through the standard Vue plugin system: no Nuxt module is needed.
 
+File paths below follow Nuxt 4, whose source directory is `app/`. In a Nuxt 3 project without the `app/` directory, drop the `app/` prefix (`plugins/`, `layouts/`, `pages/`, `app.vue` at the project root).
+
 ## Setup
 
 ### 1. Create a Client Plugin
 
 ```typescript
-// app/plugins/consent.client.ts (Nuxt 3 without the app/ directory: plugins/consent.client.ts)
+// app/plugins/consent.client.ts
 import { createConsentPlugin } from '@structured-world/vue-privacy/vue';
 
 export default defineNuxtPlugin((nuxtApp) => {
@@ -55,7 +57,7 @@ export default defineNuxtPlugin((nuxtApp) => {
 ### 2. Add the Banner
 
 ```vue
-<!-- layouts/default.vue or app.vue -->
+<!-- app/layouts/default.vue or app/app.vue -->
 <script setup>
 import { ConsentBanner } from '@structured-world/vue-privacy/vue';
 </script>
@@ -91,7 +93,7 @@ This automatically tracks all page views and fires `ga4Event` from route meta.
 If you need custom tracking logic, use the composable with watch:
 
 ```vue
-<!-- app.vue or layouts/default.vue -->
+<!-- app/app.vue or app/layouts/default.vue -->
 <script setup>
 import { useConsent } from '@structured-world/vue-privacy/vue';
 import { watch } from 'vue';
@@ -178,7 +180,7 @@ async function onCheckout(order) {
 Define events in page meta to fire automatically when using the router option:
 
 ```vue
-<!-- pages/signup/complete.vue -->
+<!-- app/pages/signup/complete.vue -->
 <script setup>
 definePageMeta({
   ga4Title: 'Registration Complete',
