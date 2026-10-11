@@ -25,7 +25,7 @@ GDPR cookie consent banner and Google Analytics (GA4) with **Google Consent Mode
 - **[31 Languages](https://privacy.sw.foundation/guide/languages)** — every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh; follows the browser's preferred languages and the site's language switcher
 - **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
-- **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 3
+- **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 4 and 3
 - **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
 - **UMD/CDN** — Use via `<script>` tag, no build tools needed
 - **TypeScript** — Full type safety
@@ -487,7 +487,7 @@ Refusing is as easy and as visible as accepting by default: "Accept all" and "Re
 | Ask again for a refused category a feature needs | ✅ |
 | i18n (31 locales, every EU and EEA language) | ✅ |
 | Language switching at run time | ✅ |
-| Vue 3 / VitePress / Quasar / Nuxt 3 | ✅ |
+| Vue 3 / VitePress / Quasar / Nuxt 4 and 3 | ✅ |
 | Vanilla JS entry point | ✅ |
 | UMD/CDN build | ✅ |
 | Remote consent storage | ✅ |

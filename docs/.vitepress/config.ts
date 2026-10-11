@@ -15,7 +15,7 @@ const pageTitles: Record<string, string> = {
   installation: "Installation",
   "quick-start": "Quick Start",
   vue: "Vue 3",
-  nuxt: "Nuxt 3",
+  nuxt: "Nuxt",
   vitepress: "VitePress",
   quasar: "Quasar",
   cdn: "CDN / Script Tag",
@@ -56,6 +56,8 @@ const softwareAppSchema = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   name: "Vue Privacy",
+  description: siteDescription,
+  url: hostname,
   applicationCategory: "DeveloperApplication",
   operatingSystem: "Any",
   offers: {
@@ -214,7 +216,7 @@ export default defineConfig({
           text: "Framework Integration",
           items: [
             { text: "Vue 3", link: "/guide/vue" },
-            { text: "Nuxt 3", link: "/guide/nuxt" },
+            { text: "Nuxt", link: "/guide/nuxt" },
             { text: "VitePress", link: "/guide/vitepress" },
             { text: "Quasar", link: "/guide/quasar" },
             { text: "CDN / Script Tag", link: "/guide/cdn" },

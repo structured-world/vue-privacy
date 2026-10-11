@@ -1,5 +1,5 @@
 ---
-description: Install Vue Privacy via npm, yarn, or pnpm. Set up Google Analytics with GDPR consent in under 5 minutes for Vue 3, Nuxt 3, or VitePress.
+description: Install Vue Privacy via npm, yarn, or pnpm. Set up Google Analytics with GDPR consent in under 5 minutes for Vue 3, Nuxt, VitePress or Quasar.
 ---
 
 # Installation & Setup
