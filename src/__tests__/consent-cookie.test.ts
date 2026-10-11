@@ -204,6 +204,43 @@ describe("the consent cookie", () => {
     }
   });
 
+  it("treats a consent cookie with malformed fields as absent, granting nothing", async () => {
+    // Regression: the field values were passed on unchecked and read by truthiness, so a
+    // category stored as the string "false" (by hand, by another app under the same name, by a
+    // corrupted write) counted as a grant. A record that is not what the library writes is no
+    // choice: the visitor is asked again.
+    const valid = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: 42,
+      version: "1.0",
+      consentRequired: true,
+    };
+    const malformed: Record<string, unknown>[] = [
+      { ...valid, categories: { analytics: "false", marketing: false, functional: false } },
+      { ...valid, categories: { analytics: 1, marketing: false, functional: false } },
+      { ...valid, categories: { analytics: false, marketing: null, functional: false } },
+      { ...valid, timestamp: "42" },
+      { ...valid, version: 1 },
+      { ...valid, consentRequired: "true" },
+      { categories: valid.categories, timestamp: 42, version: "1.0", isEU: "yes" },
+    ];
+    for (const record of malformed) {
+      cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(record))}`;
+      const showBanner = vi.fn();
+      const manager = new ConsentManager({
+        version: "1.0",
+        geoDetector: detecting({ consentRequired: true, countryCode: "DE", method: "api" }),
+      });
+      manager.onShowBanner(showBanner);
+
+      await manager.init();
+
+      expect({ record, banner: showBanner.mock.calls.length }).toEqual({ record, banner: 1 });
+      expect({ record, consent: manager.getConsent() }).toEqual({ record, consent: null });
+      manager.destroy();
+    }
+  });
+
   it("leaves a cookie of the current format as it is on load", async () => {
     // A rewrite on every load would restart the cookie's lifetime with each visit.
     cookieStore = `consent_preferences=${encodeURIComponent(
