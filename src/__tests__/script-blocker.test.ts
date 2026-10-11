@@ -163,6 +163,51 @@ describe("initScriptBlocker with ConsentManager", () => {
     manager.destroy();
   });
 
+  // An app often inserts a component or an HTML fragment that holds the script, not the bare
+  // <script>: a granted category must reach a script nested inside the added element too.
+  it("unblocks a granted script added inside a container", async () => {
+    document.cookie = "consent_preferences=; max-age=0; path=/";
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
+      },
+    });
+    await manager.init();
+    await manager.acceptAll();
+
+    const container = document.createElement("div");
+    container.appendChild(createBlockedScript("analytics", "https://example.com/nested.js"));
+    document.body.appendChild(container);
+    // MutationObserver callbacks run as a microtask after the insertion.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      document.querySelector('script[src="https://example.com/nested.js"]')?.getAttribute("type")
+    ).not.toBe("text/plain");
+    manager.destroy();
+  });
+
+  it("keeps a refused script blocked when added inside a container", async () => {
+    document.cookie = "consent_preferences=; max-age=0; path=/";
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn().mockResolvedValue({ consentRequired: true, method: "manual" as const }),
+      },
+    });
+    await manager.init();
+    await manager.rejectAll();
+
+    const container = document.createElement("div");
+    container.appendChild(createBlockedScript("analytics", "https://example.com/nested.js"));
+    document.body.appendChild(container);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(
+      document.querySelector('script[src="https://example.com/nested.js"]')?.getAttribute("type")
+    ).toBe("text/plain");
+    manager.destroy();
+  });
+
   it("cleanup disconnects the observer", async () => {
     const manager = new ConsentManager({
       geoDetector: {

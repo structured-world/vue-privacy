@@ -16,6 +16,7 @@ type ConsentCategory = "analytics" | "marketing" | "functional";
 const BLOCKED_TYPE = "text/plain";
 const CATEGORY_ATTR = "data-consent-category";
 const PROCESSED_ATTR = "data-consent-processed";
+const BLOCKED_SELECTOR = `script[type="${BLOCKED_TYPE}"][${CATEGORY_ATTR}]`;
 
 /**
  * Replace blocked scripts whose category has been granted.
@@ -24,7 +25,7 @@ function unblockMatchingScripts(categories: Omit<ConsentCategories, "necessary">
   if (typeof document === "undefined") return;
 
   const scripts = document.querySelectorAll<HTMLScriptElement>(
-    `script[type="${BLOCKED_TYPE}"][${CATEGORY_ATTR}]:not([${PROCESSED_ATTR}])`
+    `${BLOCKED_SELECTOR}:not([${PROCESSED_ATTR}])`
   );
 
   scripts.forEach((script) => {
@@ -68,10 +69,10 @@ function observeNewScripts(
     let found = false;
     for (const mutation of mutations) {
       for (const node of Array.from(mutation.addedNodes)) {
+        // The blocked script itself, or one inside an added container (a component, a fragment).
         if (
-          node.nodeName === "SCRIPT" &&
-          (node as HTMLScriptElement).getAttribute("type") === BLOCKED_TYPE &&
-          (node as HTMLScriptElement).hasAttribute(CATEGORY_ATTR)
+          node instanceof Element &&
+          (node.matches(BLOCKED_SELECTOR) || node.querySelector(BLOCKED_SELECTOR) !== null)
         ) {
           found = true;
           break;
