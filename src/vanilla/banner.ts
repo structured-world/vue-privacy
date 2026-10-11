@@ -19,29 +19,31 @@ import type {
 // This is intentional and follows CSS best practices for progressive enhancement.
 // The reject colours default to the accept ones, so refusing is as visible as accepting
 // (EDPB Cookie Banner Taskforce report, January 2023, points 9-14).
+// The palettes set private --_consent-* properties on the banner, read only after the public
+// --consent-* ones, so a site's own colours win under every theme; the light palette is the
+// fallbacks themselves.
 export const BANNER_CSS = `/* Vue Privacy - Vanilla Banner Styles */
-:root,[data-consent-theme="light"]{--consent-bg:#fff;--consent-text:#1a1a1a;--consent-text-secondary:#666;--consent-link:#0066cc;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff;--consent-font:system-ui,-apple-system,sans-serif}
-.consent-banner{position:fixed;left:0;right:0;z-index:9999;padding:1rem;background:var(--consent-bg,#fff);color:var(--consent-text,#1a1a1a);box-shadow:0 -2px 10px rgba(0,0,0,.1);font-family:var(--consent-font,system-ui,-apple-system,sans-serif);box-sizing:border-box}
+.consent-banner{position:fixed;left:0;right:0;z-index:9999;padding:1rem;background:var(--consent-bg,var(--_consent-bg,#fff));color:var(--consent-text,var(--_consent-text,#1a1a1a));box-shadow:0 -2px 10px rgba(0,0,0,.1);font-family:var(--consent-font,system-ui,-apple-system,sans-serif);box-sizing:border-box}
 .consent-banner *,.consent-banner *::before,.consent-banner *::after{box-sizing:border-box}
 .consent-banner--bottom{bottom:0}
 .consent-banner--top{top:0;box-shadow:0 2px 10px rgba(0,0,0,.1)}
 .consent-banner--center{top:50%;left:50%;right:auto;transform:translate(-50%,-50%);max-width:500px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15)}
 .consent-banner__content{max-width:1200px;margin:0 auto}
-.consent-banner__title{margin:0 0 .5rem;font-size:1.125rem;font-weight:600;color:var(--consent-text,#1a1a1a)}
-.consent-banner__message{margin:0 0 1rem;font-size:.875rem;line-height:1.5;color:var(--consent-text-secondary,#666)}
-.consent-banner__privacy-link{color:var(--consent-link,#0066cc);text-decoration:underline}
+.consent-banner__title{margin:0 0 .5rem;font-size:1.125rem;font-weight:600;color:var(--consent-text,var(--_consent-text,#1a1a1a))}
+.consent-banner__message{margin:0 0 1rem;font-size:.875rem;line-height:1.5;color:var(--consent-text-secondary,var(--_consent-text-secondary,#666))}
+.consent-banner__privacy-link{color:var(--consent-link,var(--_consent-link,#0066cc));text-decoration:underline}
 .consent-banner__privacy-link:hover{text-decoration:none}
 .consent-banner__actions{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:flex-end;max-width:1200px;margin:0 auto}
 .consent-banner__btn{padding:.5rem 1rem;font-size:.875rem;font-weight:500;border:none;border-radius:4px;cursor:pointer;transition:background-color .2s,opacity .2s;font-family:inherit}
 .consent-banner__btn:hover{opacity:.9}
-.consent-banner__btn:focus-visible{outline:2px solid var(--consent-link,#0066cc);outline-offset:2px}
+.consent-banner__btn:focus-visible{outline:2px solid var(--consent-link,var(--_consent-link,#0066cc));outline-offset:2px}
 .consent-banner__btn--accept{background:var(--consent-btn-accept-bg,#0066cc);color:var(--consent-btn-accept-text,#fff)}
 .consent-banner__btn--reject{background:var(--consent-btn-reject-bg,var(--consent-btn-accept-bg,#0066cc));color:var(--consent-btn-reject-text,var(--consent-btn-accept-text,#fff))}
-.consent-banner__btn--customize{background:transparent;color:var(--consent-link,#0066cc);border:1px solid currentColor}
+.consent-banner__btn--customize{background:transparent;color:var(--consent-link,var(--_consent-link,#0066cc));border:1px solid currentColor}
 .consent-banner--hidden{display:none}
 @media(max-width:640px){.consent-banner__actions{flex-direction:column}.consent-banner__btn{width:100%;text-align:center}}
-@media(prefers-color-scheme:dark){[data-consent-theme="auto"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff}}
-[data-consent-theme="dark"]{--consent-bg:#1a1a1a;--consent-text:#fff;--consent-text-secondary:#a0a0a0;--consent-link:#66b3ff;--consent-btn-accept-bg:#0066cc;--consent-btn-accept-text:#fff}`;
+@media(prefers-color-scheme:dark){.consent-banner[data-consent-theme="auto"]{--_consent-bg:#1a1a1a;--_consent-text:#fff;--_consent-text-secondary:#a0a0a0;--_consent-link:#66b3ff}}
+.consent-banner[data-consent-theme="dark"]{--_consent-bg:#1a1a1a;--_consent-text:#fff;--_consent-text-secondary:#a0a0a0;--_consent-link:#66b3ff}`;
 
 const STYLE_ID = "vue-privacy-vanilla-banner";
 

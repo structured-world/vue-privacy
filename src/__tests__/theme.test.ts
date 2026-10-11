@@ -19,12 +19,24 @@ const LIGHT_BG = "#ffffff";
 const DARK_BG = "#1a1a1a";
 
 /**
- * The background the stylesheet resolves for `el`: its variable, else the light default, as a
- * six-digit hex colour (the minified stylesheets write `#fff`).
+ * The colour a stylesheet resolves for `variable` on `el` when the site sets none: the public
+ * property if the stylesheet sets it, else the palette's private one (`--_consent-…`), else the
+ * light default, as a six-digit hex colour (the minified stylesheets write `#fff`).
  */
-function background(css: string, el: Element, variable: string, prefersDark: boolean): string {
-  const value = customProperties(css, el, prefersDark)[variable] ?? LIGHT_BG;
+function resolved(
+  css: string,
+  el: Element,
+  variable: string,
+  prefersDark: boolean,
+  fallback: string
+): string {
+  const vars = customProperties(css, el, prefersDark);
+  const value = vars[variable] ?? vars[variable.replace(/^--/, "--_")] ?? fallback;
   return /^#[0-9a-f]{3}$/i.test(value) ? value.replace(/[0-9a-f]/gi, (d) => d + d) : value;
+}
+
+function background(css: string, el: Element, variable: string, prefersDark: boolean): string {
+  return resolved(css, el, variable, prefersDark, LIGHT_BG);
 }
 
 type Theme = NonNullable<ConsentConfig["theme"]>;
@@ -134,9 +146,8 @@ describe("theme", () => {
     }
 
     function linkContrast(css: string, el: Element, bgVariable: string, prefersDark: boolean) {
-      const vars = customProperties(css, el, prefersDark);
       return contrast(
-        vars["--consent-link"] ?? DEFAULT_LINK,
+        resolved(css, el, "--consent-link", prefersDark, DEFAULT_LINK),
         background(css, el, bgVariable, prefersDark)
       );
     }
@@ -178,6 +189,53 @@ describe("theme", () => {
         expect(
           linkContrast(css, overlay, "--consent-modal-bg", prefersDark)
         ).toBeGreaterThanOrEqual(4.5);
+      }
+      banner.destroy();
+      modal.destroy();
+    });
+  });
+
+  // A site styles the dialogs through the public --consent-* properties, usually on :root. A
+  // palette that set those same properties on the component's element (or wrote them onto
+  // :root) would override the site's colours: the palettes keep to private --_consent-* ones,
+  // which the stylesheets read only where the site sets nothing.
+  describe("site colours outrank every palette", () => {
+    const cdnFile = (name: string) =>
+      readFileSync(resolve(import.meta.dirname, "../vanilla", name), "utf8");
+    const publicProperties = (vars: Record<string, string>) =>
+      Object.keys(vars).filter((name) => name.startsWith("--consent-"));
+
+    it.each<[Theme, boolean]>([
+      ["light", false],
+      ["light", true],
+      ["dark", false],
+      ["dark", true],
+      ["auto", false],
+      ["auto", true],
+    ])("theme %s, system dark %s: no stylesheet sets a public property", async (theme, dark) => {
+      const vue = await mountVue({ theme });
+      for (const [css, el] of [
+        [consentBannerCSS, vue.banner],
+        [consentModalCSS, vue.overlay],
+      ] as const) {
+        expect(publicProperties(customProperties(css, el, dark))).toEqual([]);
+        expect(publicProperties(customProperties(css, document.documentElement, dark))).toEqual([]);
+      }
+      vue.unmount();
+
+      const manager = createConsentManager({ theme, geoDetection: "never" });
+      const banner = createBanner({ manager });
+      const modal = createModal({ manager });
+      const bannerEl = document.querySelector(".consent-banner") as HTMLElement;
+      const overlay = document.querySelector(".consent-modal-overlay") as HTMLElement;
+      for (const [css, el] of [
+        [BANNER_CSS, bannerEl],
+        [cdnFile("banner.css"), bannerEl],
+        [MODAL_CSS, overlay],
+        [cdnFile("modal.css"), overlay],
+      ] as const) {
+        expect(publicProperties(customProperties(css, el, dark))).toEqual([]);
+        expect(publicProperties(customProperties(css, document.documentElement, dark))).toEqual([]);
       }
       banner.destroy();
       modal.destroy();

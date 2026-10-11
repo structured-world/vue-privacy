@@ -57,7 +57,7 @@ createConsentPlugin({
 });
 ```
 
-`'light'` keeps the light palette for visitors in dark mode, and `'dark'` shows the dark one on a light system. A component's own `theme` outranks the config: `<ConsentBanner theme="dark" />`, `<ConsentPreferenceModal theme="dark" />`, or `createBanner({ manager, theme: 'dark' })` in vanilla JS.
+`'light'` keeps the light palette for visitors in dark mode, and `'dark'` shows the dark one on a light system. The palettes only fill in what the site leaves unset: a `--consent-*` property the site defines wins under every theme, so a site with its own colours keeps them in dark mode too. A component's own `theme` outranks the config: `<ConsentBanner theme="dark" />`, `<ConsentPreferenceModal theme="dark" />`, or `createBanner({ manager, theme: 'dark' })` in vanilla JS.
 
 ### Equal prominence for refusing
 

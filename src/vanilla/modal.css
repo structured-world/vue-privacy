@@ -10,43 +10,32 @@
  *   --consent-modal-border, --consent-link, --consent-btn-accept-bg,
  *   --consent-btn-accept-text, --consent-toggle-bg-on, --consent-toggle-bg-off,
  *   --consent-font
+ *
+ * A site's own --consent-* properties win under every theme: the palettes set private
+ * --_consent-* ones on the overlay, which the rules read only after the public ones. The light
+ * palette is the fallbacks themselves.
  */
-
-/* Light theme (default) */
-:root,
-[data-consent-theme="light"] {
-  --consent-modal-bg: #ffffff;
-  --consent-modal-text: #1a1a1a;
-  --consent-modal-text-secondary: #666666;
-  --consent-modal-border: #e0e0e0;
-  --consent-link: #0066cc;
-  --consent-btn-accept-bg: #0066cc;
-  --consent-btn-accept-text: #ffffff;
-  --consent-toggle-bg-on: #0066cc;
-  --consent-toggle-bg-off: #cccccc;
-  --consent-font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
 
 /* Dark theme. The link colour keeps the outlined buttons and the focus outline at 4.5:1 or more
    on the dark background (WCAG 2.1 SC 1.4.3); #0066cc reaches 3.1:1 there. */
-[data-consent-theme="dark"] {
-  --consent-modal-bg: #1a1a1a;
-  --consent-modal-text: #ffffff;
-  --consent-modal-text-secondary: #a0a0a0;
-  --consent-modal-border: #333333;
-  --consent-toggle-bg-off: #444444;
-  --consent-link: #66b3ff;
+.consent-modal-overlay[data-consent-theme="dark"] {
+  --_consent-modal-bg: #1a1a1a;
+  --_consent-modal-text: #ffffff;
+  --_consent-modal-text-secondary: #a0a0a0;
+  --_consent-modal-border: #333333;
+  --_consent-toggle-bg-off: #444444;
+  --_consent-link: #66b3ff;
 }
 
 /* Auto theme: follow system preference */
 @media (prefers-color-scheme: dark) {
-  [data-consent-theme="auto"] {
-    --consent-modal-bg: #1a1a1a;
-    --consent-modal-text: #ffffff;
-    --consent-modal-text-secondary: #a0a0a0;
-    --consent-modal-border: #333333;
-    --consent-toggle-bg-off: #444444;
-    --consent-link: #66b3ff;
+  .consent-modal-overlay[data-consent-theme="auto"] {
+    --_consent-modal-bg: #1a1a1a;
+    --_consent-modal-text: #ffffff;
+    --_consent-modal-text-secondary: #a0a0a0;
+    --_consent-modal-border: #333333;
+    --_consent-toggle-bg-off: #444444;
+    --_consent-link: #66b3ff;
   }
 }
 
@@ -80,8 +69,8 @@
 /* Modal container */
 .consent-modal {
   position: relative;
-  background: var(--consent-modal-bg, #ffffff);
-  color: var(--consent-modal-text, #1a1a1a);
+  background: var(--consent-modal-bg, var(--_consent-modal-bg, #ffffff));
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
   border-radius: 8px;
   max-width: 600px;
   width: 100%;
@@ -104,20 +93,20 @@
 /* Header */
 .consent-modal__header {
   padding: 1.5rem 3rem 1.5rem 1.5rem;
-  border-bottom: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-bottom: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 .consent-modal__title {
   margin: 0 0 0.5rem;
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--consent-modal-text, #1a1a1a);
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
 }
 
 .consent-modal__description {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   line-height: 1.5;
 }
 
@@ -126,12 +115,12 @@
   margin: 0.75rem 0 0;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--consent-modal-text, #1a1a1a);
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
   line-height: 1.5;
 }
 
 .consent-modal__category--requested {
-  border-left: 3px solid var(--consent-link, #0066cc);
+  border-left: 3px solid var(--consent-link, var(--_consent-link, #0066cc));
   padding-left: 0.75rem;
 }
 
@@ -143,7 +132,7 @@
   background: transparent;
   border: none;
   font-size: 1.5rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   cursor: pointer;
   padding: 0.25rem;
   width: 2rem;
@@ -157,11 +146,11 @@
 }
 
 .consent-modal__close:hover {
-  background: var(--consent-modal-border, #e0e0e0);
+  background: var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 .consent-modal__close:focus-visible {
-  outline: 2px solid var(--consent-link, #0066cc);
+  outline: 2px solid var(--consent-link, var(--_consent-link, #0066cc));
   outline-offset: 2px;
 }
 
@@ -175,7 +164,7 @@
 .consent-modal__category {
   margin-bottom: 1.5rem;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-bottom: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 .consent-modal__category:last-child {
@@ -195,13 +184,13 @@
   font-size: 1rem;
   font-weight: 600;
   margin: 0;
-  color: var(--consent-modal-text, #1a1a1a);
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
 }
 
 .consent-modal__category-description {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   line-height: 1.5;
 }
 
@@ -228,7 +217,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--consent-toggle-bg-off, #cccccc);
+  background-color: var(--consent-toggle-bg-off, var(--_consent-toggle-bg-off, #cccccc));
   border-radius: 24px;
   transition: background-color 0.3s;
 }
@@ -259,14 +248,14 @@
 }
 
 .consent-toggle__input:focus-visible + .consent-toggle__slider {
-  outline: 2px solid var(--consent-link, #0066cc);
+  outline: 2px solid var(--consent-link, var(--_consent-link, #0066cc));
   outline-offset: 2px;
 }
 
 /* Footer */
 .consent-modal__footer {
   padding: 1.5rem;
-  border-top: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-top: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
@@ -288,7 +277,7 @@
 }
 
 .consent-modal__btn:focus-visible {
-  outline: 2px solid var(--consent-link, #0066cc);
+  outline: 2px solid var(--consent-link, var(--_consent-link, #0066cc));
   outline-offset: 2px;
 }
 
@@ -301,7 +290,7 @@
 .consent-modal__btn--accept-all,
 .consent-modal__btn--reject-all {
   background: transparent;
-  color: var(--consent-link, #0066cc);
+  color: var(--consent-link, var(--_consent-link, #0066cc));
   border: 1px solid currentColor;
 }
 

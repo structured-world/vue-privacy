@@ -17,8 +17,8 @@ const MODAL_CSS = `
 /* Modal container */
 .consent-modal {
   position: relative;
-  background: var(--consent-modal-bg, #ffffff);
-  color: var(--consent-modal-text, #1a1a1a);
+  background: var(--consent-modal-bg, var(--_consent-modal-bg, #ffffff));
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
   border-radius: 8px;
   max-width: 600px;
   width: 100%;
@@ -33,7 +33,7 @@ const MODAL_CSS = `
 /* Header */
 .consent-modal__header {
   padding: 1.5rem 3rem 1.5rem 1.5rem;
-  border-bottom: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-bottom: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 .consent-modal__title {
@@ -45,7 +45,7 @@ const MODAL_CSS = `
 .consent-modal__description {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   line-height: 1.5;
 }
 
@@ -54,12 +54,12 @@ const MODAL_CSS = `
   margin: 0.75rem 0 0;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--consent-modal-text, #1a1a1a);
+  color: var(--consent-modal-text, var(--_consent-modal-text, #1a1a1a));
   line-height: 1.5;
 }
 
 .consent-modal__category--requested {
-  border-left: 3px solid var(--consent-link, #0066cc);
+  border-left: 3px solid var(--consent-link, var(--_consent-link, #0066cc));
   padding-left: 0.75rem;
 }
 
@@ -71,7 +71,7 @@ const MODAL_CSS = `
   background: transparent;
   border: none;
   font-size: 1.5rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   cursor: pointer;
   padding: 0.25rem;
   width: 2rem;
@@ -84,7 +84,7 @@ const MODAL_CSS = `
 }
 
 .consent-modal__close:hover {
-  background: var(--consent-modal-border, #e0e0e0);
+  background: var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 /* Body with categories */
@@ -97,7 +97,7 @@ const MODAL_CSS = `
 .consent-modal__category {
   margin-bottom: 1.5rem;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-bottom: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
 }
 
 .consent-modal__category:last-child {
@@ -122,7 +122,7 @@ const MODAL_CSS = `
 .consent-modal__category-description {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--consent-modal-text-secondary, #666666);
+  color: var(--consent-modal-text-secondary, var(--_consent-modal-text-secondary, #666666));
   line-height: 1.5;
 }
 
@@ -149,7 +149,7 @@ const MODAL_CSS = `
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--consent-toggle-bg-off, #cccccc);
+  background-color: var(--consent-toggle-bg-off, var(--_consent-toggle-bg-off, #cccccc));
   border-radius: 24px;
   transition: background-color 0.3s;
 }
@@ -182,7 +182,7 @@ const MODAL_CSS = `
 /* Footer */
 .consent-modal__footer {
   padding: 1.5rem;
-  border-top: 1px solid var(--consent-modal-border, #e0e0e0);
+  border-top: 1px solid var(--consent-modal-border, var(--_consent-modal-border, #e0e0e0));
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
@@ -210,7 +210,7 @@ const MODAL_CSS = `
 .consent-modal__btn--accept-all,
 .consent-modal__btn--reject-all {
   background: transparent;
-  color: var(--consent-link, #0066cc);
+  color: var(--consent-link, var(--_consent-link, #0066cc));
   border: 1px solid currentColor;
 }
 
@@ -236,25 +236,27 @@ const MODAL_CSS = `
 }
 
 /* Dark palette: pinned by theme 'dark', or the system's choice under 'auto'; 'light' never.
+   It sets the private --_consent-* properties, which the rules read only after the public
+   ones: a site's own --consent-* colours win under every theme.
    The link colour keeps the outlined accept-all and reject-all buttons and the focus outline at
    4.5:1 or more on the dark background (WCAG 2.1 SC 1.4.3); #0066cc reaches 3.1:1 there. */
 .consent-modal-overlay[data-consent-theme="dark"] {
-  --consent-modal-bg: #1a1a1a;
-  --consent-modal-text: #ffffff;
-  --consent-modal-text-secondary: #a0a0a0;
-  --consent-modal-border: #333333;
-  --consent-toggle-bg-off: #444444;
-  --consent-link: #66b3ff;
+  --_consent-modal-bg: #1a1a1a;
+  --_consent-modal-text: #ffffff;
+  --_consent-modal-text-secondary: #a0a0a0;
+  --_consent-modal-border: #333333;
+  --_consent-toggle-bg-off: #444444;
+  --_consent-link: #66b3ff;
 }
 
 @media (prefers-color-scheme: dark) {
   .consent-modal-overlay[data-consent-theme="auto"] {
-    --consent-modal-bg: #1a1a1a;
-    --consent-modal-text: #ffffff;
-    --consent-modal-text-secondary: #a0a0a0;
-    --consent-modal-border: #333333;
-    --consent-toggle-bg-off: #444444;
-    --consent-link: #66b3ff;
+    --_consent-modal-bg: #1a1a1a;
+    --_consent-modal-text: #ffffff;
+    --_consent-modal-text-secondary: #a0a0a0;
+    --_consent-modal-border: #333333;
+    --_consent-toggle-bg-off: #444444;
+    --_consent-link: #66b3ff;
   }
 }
 
@@ -279,7 +281,7 @@ const MODAL_CSS = `
 .consent-modal__close:focus-visible,
 .consent-toggle__input:focus-visible + .consent-toggle__slider,
 .consent-modal__btn:focus-visible {
-  outline: 2px solid var(--consent-link, #0066cc);
+  outline: 2px solid var(--consent-link, var(--_consent-link, #0066cc));
   outline-offset: 2px;
 }
 `;
