@@ -46,6 +46,10 @@ beforeEach(() => {
   // Reset script tags (gtag)
   document.head.innerHTML = "";
   vi.restoreAllMocks();
+  // An ID a test set with setConsentUid() would count as this page's for the next test: start
+  // each from a site that has set none.
+  clearConsentUid();
+  cookieStore = "";
 });
 
 describe("ConsentManager with remote storage", () => {
@@ -587,6 +591,59 @@ describe("ConsentManager with remote storage", () => {
     } finally {
       window.history.pushState({}, "", "/");
     }
+  });
+
+  // The site may set the ID before it creates the manager, also on a route that cannot read it
+  // back: the next choice must still go to it.
+  it("writes to an ID the site set before creating the manager", async () => {
+    window.history.pushState({}, "", "/other");
+    setConsentUid("account", { cookie: { path: "/app" } });
+    // The browser does not show the cookie on this route.
+    cookieStore = "";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // A choice's record is fixed when it is made. A consent callback that signs the visitor in
+  // (setConsentUid()) reacts to that choice; the choice's write must not go to the new account.
+  it("writes an anonymous choice to no account a consent callback sets", async () => {
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    let signedIn = false;
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      onConsentChange: (consent) => {
+        if (!consent.categories.analytics || signedIn) return;
+        signedIn = true;
+        setConsentUid("account");
+      },
+    });
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });
 
   // The remote record of a visitor now in a consent jurisdiction is not restored: the banner asks

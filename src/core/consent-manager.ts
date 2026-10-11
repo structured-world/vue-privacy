@@ -153,10 +153,10 @@ export class ConsentManager {
    */
   private userId: string | null = null;
   /**
-   * siteConsentUid().revision when userId was kept. It starts at the revision at construction: an
-   * ID the site set before is read from the cookie, not taken from the setter.
+   * siteConsentUid().revision when userId was kept. It starts at none, so an ID the site set on
+   * this page before creating the manager counts too, also where the cookie cannot be read.
    */
-  private userIdRevision = siteConsentUid().revision;
+  private userIdRevision = 0;
   /**
    * The timestamp of the choice the consent cookie held when userId was kept (null: none). A
    * different one there now is another tab's decision, possibly after a reset, so userId may name
@@ -972,6 +972,7 @@ export class ConsentManager {
       const epoch = this.consentEpoch;
       const identity = this.identityGeneration;
       const storage = this.remoteStorage;
+      const revision = this.userIdRevision;
 
       // Writes of the one remote record run one at a time, so an older write cannot finish
       // after a newer one and overwrite it. A write still queued when a newer decision arrives
@@ -987,8 +988,10 @@ export class ConsentManager {
         .then(async () => {
           if (this.consentEpoch !== epoch) return;
           const started = ++this.remoteWritesStarted;
-          // Without an ID at the choice, the record an earlier write of this page created since.
-          const id = await storage.set(recordId ?? this.keptRecordId(), consent, controller.signal);
+          // Without an ID at the choice, the record an earlier write of this page created since;
+          // never an ID the site set after the choice (a consent callback signing in reacts to it).
+          const target = recordId ?? (siteConsentUid().revision === revision ? this.userId : null);
+          const id = await storage.set(target, consent, controller.signal);
           // A write that settled past the grace period is behind a newer one already running,
           // which keeps its own id; an id that arrived in time is still carried forward.
           if (!id || this.remoteWritesStarted !== started) return;
