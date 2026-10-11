@@ -1,6 +1,6 @@
 # @structured-world/vue-privacy
 
-GDPR cookie consent banner and Google Analytics (GA4) with **Google Consent Mode v2** for Vue 3, Nuxt, VitePress, Quasar and plain HTML, in 31 languages.
+Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visitor's choice controls tracking. **Google Consent Mode v2** for GA4, with a basic mode that sends nothing to Google before consent; 31 languages, no backend required.
 
 [![npm version](https://img.shields.io/npm/v/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
 [![npm downloads](https://img.shields.io/npm/dm/@structured-world/vue-privacy.svg)](https://www.npmjs.com/package/@structured-world/vue-privacy)
@@ -14,8 +14,10 @@ GDPR cookie consent banner and Google Analytics (GA4) with **Google Consent Mode
 
 ## Features
 
+- **Nothing Before Consent** — With `consentMode: 'basic'` no Google tag, `dataLayer` entry or request leaves the page until the visitor allows analytics; withdrawal switches the tag off and deletes its cookies
+- **Holds Across the SPA Lifecycle** — Reloads, client-side navigation and slow lookups never override a newer choice; in basic mode a choice or reset in another tab is followed
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
-- **GDPR & CCPA** — Compliant with EU GDPR and California Consumer Privacy Act
+- **GDPR & CCPA Building Blocks** — A fair banner and stored choice for the GDPR, CCPA state detection and "Do Not Sell" text; compliance still depends on the whole site ([Limits](https://privacy.sw.foundation/guide/limits))
 - **GDPR Roaming Protection** — Ask again when a choice made outside consent jurisdictions meets a visitor now inside one
 - **[Consent Jurisdictions](https://privacy.sw.foundation/guide/consent-jurisdictions)** — Ask visitors in the EEA and the UK (Switzerland on request), detected by country via Cloudflare headers, a Worker, IP API, or timezone; a failed lookup asks too
 - **Consent Banner** — Customizable GDPR/CCPA banner; follows the system's dark mode or a pinned light or dark theme
@@ -23,7 +25,7 @@ GDPR cookie consent banner and Google Analytics (GA4) with **Google Consent Mode
 - **Ask Again When Needed** — A feature that needs a refused category (sign-in, an embedded video) asks for it again, saying why
 - **Script Blocking** — Block third-party scripts until consent is granted
 - **[31 Languages](https://privacy.sw.foundation/guide/languages)** — every official EU language, Norwegian and Icelandic, plus ja, ko, ru, uk, zh; follows the browser's preferred languages and the site's language switcher
-- **Remote Storage** — Pluggable backend for cross-device consent sync with retry support
+- **Remote Storage** — Pluggable backend for the consent record with retry support; cross-device sync when the site links devices with `setConsentUid()`
 - **GA4 Event Tracking** — Typed helpers for ecommerce and conversion events
 - **Framework Support** — Vue 3, Quasar, VitePress, Nuxt 4 and 3
 - **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
@@ -475,9 +477,9 @@ Refusing is as easy and as visible as accepting by default: "Accept all" and "Re
 |---------|--------|
 | Consent banner component | ✅ |
 | Preference center modal | ✅ |
-| Google Consent Mode v2 | ✅ |
-| GDPR compliance | ✅ |
-| CCPA compliance | ✅ |
+| Google Consent Mode v2 (advanced and basic) | ✅ |
+| GDPR consent mechanics (fair banner, stored choice, withdrawal) | ✅ |
+| CCPA state detection and "Do Not Sell" text | ✅ |
 | GDPR roaming protection | ✅ |
 | GA4 integration | ✅ |
 | GA4 event tracking (ecommerce, conversions) | ✅ |
@@ -493,6 +495,8 @@ Refusing is as easy and as visible as accepting by default: "Accept all" and "Re
 | Remote consent storage | ✅ |
 | Retry on rate limit (KV storage) | ✅ |
 | Dark mode, pinned light or dark theme | ✅ |
+
+What the library does not cover (unmarked scripts, data sent before a withdrawal, proof of a visitor's location, a full US privacy program) is listed under [Limits](https://privacy.sw.foundation/guide/limits).
 
 ## Planned
 

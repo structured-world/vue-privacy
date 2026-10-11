@@ -60,7 +60,18 @@ That's it! The banner automatically shows for visitors in a [consent jurisdictio
 
 ### 3. SPA Page Tracking (Vue Router)
 
-For single-page apps with Vue Router, use `trackPageView` to track navigations:
+Pass the router to the plugin, and every client-side navigation sends a page view (with the `ga4Title` and `ga4Event` route meta, if set):
+
+```typescript
+// main.ts
+app.use(router);
+app.use(createConsentPlugin({
+  gaId: 'G-XXXXXXXXXX',
+  router,
+}));
+```
+
+For custom logic, track navigations yourself with `trackPageView` instead:
 
 ```vue
 <!-- App.vue or a layout component -->

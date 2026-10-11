@@ -19,6 +19,8 @@ const consent = ref<StoredConsent | null>(null);
 const googleSignals = ref<GoogleConsentSignals | null>(null);
 const rawPreferences = ref("");
 const rawUid = ref("");
+const consentMode = ref("advanced");
+const tagLoaded = ref(false);
 const showCookies = ref(false);
 const showGeoLog = ref(false);
 
@@ -27,7 +29,7 @@ const methodLabels: Record<string, string> = {
   worker: "Cloudflare Worker",
   api: "IP API (ipapi.co)",
   fallback: "Timezone Heuristic",
-  manual: "Manual Override",
+  manual: "Set by geoDetection",
   stored: "Stored Choice",
 };
 
@@ -47,6 +49,11 @@ function refresh() {
   geoResult.value = consentApi.getGeoResult();
   geoLog.value = consentApi.manager.getGeoDetectionLog();
   consent.value = consentApi.getConsent();
+  consentMode.value = consentApi.manager.getConfig().consentMode ?? "advanced";
+  // What the Network tab shows: whether the Google tag script is on the page at all.
+  tagLoaded.value =
+    typeof document !== "undefined" &&
+    document.querySelector('script[src*="googletagmanager.com/gtag/js"]') !== null;
 
   if (consent.value) {
     googleSignals.value = categoriesToGoogleSignals(consent.value.categories);
@@ -262,6 +269,14 @@ onMounted(() => {
         <!-- Google Consent Mode -->
         <div class="debug-section">
           <div class="debug-section-title">Google Consent Mode v2</div>
+          <div class="debug-row">
+            <span class="debug-label">Mode</span>
+            <span class="val-code">{{ consentMode }}</span>
+          </div>
+          <div class="debug-row">
+            <span class="debug-label">Google tag loaded</span>
+            <span :class="tagLoaded ? 'val-yes' : 'val-no'">{{ tagLoaded ? "Yes" : "No" }}</span>
+          </div>
           <template v-if="googleSignals">
             <div class="debug-row" v-for="(val, key) in googleSignals" :key="key">
               <span class="debug-label">{{ key }}</span>
