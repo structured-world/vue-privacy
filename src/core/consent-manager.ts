@@ -569,10 +569,6 @@ export class ConsentManager {
 
   private async decideInitialConsent(): Promise<void> {
     const epoch = this.consentEpoch;
-    // The remote record this visitor's writes go to, whatever path decides the consent below: a
-    // site that links devices sets the shared ID before init(), also where a local choice
-    // already exists and the remote record is never read. An undecodable cookie reads as no ID.
-    if (this.remoteStorage && this.userId === null) this.userId = getConsentUid();
 
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
@@ -687,6 +683,7 @@ export class ConsentManager {
     uid: string,
     epoch: number
   ): Promise<boolean> {
+    this.userId = uid;
     const version = this.config.version ?? DEFAULT_CONFIG.version;
     try {
       const remote = await storage.get(uid, version);
@@ -897,6 +894,11 @@ export class ConsentManager {
     // `functional` does not count: only analytics or marketing is a grant worth a remote
     // identifier.
     const hasNonNecessary = categories.analytics || categories.marketing;
+    // The record this choice updates: this page's own, or the one the consent_uid cookie names
+    // now (a site that links devices sets a shared ID, also before init() or where a local choice
+    // exists). Read before a refusal clears the cookie, and at the time of the choice, so a reset
+    // another tab made earlier leaves no ID behind. An undecodable cookie reads as no ID.
+    const recordId = this.userId ?? (this.remoteStorage ? getConsentUid() : null);
 
     this.storeAndConfirm(record);
     if (!hasNonNecessary) {
@@ -932,7 +934,7 @@ export class ConsentManager {
         .then(async () => {
           if (this.consentEpoch !== epoch) return;
           const started = ++this.remoteWritesStarted;
-          const id = await storage.set(this.userId, consent, controller.signal);
+          const id = await storage.set(this.userId ?? recordId, consent, controller.signal);
           // A write that settled past the grace period is behind a newer one already running,
           // which keeps its own id; an id that arrived in time is still carried forward.
           if (!id || this.remoteWritesStarted !== started) return;
@@ -1364,6 +1366,9 @@ export class ConsentManager {
     // categories the site no longer uses is a refusal now: the remote identity goes with it.
     const restored = this.choiceInEffect();
     if (restored && !restored.categories.analytics && !restored.categories.marketing) {
+      // The cookie goes, but a shared ID the site set stays this page's record: the next
+      // choice updates it instead of starting another.
+      if (this.remoteStorage) this.userId ??= getConsentUid();
       clearConsentUid(this.config);
     }
     this.reconcile(final, true);

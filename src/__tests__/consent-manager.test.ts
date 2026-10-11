@@ -310,6 +310,61 @@ describe("ConsentManager with remote storage", () => {
     }
   );
 
+  // A choice made before init() is supported too; its write must also go to the shared ID.
+  it("writes a choice made before init() to a shared consent_uid", async () => {
+    cookieStore = "consent_uid=shared-account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.acceptAll();
+    // The write runs before init() is ever called.
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    await manager.init();
+
+    expect(mockStorage.set.mock.calls[0][0]).toBe("shared-account");
+  });
+
+  // Another tab's reset clears both cookies while this page checks the location of a choice
+  // made outside consent jurisdictions; the ID it read before must not come back with the next
+  // choice, or the record the reset abandoned is written to again.
+  it("forgets the ID another tab's reset cleared during init()", async () => {
+    const local = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: false,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: {
+        detect: vi.fn().mockImplementation(async () => {
+          // The other tab resets while the lookup runs.
+          cookieStore = "";
+          return { consentRequired: true, method: "manual" as const };
+        }),
+      },
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
   // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made
   // decodeURIComponent throw, and init() rejected instead of deciding the consent. An undecodable
   // value counts as absent.
