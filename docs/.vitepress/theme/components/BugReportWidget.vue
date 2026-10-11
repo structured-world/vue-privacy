@@ -97,8 +97,10 @@ function handleKeydown(e: KeyboardEvent) {
 
   // Focus trap when dialog is open
   if (e.key === "Tab" && state.value !== "collapsed" && panelRef.value) {
+    // Disabled controls take no focus: one left last (the submit button of an invalid form)
+    // would let Tab leave the dialog instead of wrapping.
     const focusable = panelRef.value.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
     );
     if (focusable.length === 0) return;
 

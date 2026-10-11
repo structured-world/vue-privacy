@@ -64,6 +64,8 @@ Add `router` to the plugin registration from step 1 (install the plugin once): e
 
 ```typescript
 // main.ts: step 1's registration, with the router
+import router from './router'; // your Vue Router instance
+
 app.use(router);
 app.use(createConsentPlugin({
   gaId: 'G-XXXXXXXXXX',
