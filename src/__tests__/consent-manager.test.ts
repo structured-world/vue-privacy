@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 import { clearConsentUid, setConsentUid, siteConsentUid } from "../core/storage";
+import type { GeoDetectionResult } from "../core/types";
 
 /**
  * Remote storage whose first `pending` writes wait until the test settles them, in call order;
@@ -643,6 +644,130 @@ describe("ConsentManager with remote storage", () => {
     await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(2));
     expect(storage.set.mock.calls[1][0]).toBe("record-x");
     await vi.waitFor(() => expect(cookieStore).toContain("consent_uid=record-x"));
+  });
+
+  // The site signs out, but its clearConsentUid() does not reach the cookie (blocked writes, or a
+  // cookie of another path). The old account's ID the cookie still shows is no longer the
+  // visitor's: the next choice must not write to that record.
+  it("lets a sign-out win over a consent_uid it could not remove", async () => {
+    const { manager, storage } = await roamingVisitor("anonymous");
+    const cookie = Object.getOwnPropertyDescriptor(document, "cookie")!;
+    Object.defineProperty(document, "cookie", {
+      get: cookie.get,
+      set: (value: string) => {
+        if (!value.startsWith("consent_uid=")) cookie.set!.call(document, value);
+      },
+      configurable: true,
+    });
+    cookieStore = `${cookieStore}; consent_uid=account`;
+    try {
+      clearConsentUid();
+    } finally {
+      Object.defineProperty(document, "cookie", cookie);
+    }
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // Two apps on one origin keep their consent under different cookie paths. A sign-in in the
+  // app under /a must not reach the app under /b, which cannot read that app's consent_uid.
+  it("ignores a sign-in another tab makes for a different cookie path", async () => {
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/b" },
+    });
+    await manager.init();
+    const before = siteConsentUid().revision;
+
+    vi.resetModules();
+    const otherApp = await import("../core/storage");
+    otherApp.setConsentUid("account-a", { cookie: { path: "/a" } });
+    // That cookie belongs to /a: pages under /b never see it.
+    cookieStore = "";
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(siteConsentUid().revision).toBe(before);
+
+    await manager.acceptAll();
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // init() checks a choice made outside consent jurisdictions against the location. While that
+  // runs, another tab saves a choice made in one, in the same millisecond. The location check
+  // must take it for a new choice (its revision differs) and keep it, not clear it.
+  it("keeps another tab's choice of the same millisecond made during the roaming check", async () => {
+    const timestamp = Date.now();
+    const outside = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp,
+      version: "1.0",
+      consentRequired: false,
+      revision: "outside",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(outside))}`;
+    let locate: (value: GeoDetectionResult) => void = () => {};
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn(() => new Promise<GeoDetectionResult>((resolve) => (locate = resolve))),
+      },
+      version: "1.0",
+    });
+    const init = manager.init();
+
+    const otherTab = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp,
+      version: "1.0",
+      consentRequired: true,
+      revision: "other-tab",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(otherTab))}`;
+    locate({ consentRequired: true, method: "manual" });
+    await init;
+
+    expect(cookieStore).toContain("other-tab");
+    expect(manager.getConsent()?.revision).toBe("other-tab");
+  });
+
+  // In a sandboxed frame with an opaque origin the browser exposes BroadcastChannel but its
+  // constructor throws. The manager must still be created, without cross-tab sign-outs.
+  it("works where BroadcastChannel cannot be created", async () => {
+    vi.stubGlobal(
+      "BroadcastChannel",
+      class {
+        constructor() {
+          throw new DOMException("opaque origin", "SecurityError");
+        }
+      }
+    );
+    try {
+      vi.resetModules();
+      const framed = await import("../core/consent-manager");
+      const framedStorage = await import("../core/storage");
+      const storage = {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue("anonymous"),
+      };
+      const manager = new framed.ConsentManager({
+        storage,
+        geoDetector: createMockGeoDetector(true),
+        version: "1.0",
+      });
+      expect(() => framedStorage.clearConsentUid()).not.toThrow();
+      await manager.init();
+      await manager.acceptAll();
+      await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   // With cookie.path set, a client-side route outside it cannot see consent_uid. A choice made

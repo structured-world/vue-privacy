@@ -300,7 +300,7 @@ export class ConsentManager {
 
     if (config.storage) {
       this.remoteStorage = config.storage;
-      followSiteConsentUid();
+      followSiteConsentUid(this.config);
     }
   }
 
@@ -632,7 +632,7 @@ export class ConsentManager {
     // Remote fallback: restore the record stored for this visitor's ID. Without one, geo
     // detection below starts at once, with no extra tick.
     const storage = this.remoteStorage;
-    const uid = storage ? getConsentUid() : null;
+    const uid = storage ? this.cookieRecordId() : null;
     if (storage && uid && (await this.restoreRemoteConsent(storage, uid, epoch))) return;
 
     await this.detectJurisdiction();
@@ -643,7 +643,7 @@ export class ConsentManager {
     const latest = getStoredConsent(this.config);
     if (
       latest !== null &&
-      latest.timestamp !== stored?.timestamp &&
+      (stored === null || recordKey(latest) !== recordKey(stored)) &&
       (!this.consentRequired || latest.consentRequired === true)
     ) {
       this.restore();
@@ -685,7 +685,8 @@ export class ConsentManager {
     // Another tab may have saved a choice, or reset, while the location was checked. That is
     // the visitor's latest decision: the consent read above must not be written back over it.
     const current = getStoredConsent(this.config);
-    const changed = current?.timestamp !== stored.timestamp;
+    // By time and revision: another tab's choice of the same millisecond is a change too.
+    const changed = current === null || recordKey(current) !== recordKey(stored);
     if (changed && current !== null && (!needsReconsent || current.consentRequired === true)) {
       this.restore();
       return true;
@@ -764,7 +765,7 @@ export class ConsentManager {
       return true;
     }
     // Reset in another tab meanwhile: undecided again, decided like a first visit.
-    if (getConsentUid() !== uid) return false;
+    if (this.cookieRecordId() !== uid) return false;
     if (required) {
       // In a consent jurisdiction — cannot use remote consent without disclosure: the banner
       // asks. consent_uid is cleared only for a known location; after a failed lookup the
@@ -940,8 +941,18 @@ export class ConsentManager {
     this.userId = id;
     this.userIdRevision = siteConsentUid().revision;
     this.userIdChoice = choice;
-    this.userIdOnCookie = id !== null && getConsentUid() === id;
+    this.userIdOnCookie = id !== null && this.cookieRecordId() === id;
     this.userIdKeeps++;
+  }
+
+  /**
+   * The record consent_uid names. Not one the site replaced by setConsentUid() or
+   * clearConsentUid() whose write never reached the cookie (blocked, or a cookie of another path):
+   * the site's explicit change wins over a stale cookie.
+   */
+  private cookieRecordId(): string | null {
+    const uid = getConsentUid();
+    return uid !== null && uid === siteConsentUid().replaced ? null : uid;
   }
 
   /** Remove consent_uid for this page's own reasons (a refusal, a jurisdiction change). */
@@ -960,7 +971,7 @@ export class ConsentManager {
     if (site.revision !== this.userIdRevision) return site.uid;
     // consent_uid named the kept ID and this page never removed it: gone now, another tab signed
     // out (a different ID there is read before this is asked).
-    if (this.userIdOnCookie && this.cookieInScope() && getConsentUid() === null) return null;
+    if (this.userIdOnCookie && this.cookieInScope() && this.cookieRecordId() === null) return null;
     // Kept with no choice (a remote record a jurisdiction change did not restore), any choice the
     // cookie shows now is another tab's; kept with one, only once this page's writes reach the
     // cookie, else a blocked cookie would read as a different choice.
@@ -1003,7 +1014,7 @@ export class ConsentManager {
     // site set, or a record another tab started after a reset), else the one this page kept.
     // Read at the time of the choice, before a refusal clears the cookie. An undecodable cookie
     // reads as no ID.
-    const recordId = this.remoteStorage ? (getConsentUid() ?? this.keptRecordId()) : null;
+    const recordId = this.remoteStorage ? (this.cookieRecordId() ?? this.keptRecordId()) : null;
 
     this.storeAndConfirm(record);
     if (!hasNonNecessary) {
@@ -1498,7 +1509,7 @@ export class ConsentManager {
     const restored = this.choiceInEffect();
     // The record consent_uid names stays this page's, also once a refusal took the cookie or on a
     // route outside cookie.path: the next choice updates it instead of starting another.
-    const uid = restored && this.remoteStorage ? getConsentUid() : null;
+    const uid = restored && this.remoteStorage ? this.cookieRecordId() : null;
     if (uid !== null) this.keepRecordId(uid, restored);
     if (restored && !restored.categories.analytics && !restored.categories.marketing) {
       this.dropConsentUid();
