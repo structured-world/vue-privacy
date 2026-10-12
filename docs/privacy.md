@@ -31,7 +31,7 @@ Before October 2026 the site was set to keep a copy of a grant in a Cloudflare K
 
 | Cookie | Purpose | Duration | Category |
 |--------|---------|----------|----------|
-| `consent_preferences` | Stores your consent choices, when you made them, and whether you made them where consent is required (no location) | 365 days | Necessary |
+| `consent_preferences` | Stores your consent choices, when you made them, whether you made them where consent is required (no location), and a random ID of that choice (not of you) that tells it apart from one made in another tab at the same moment | 365 days | Necessary |
 | `consent_uid` | Only if set before October 2026: an anonymous ID for the remote copy of a grant, no longer read or set | Up to 365 days from when it was set | Necessary |
 | `_ga`, `_ga_*` | Google Analytics tracking | 2 years | Analytics |
 

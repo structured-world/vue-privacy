@@ -22,7 +22,7 @@ createConsentPlugin({
 
 Everywhere else every category is granted without a banner; US states with privacy laws are handled by `ccpaEnabled`. A choice made in a consent jurisdiction is stored as such and stands wherever the visitor goes; one made outside is checked against the current location on each visit.
 
-The consent cookie (`consent_preferences`) is strictly necessary storage, set without consent to remember the choice (refusals included), so it holds only what that needs: the categories, the time and configuration version of the choice, and `consentRequired`. The country, region and detection method are never stored; cookies written by earlier versions with them are rewritten without them on the next page load, keeping what is left of their lifetime; one past its lifetime, or one for another consent `version`, is deleted instead.
+The consent cookie (`consent_preferences`) is strictly necessary storage, set without consent to remember the choice (refusals included), so it holds only what that needs: the categories, the time and configuration version of the choice, `consentRequired`, and a random `revision` that tells two choices made in the same millisecond apart (one in another tab, say); it identifies the choice, not the visitor. The country, region and detection method are never stored; cookies written by earlier versions with them are rewritten without them on the next page load, keeping what is left of their lifetime; one past its lifetime, or one for another consent `version`, is deleted instead.
 
 `manager.isConsentRequired()` tells which applies to the visitor.
 

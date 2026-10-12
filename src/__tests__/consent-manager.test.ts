@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 import { clearConsentUid, setConsentUid } from "../core/storage";
 
@@ -15,6 +15,19 @@ function pendingWrites(pending: number, id: string) {
   }
   set.mockResolvedValue(id);
   return { storage: { get: vi.fn().mockResolvedValue(null), set }, settle };
+}
+
+/** The record ID the first grant on a page in a consent jurisdiction writes to. */
+async function recordOfFirstGrant(storage: { get: Mock; set: Mock }) {
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  await manager.acceptAll();
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+  return storage.set.mock.calls[0][0];
 }
 
 /**
@@ -819,20 +832,11 @@ describe("ConsentManager with remote storage", () => {
   // write must create one rather than file every such visitor under the empty key.
   it("treats an empty consent_uid as no record", async () => {
     cookieStore = "consent_uid=";
-    const mockStorage = {
+    const record = await recordOfFirstGrant({
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue("fresh"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
     });
-    await manager.init();
-    await manager.acceptAll();
-
-    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
-    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+    expect(record).toBeNull();
   });
 
   // Where cookie writes stop taking effect, an older cookie with the same moment and categories
@@ -941,23 +945,14 @@ describe("ConsentManager with remote storage", () => {
   // next choice must not write to it.
   it("does not keep a looked-up ID that another tab's reset cleared", async () => {
     cookieStore = "consent_uid=old-identity";
-    const mockStorage = {
+    const record = await recordOfFirstGrant({
       get: vi.fn().mockImplementation(async () => {
         cookieStore = "";
         return null;
       }),
       set: vi.fn().mockResolvedValue("new-identity"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
     });
-    await manager.init();
-    await manager.acceptAll();
-
-    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
-    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+    expect(record).toBeNull();
   });
 
   // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made

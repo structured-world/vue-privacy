@@ -105,6 +105,11 @@ function detectorAnswer(consentRequired: unknown, isEU: unknown): boolean | unde
   return undefined;
 }
 
+/** A choice's identity: its time, and its revision for choices made in the same millisecond. */
+function recordKey(choice: StoredConsent): string {
+  return `${choice.timestamp}/${choice.revision ?? ""}`;
+}
+
 function sameCategories(a: Categories, b: Categories): boolean {
   return (
     a.analytics === b.analytics && a.marketing === b.marketing && a.functional === b.functional
@@ -182,8 +187,11 @@ export class ConsentManager {
   private sentSignals: GoogleConsentSignals | null = null;
   /** The categories the callback and listeners last received (null: none, or reset since). */
   private notifiedCategories: Categories | null = null;
-  /** The timestamp of the choice reconcile() last acted on; a newer record is a new decision. */
-  private actedOnRecord: number | null = null;
+  /**
+   * The choice reconcile() last acted on, by time and revision (recordKey()); another record is a
+   * new decision, also one another tab made in the same millisecond.
+   */
+  private actedOnRecord: string | null = null;
   /** The token of the pending reload for a withdrawal (reloadOnWithdrawal), if one is scheduled. */
   private pendingReload: object | null = null;
   /**
@@ -1381,8 +1389,9 @@ export class ConsentManager {
     }
     // A record not acted on before: a new decision, here or in another tab, even with the same
     // categories (it retries a failed tag load and reaches the callbacks).
-    const newRecord = choice !== null && choice.timestamp !== this.actedOnRecord;
-    this.actedOnRecord = choice?.timestamp ?? null;
+    const acted = choice === null ? null : recordKey(choice);
+    const newRecord = acted !== null && acted !== this.actedOnRecord;
+    this.actedOnRecord = acted;
     const googleChanged = this.sentSignals === null || !sameSignals(signals, this.sentSignals);
     const decided = googleChanged || newRecord;
     if (decided) this.pushGoogleConsent(signals, final, restoring);

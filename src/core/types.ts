@@ -149,7 +149,8 @@ export interface GoogleAnalyticsOptions {
 export interface StoredConsent {
   /**
    * Random ID of this decision in the consent cookie; tells two choices made in the same
-   * millisecond apart (another tab's from this page's). Not set on remote records.
+   * millisecond apart (another tab's from this page's). It identifies the choice, not the visitor.
+   * Not set on remote records.
    */
   revision?: string;
   /** Consent categories */
