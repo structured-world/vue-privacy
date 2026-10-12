@@ -723,6 +723,123 @@ describe("ConsentManager with remote storage", () => {
     expect(mockStorage.set.mock.calls[1][0]).toBe("shared-account");
   });
 
+  // A write to record A runs while another tab resets and starts record B; this page's refusal
+  // then takes B. When the A write settles before the B write, it must not hand A back as this
+  // page's record: a choice made meanwhile would write to the abandoned A.
+  it("keeps a newer choice's record when an older write settles", async () => {
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=record-a`;
+    let settleFirst: (id: string) => void = () => {};
+    let settleSecond: (id: string) => void = () => {};
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              settleFirst = resolve;
+            })
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              settleSecond = resolve;
+            })
+        )
+        .mockResolvedValue("record-b"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+
+    // Another tab resets and grants: record B.
+    const other = { ...grant, timestamp: Date.now() + 1 };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(other))}; consent_uid=record-b`;
+    await manager.rejectAll();
+    settleFirst("record-a");
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    // A choice while the B write still runs.
+    await manager.acceptAll();
+    settleSecond("record-b");
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
+    expect(mockStorage.set.mock.calls[2][0]).toBe("record-b");
+  });
+
+  // resetConsent() forgets the visitor's record, also an account ID the site set earlier. A
+  // manager created again on the same page (an SPA remount) must not bring that ID back.
+  it("does not bring back a reset account in a recreated manager", async () => {
+    setConsentUid("account");
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("fresh"),
+    };
+    const first = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await first.init();
+    first.resetConsent();
+    first.destroy();
+
+    const second = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await second.init();
+    await second.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // A remote record not restored in a consent jurisdiction stays this page's record while the
+  // banner asks. Another tab's decision meanwhile (after a reset there) replaces it: the banner's
+  // answer must not go to the abandoned record.
+  it("drops the record kept for a jurisdiction change once another tab decides", async () => {
+    cookieStore = "consent_uid=account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue({
+        categories: { analytics: true, marketing: true, functional: true },
+        timestamp: Date.now(),
+        version: "1.0",
+      }),
+      set: vi.fn().mockResolvedValue("fresh"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Another tab resets and refuses.
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
   // The remote record of a visitor now in a consent jurisdiction is not restored: the banner asks
   // and consent_uid goes. The answer must still update that record, or other devices linked to
   // it keep the earlier grant.

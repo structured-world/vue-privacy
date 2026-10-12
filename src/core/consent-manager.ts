@@ -24,6 +24,7 @@ import {
   migrateConsentCookie,
   clearConsent,
   getConsentUid,
+  clearConsentUid,
   writeConsentUid,
   deleteConsentUid,
   siteConsentUid,
@@ -159,11 +160,13 @@ export class ConsentManager {
    */
   private userIdRevision = 0;
   /**
-   * The timestamp of the choice the consent cookie held when userId was kept (null: none). A
-   * different one there now is another tab's decision, possibly after a reset, so userId may name
-   * the record that reset abandoned.
+   * The choice the consent cookie held when userId was kept (null: none). A different one there
+   * now is another tab's decision, possibly after a reset, so userId may name the record that
+   * reset abandoned.
    */
   private userIdChoice: StoredConsent | null = null;
+  /** Advanced each time userId is kept: a write tells whether a newer choice kept a record since. */
+  private userIdKeeps = 0;
   private remoteStorage: ConsentStorage | null = null;
   private showBannerCallback: (() => void) | null = null;
   private hideBannerCallback: (() => void) | null = null;
@@ -919,6 +922,7 @@ export class ConsentManager {
     this.userId = id;
     this.userIdRevision = siteConsentUid().revision;
     this.userIdChoice = choice;
+    this.userIdKeeps++;
   }
 
   /**
@@ -929,9 +933,12 @@ export class ConsentManager {
   private keptRecordId(): string | null {
     const site = siteConsentUid();
     if (site.revision !== this.userIdRevision) return site.uid;
+    // Kept with no choice (a remote record a jurisdiction change did not restore), any choice the
+    // cookie shows now is another tab's; kept with one, only once this page's writes reach the
+    // cookie, else a blocked cookie would read as a different choice.
     if (
       this.userId !== null &&
-      this.cookieConfirmed &&
+      (this.cookieConfirmed || this.userIdChoice === null) &&
       this.cookieInScope() &&
       !this.sameKeptChoice(getStoredConsent(this.config))
     ) {
@@ -994,6 +1001,7 @@ export class ConsentManager {
       const identity = this.identityGeneration;
       const storage = this.remoteStorage;
       const revision = this.userIdRevision;
+      const keeps = this.userIdKeeps;
 
       // Writes of the one remote record run one at a time, so an older write cannot finish
       // after a newer one and overwrite it. A write still queued when a newer decision arrives
@@ -1021,6 +1029,9 @@ export class ConsentManager {
           // decides, so this one is neither kept nor written back. The revision this choice saw,
           // not the kept one, which a newer choice moved to the site's latest.
           if (revision !== siteConsentUid().revision) return;
+          // A newer choice kept a record of its own (one another tab started after a reset, say):
+          // that record is the visitor's now. One that kept none waits for this write's record.
+          if (this.userIdKeeps !== keeps && this.userId !== null) return;
           // The cookie is kept only for a grant, and only while it is still the latest decision:
           // a withdrawal made meanwhile must not get the grant's id back.
           if (hasNonNecessary && this.consentEpoch === epoch) writeConsentUid(id, this.config);
@@ -1686,8 +1697,9 @@ export class ConsentManager {
    */
   resetConsent(): void {
     clearConsent(this.config);
-    deleteConsentUid(this.config);
-    // Also an ID the site set earlier: the reset forgets the visitor's record.
+    // Also an ID the site set earlier, for this page as a whole: the reset forgets the visitor's
+    // record, and a manager created again on this page (an SPA remount) must not bring it back.
+    clearConsentUid(this.config);
     this.keepRecordId(null);
     this.identityGeneration++;
     this.pageChoice = null;
