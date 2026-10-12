@@ -1,6 +1,103 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
+import { clearConsentUid, setConsentUid, siteConsentUid } from "../core/storage";
+import type { GeoDetectionResult } from "../core/types";
+
+/**
+ * Remote storage whose first `pending` writes wait until the test settles them, in call order;
+ * later writes resolve to `id` at once.
+ */
+function pendingWrites(pending: number, id: string) {
+  const settle: Array<(id: string) => void> = [];
+  const set = vi.fn();
+  for (let i = 0; i < pending; i++) {
+    set.mockImplementationOnce(() => new Promise<string>((resolve) => settle.push(resolve)));
+  }
+  set.mockResolvedValue(id);
+  return { storage: { get: vi.fn().mockResolvedValue(null), set }, settle };
+}
+
+/** The record ID the first grant on a page in a consent jurisdiction writes to. */
+async function recordOfFirstGrant(storage: { get: Mock; set: Mock }) {
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  await manager.acceptAll();
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+  return storage.set.mock.calls[0][0];
+}
+
+/**
+ * A grant restored with consent_uid=record-a, then a new choice whose write to record-a is still
+ * running (the first of `pending` writes that wait for the test).
+ */
+async function writeInFlightToRecordA(pending: number, laterId: string) {
+  const grant = {
+    categories: { analytics: true, marketing: true, functional: true },
+    timestamp: Date.now(),
+    version: "1.0",
+    consentRequired: true,
+  };
+  cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=record-a`;
+  const { storage, settle } = pendingWrites(pending, laterId);
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+  return { manager, storage, settle, grant };
+}
+
+/**
+ * A visitor with a remote grant under consent_uid=account, now in a consent jurisdiction: init()
+ * does not restore the grant and the banner asks.
+ */
+async function roamingVisitor(writtenId: string) {
+  cookieStore = "consent_uid=account";
+  const storage = {
+    get: vi.fn().mockResolvedValue({
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    }),
+    set: vi.fn().mockResolvedValue(writtenId),
+  };
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  return { manager, storage };
+}
+
+async function restoreLinkedRefusal() {
+  const refusal = {
+    categories: { analytics: false, marketing: false, functional: false },
+    timestamp: Date.now(),
+    version: "1.0",
+    consentRequired: true,
+  };
+  cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
+  const mockStorage = {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue("new-identity"),
+  };
+  const manager = new ConsentManager({
+    storage: mockStorage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  return { refusal, mockStorage, manager };
+}
 
 function createMockGeoDetector(consentRequired = false, countryCode?: string, region?: string) {
   return {
@@ -45,6 +142,10 @@ beforeEach(() => {
   // Reset script tags (gtag)
   document.head.innerHTML = "";
   vi.restoreAllMocks();
+  // An ID a test set with setConsentUid() would count as this page's for the next test: start
+  // each from a site that has set none.
+  clearConsentUid();
+  cookieStore = "";
 });
 
 describe("ConsentManager with remote storage", () => {
@@ -273,6 +374,942 @@ describe("ConsentManager with remote storage", () => {
     const consent = manager.getConsent();
     expect(consent).not.toBeNull();
     expect(consent!.categories.analytics).toBe(true);
+  });
+
+  // A site links devices by giving them one consent_uid (the signed-in account's ID) before
+  // init(). Regression: with a local choice on the device, init() restored it from the cookie and
+  // never took the ID, so the next choice created a new remote record instead of updating the
+  // shared one, and the other device never saw it.
+  it.each([
+    ["a grant", true],
+    ["a refusal", false],
+  ])(
+    "writes the next choice to a shared consent_uid when %s is stored locally",
+    async (_, granted) => {
+      const local = {
+        categories: { analytics: granted, marketing: granted, functional: granted },
+        timestamp: Date.now(),
+        version: "1.0",
+        consentRequired: true,
+      };
+      cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=shared-account`;
+      const mockStorage = {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue("shared-account"),
+      };
+      const manager = new ConsentManager({
+        storage: mockStorage,
+        geoDetector: createMockGeoDetector(true),
+        version: "1.0",
+      });
+
+      await manager.init();
+      await (granted ? manager.rejectAll() : manager.acceptAll());
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("shared-account");
+    }
+  );
+
+  // A refusal clears consent_uid. When a consent callback replaces it at once with a grant, the
+  // refusal's write is dropped, and the grant must still go to the shared record the refusal took
+  // over, not to a new one.
+  it("keeps the shared ID when a callback replaces a refusal", async () => {
+    const local = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=shared-account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    let replaced = false;
+    const manager: ConsentManager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      onConsentChange: (consent) => {
+        if (consent.categories.analytics || replaced) return;
+        replaced = true;
+        void manager.acceptAll();
+      },
+    });
+
+    await manager.init();
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalled());
+    expect(mockStorage.set.mock.calls.map((call) => call[0])).toEqual(["shared-account"]);
+    expect(mockStorage.set.mock.calls[0][1].categories.analytics).toBe(true);
+  });
+
+  // A choice made before init() is supported too; its write must also go to the shared ID.
+  it("writes a choice made before init() to a shared consent_uid", async () => {
+    cookieStore = "consent_uid=shared-account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.acceptAll();
+    // The write runs before init() is ever called.
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    await manager.init();
+
+    expect(mockStorage.set.mock.calls[0][0]).toBe("shared-account");
+  });
+
+  // Another tab's reset clears both cookies while this page checks the location of a choice
+  // made outside consent jurisdictions; the ID it read before must not come back with the next
+  // choice, or the record the reset abandoned is written to again.
+  it("forgets the ID another tab's reset cleared during init()", async () => {
+    const local = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: false,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: {
+        detect: vi.fn().mockImplementation(async () => {
+          // The other tab resets while the lookup runs.
+          cookieStore = "";
+          return { consentRequired: true, method: "manual" as const };
+        }),
+      },
+      version: "1.0",
+    });
+
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // After init(), a page holding a record ID (here kept from a restored refusal) must drop it
+  // when another tab resets: the next choice starts a new record, not the abandoned one.
+  it("forgets the record ID after another tab's reset", async () => {
+    const local = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=old-identity`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Another tab resets: both cookies go.
+    cookieStore = "";
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // Another tab reset and chose again since this page restored a refusal: the cookie names that
+  // tab's new record now, and this page's next choice must update it, not the abandoned one.
+  it("writes to the record another tab started after its reset", async () => {
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
+
+    // Another tab resets, then grants: both cookies are back, naming its new record.
+    const grant = {
+      ...refusal,
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now() + 1,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=new-identity`;
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBe("new-identity");
+  });
+
+  // A refusal restored with a signed-in account's ID keeps that ID once its cookie is gone. When
+  // the site then signs the visitor out with clearConsentUid(), the next choice must not write
+  // to the account's record.
+  it("drops a kept ID when the site clears consent_uid", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    clearConsentUid();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // A grant restored with a signed-in account's ID, then another tab signs out: its
+  // clearConsentUid() removes consent_uid but cannot tell this page, and the consent cookie is
+  // unchanged. The next choice here must not write the signed-out visitor's preferences to the
+  // account's record.
+  it("drops a kept ID when another tab clears consent_uid", async () => {
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // The other tab's sign-out: only the cookie goes, this page's module state stays.
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}`;
+    await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // A refusal restored with an account's ID removed consent_uid itself, so the cookie says
+  // nothing when another tab signs out. That tab's clearConsentUid() must still reach this page:
+  // the next grant here must not go to the account's record.
+  it("drops a kept ID of a refusal when another tab signs out", async () => {
+    const { mockStorage, manager } = await restoreLinkedRefusal();
+    const before = siteConsentUid().revision;
+
+    // Another tab: its own instance of the storage module.
+    vi.resetModules();
+    const otherTab = await import("../core/storage");
+    otherTab.clearConsentUid();
+    await vi.waitFor(() => expect(siteConsentUid().revision).not.toBe(before));
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // An anonymous refusal's write creates a record while a newer grant waits behind it. The grant
+  // updates that record, and its consent_uid must name it, so later pages and tabs reuse it.
+  it("keeps consent_uid for a grant that updates the record a refusal created", async () => {
+    const { storage, settle } = pendingWrites(1, "record-x");
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.rejectAll();
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    await manager.acceptAll();
+
+    settle[0]("record-x");
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(2));
+    expect(storage.set.mock.calls[1][0]).toBe("record-x");
+    await vi.waitFor(() => expect(cookieStore).toContain("consent_uid=record-x"));
+  });
+
+  // The site signs out, but its clearConsentUid() does not reach the cookie (blocked writes, or a
+  // cookie of another path). The old account's ID the cookie still shows is no longer the
+  // visitor's: the next choice must not write to that record.
+  it("lets a sign-out win over a consent_uid it could not remove", async () => {
+    const { manager, storage } = await roamingVisitor("anonymous");
+    const cookie = Object.getOwnPropertyDescriptor(document, "cookie")!;
+    Object.defineProperty(document, "cookie", {
+      get: cookie.get,
+      set: (value: string) => {
+        if (!value.startsWith("consent_uid=")) cookie.set!.call(document, value);
+      },
+      configurable: true,
+    });
+    cookieStore = `${cookieStore}; consent_uid=account`;
+    try {
+      clearConsentUid();
+    } finally {
+      Object.defineProperty(document, "cookie", cookie);
+    }
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // Two apps on one origin keep their consent under different cookie paths. A sign-in in the
+  // app under /a must not reach the app under /b, which cannot read that app's consent_uid.
+  it("ignores a sign-in another tab makes for a different cookie path", async () => {
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/b" },
+    });
+    await manager.init();
+    const before = siteConsentUid().revision;
+
+    vi.resetModules();
+    const otherApp = await import("../core/storage");
+    otherApp.setConsentUid("account-a", { cookie: { path: "/a" } });
+    // That cookie belongs to /a: pages under /b never see it.
+    cookieStore = "";
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(siteConsentUid().revision).toBe(before);
+
+    await manager.acceptAll();
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // init() checks a choice made outside consent jurisdictions against the location. While that
+  // runs, another tab saves a choice made in one, in the same millisecond. The location check
+  // must take it for a new choice (its revision differs) and keep it, not clear it.
+  it("keeps another tab's choice of the same millisecond made during the roaming check", async () => {
+    const timestamp = Date.now();
+    const outside = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp,
+      version: "1.0",
+      consentRequired: false,
+      revision: "outside",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(outside))}`;
+    let locate: (value: GeoDetectionResult) => void = () => {};
+    const manager = new ConsentManager({
+      geoDetector: {
+        detect: vi.fn(() => new Promise<GeoDetectionResult>((resolve) => (locate = resolve))),
+      },
+      version: "1.0",
+    });
+    const init = manager.init();
+
+    const otherTab = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp,
+      version: "1.0",
+      consentRequired: true,
+      revision: "other-tab",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(otherTab))}`;
+    locate({ consentRequired: true, method: "manual" });
+    await init;
+
+    expect(cookieStore).toContain("other-tab");
+    expect(manager.getConsent()?.revision).toBe("other-tab");
+  });
+
+  // This tab is in a consent jurisdiction; another tab that has not noticed the move saves a
+  // grant made outside one in the same millisecond as this page's choice. The roaming rule
+  // rejects that grant here: it must not pass for this page's own choice by its time alone.
+  it("does not take another tab's same-millisecond grant for this page's choice", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.rejectAll();
+    const own = manager.getConsent()!;
+
+    const otherTab = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: own.timestamp,
+      version: "1.0",
+      consentRequired: false,
+      revision: "other-tab",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(otherTab))}`;
+
+    expect(manager.getConsent()).toBeNull();
+  });
+
+  // One SPA runs two apps that keep their consent under /a and /b. The app under /a signs in on
+  // this page; the manager under /b, which restored a refusal linked to its own account, cannot
+  // read /a's cookie and must keep updating its own record.
+  it("keeps a sign-in under another cookie path out of this manager's record", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    const preferences = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    window.history.pushState({}, "", "/b/page");
+    cookieStore = `${preferences}; consent_uid=account-b`;
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account-b"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/b" },
+    });
+    try {
+      await manager.init();
+
+      setConsentUid("account-a", { cookie: { path: "/a" } });
+      // That cookie belongs to /a: pages under /b never see it.
+      cookieStore = preferences;
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+      expect(storage.set.mock.calls[0][0]).toBe("account-b");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // Another tab signs in to account A, then this tab to account B. The other tab's message is
+  // delivered later than this tab's own change; it is older and must not replace account B.
+  it("ignores another tab's sign-in that arrives after a newer one here", async () => {
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    vi.resetModules();
+    const otherTab = await import("../core/storage");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    otherTab.setConsentUid("account-a");
+    now.mockReturnValue(2_000);
+    setConsentUid("account-b");
+    now.mockRestore();
+    // Let the other tab's message arrive.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBe("account-b");
+  });
+
+  // This tab receives another tab's sign-in, then signs in to account B itself while its clock
+  // reads earlier (the same millisecond, or a clock set back). The call made later here is the
+  // newer change and must win over the one received before it.
+  it("orders a sign-in here after one already received from another tab", async () => {
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    vi.resetModules();
+    const otherTab = await import("../core/storage");
+    const base = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(base + 5_000);
+    otherTab.setConsentUid("account-a");
+    now.mockRestore();
+    await vi.waitFor(() => expect(siteConsentUid().uid).toBe("account-a"));
+
+    const later = vi.spyOn(Date, "now").mockReturnValue(base + 1_000);
+    setConsentUid("account-b");
+    later.mockRestore();
+    // Where this page cannot read the cookie, the site's latest ID is all it has.
+    cookieStore = "";
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBe("account-b");
+  });
+
+  // In a sandboxed frame with an opaque origin the browser exposes BroadcastChannel but its
+  // constructor throws. The manager must still be created, without cross-tab sign-outs.
+  it("works where BroadcastChannel cannot be created", async () => {
+    vi.stubGlobal(
+      "BroadcastChannel",
+      class {
+        constructor() {
+          throw new DOMException("opaque origin", "SecurityError");
+        }
+      }
+    );
+    try {
+      vi.resetModules();
+      const framed = await import("../core/consent-manager");
+      const framedStorage = await import("../core/storage");
+      const storage = {
+        get: vi.fn().mockResolvedValue(null),
+        set: vi.fn().mockResolvedValue("anonymous"),
+      };
+      const manager = new framed.ConsentManager({
+        storage,
+        geoDetector: createMockGeoDetector(true),
+        version: "1.0",
+      });
+      expect(() => framedStorage.clearConsentUid()).not.toThrow();
+      await manager.init();
+      await manager.acceptAll();
+      await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  // With cookie.path set, a client-side route outside it cannot see consent_uid. A choice made
+  // there must still update the record the page saw on a route inside the path.
+  it("keeps the record ID on a route outside cookie.path", async () => {
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    window.history.pushState({}, "", "/app/page");
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+
+      // The route leaves /app: the browser no longer sends either cookie to this page.
+      window.history.pushState({}, "", "/other");
+      cookieStore = "";
+      await manager.rejectAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // Another tab reset and then refused: the consent cookie is back, consent_uid is not. That
+  // decision replaced the one this page kept an ID for, so the ID may name the record the reset
+  // abandoned, and the next choice must not write to it.
+  it("drops a kept ID once another tab's decision replaced this page's", async () => {
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
+
+    // Another tab resets, then refuses: a new consent cookie, no consent_uid.
+    const later = { ...refusal, timestamp: Date.now() + 1 };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(later))}`;
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  it("drops an abandoned ID when the replacement refusal has the same timestamp", async () => {
+    // Timer quantization must not make another tab's reset-and-refusal the old identity.
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
+    vi.spyOn(Date, "now").mockReturnValue(refusal.timestamp);
+    cookieStore = "";
+    const other = new ConsentManager({ geoDetector: createMockGeoDetector(true), version: "1.0" });
+    await other.rejectAll();
+    await manager.acceptAll();
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // After a sign-in on a route outside cookie.path, the ID the site sets cannot be read back on
+  // that route. The next choice must still go to it.
+  it("writes to an ID the site set on a route outside cookie.path", async () => {
+    window.history.pushState({}, "", "/other");
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+
+      setConsentUid("account", { cookie: { path: "/app" } });
+      // The browser does not show the new cookie on this route.
+      cookieStore = "";
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // The site may set the ID before it creates the manager, also on a route that cannot read it
+  // back: the next choice must still go to it.
+  it("writes to an ID the site set before creating the manager", async () => {
+    window.history.pushState({}, "", "/other");
+    setConsentUid("account", { cookie: { path: "/app" } });
+    // The browser does not show the cookie on this route.
+    cookieStore = "";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+      expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // A choice's record is fixed when it is made. A consent callback that signs the visitor in
+  // (setConsentUid()) reacts to that choice; the choice's write must not go to the new account.
+  it("writes an anonymous choice to no account a consent callback sets", async () => {
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    let signedIn = false;
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      onConsentChange: (consent) => {
+        if (!consent.categories.analytics || signedIn) return;
+        signedIn = true;
+        setConsentUid("account");
+      },
+    });
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // An older write may settle after the site signed in and a newer choice kept the account's ID
+  // (on a route outside cookie.path, where the cookie cannot tell). Its record is the one before
+  // the sign-in, so a later choice must still go to the account.
+  it("keeps the account a newer choice took over an older write's record", async () => {
+    window.history.pushState({}, "", "/other");
+    const { storage: mockStorage, settle } = pendingWrites(2, "account");
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+      await manager.acceptAll();
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+
+      setConsentUid("account", { cookie: { path: "/app" } });
+      // The browser does not show the cookie on this route.
+      cookieStore = "";
+      await manager.rejectAll();
+      // The first write settles now, with the record it created before the sign-in.
+      settle[0]("anonymous");
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+      // A choice while the account's write still runs.
+      await manager.acceptAll();
+      settle[1]("account");
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
+      expect(mockStorage.set.mock.calls[2][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // A refusal made before init() keeps its record ID; init() then adds the jurisdiction to that
+  // same choice in the cookie. That rewrite is this page's own, not another tab's decision, so the
+  // next choice must still update the shared record.
+  it("keeps the record ID when init() adds the jurisdiction to a choice", async () => {
+    cookieStore = "consent_uid=shared-account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.rejectAll();
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    expect(mockStorage.set.mock.calls[1][0]).toBe("shared-account");
+  });
+
+  // A write to record A runs while another tab resets and starts record B; this page's refusal
+  // then takes B. When the A write settles before the B write, it must not hand A back as this
+  // page's record: a choice made meanwhile would write to the abandoned A.
+  it("keeps a newer choice's record when an older write settles", async () => {
+    const {
+      manager,
+      storage: mockStorage,
+      settle,
+      grant,
+    } = await writeInFlightToRecordA(2, "record-b");
+
+    // Another tab resets and grants: record B.
+    const other = { ...grant, timestamp: Date.now() + 1 };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(other))}; consent_uid=record-b`;
+    await manager.rejectAll();
+    settle[0]("record-a");
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    // A choice while the B write still runs.
+    await manager.acceptAll();
+    settle[1]("record-b");
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
+    expect(mockStorage.set.mock.calls[2][0]).toBe("record-b");
+  });
+
+  // A write to record A runs while another tab resets and refuses; this page's next choice then
+  // keeps no record. The A write settling meanwhile must not make A this page's record again, or
+  // the queued write updates the record the reset abandoned.
+  it("keeps no record when an older write settles after a reset elsewhere", async () => {
+    const {
+      manager,
+      storage: mockStorage,
+      settle,
+      grant,
+    } = await writeInFlightToRecordA(1, "fresh");
+
+    // Another tab resets and refuses: a new consent cookie, no consent_uid.
+    const refusal = {
+      ...grant,
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now() + 1,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    await manager.acceptAll();
+    settle[0]("record-a");
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    expect(mockStorage.set.mock.calls[1][0]).toBeNull();
+  });
+
+  // An empty consent_uid (setConsentUid(""), or a server's `consent_uid=`) names no record; a
+  // write must create one rather than file every such visitor under the empty key.
+  it("treats an empty consent_uid as no record", async () => {
+    cookieStore = "consent_uid=";
+    const record = await recordOfFirstGrant({
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("fresh"),
+    });
+    expect(record).toBeNull();
+  });
+
+  // Where cookie writes stop taking effect, an older cookie with the same moment and categories
+  // must not pass for the new choice: its revision differs, and the next choice would take it for
+  // another tab's decision and drop the linked record.
+  it("does not confirm a cookie write by an older choice of the same moment", async () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: now,
+      version: "1.0",
+      consentRequired: true,
+      revision: "earlier",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Cookie writes stop taking effect (blocked from here on).
+    Object.defineProperty(document, "cookie", {
+      get: () => cookieStore,
+      set: () => {},
+      configurable: true,
+    });
+    await manager.rejectAll();
+    await manager.acceptAll();
+
+    // The refusal's write is superseded before it runs; the grant's write is the one that counts.
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalled());
+    expect(mockStorage.set.mock.calls.at(-1)?.[0]).toBe("account");
+  });
+
+  // resetConsent() forgets the visitor's record, also an account ID the site set earlier. A
+  // manager created again on the same page (an SPA remount) must not bring that ID back.
+  it("does not bring back a reset account in a recreated manager", async () => {
+    setConsentUid("account");
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("fresh"),
+    };
+    const first = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await first.init();
+    first.resetConsent();
+    first.destroy();
+
+    const second = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await second.init();
+    await second.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // A remote record not restored in a consent jurisdiction stays this page's record while the
+  // banner asks. Another tab's decision meanwhile (after a reset there) replaces it: the banner's
+  // answer must not go to the abandoned record.
+  it("drops the record kept for a jurisdiction change once another tab decides", async () => {
+    const { manager, storage: mockStorage } = await roamingVisitor("fresh");
+
+    // Another tab resets and refuses.
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // The remote record of a visitor now in a consent jurisdiction is not restored: the banner asks
+  // and consent_uid goes. The answer must still update that record, or other devices linked to
+  // it keep the earlier grant.
+  it("writes the answer to the remote record a jurisdiction change did not restore", async () => {
+    const { manager, storage: mockStorage } = await roamingVisitor("account");
+    expect(manager.getConsent()).toBeNull();
+
+    await manager.rejectAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBe("account");
+  });
+
+  // init() looks up the remote record a consent_uid names; another tab's reset clears both
+  // cookies while the lookup runs, and it finds nothing. That ID named no adopted record, so the
+  // next choice must not write to it.
+  it("does not keep a looked-up ID that another tab's reset cleared", async () => {
+    cookieStore = "consent_uid=old-identity";
+    const record = await recordOfFirstGrant({
+      get: vi.fn().mockImplementation(async () => {
+        cookieStore = "";
+        return null;
+      }),
+      set: vi.fn().mockResolvedValue("new-identity"),
+    });
+    expect(record).toBeNull();
+  });
+
+  // A cookie value another app or a server wrote raw (`%` is no valid percent-encoding) made
+  // decodeURIComponent throw, and init() rejected instead of deciding the consent. An undecodable
+  // value counts as absent.
+  it("restores the local choice when consent_uid holds an undecodable value", async () => {
+    const local = {
+      categories: { analytics: true, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(local))}; consent_uid=%`;
+    const mockStorage = { get: vi.fn().mockResolvedValue(null), set: vi.fn() };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+
+    await manager.init();
+
+    expect(manager.getConsent()?.categories.analytics).toBe(true);
+  });
+
+  it("asks again when consent_preferences holds an undecodable value", async () => {
+    cookieStore = "consent_preferences=%";
+    const showBanner = vi.fn();
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    manager.onShowBanner(showBanner);
+
+    await manager.init();
+
+    expect(manager.getConsent()).toBeNull();
+    expect(showBanner).toHaveBeenCalledTimes(1);
   });
 
   it("blocks remote storage restore and shows banner when user roamed to EU", async () => {

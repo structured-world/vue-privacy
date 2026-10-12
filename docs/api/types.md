@@ -261,6 +261,8 @@ interface ConsentCategories {
 
 ```typescript
 interface StoredConsent {
+  /** Random ID of this decision in the consent cookie; tells two choices made in the same millisecond apart (another tab's from this page's). Not set on remote records. */
+  revision?: string;
   /** Consent categories */
   categories: Omit<ConsentCategories, "necessary">;
   /** Timestamp when consent was given */
