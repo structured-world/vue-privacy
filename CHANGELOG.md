@@ -4,6 +4,15 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.0.2](https://github.com/structured-world/vue-privacy/compare/v2.0.1...v2.0.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **scripts:** unblock a granted script added inside a container ([#247](https://github.com/structured-world/vue-privacy/issues/247)) ([b08a57d](https://github.com/structured-world/vue-privacy/commit/b08a57d7e3361e2b49ad647ec34b8a63addca9df)), closes [#246](https://github.com/structured-world/vue-privacy/issues/246)
+* **storage:** treat a consent cookie with malformed fields as no choice ([#249](https://github.com/structured-world/vue-privacy/issues/249)) ([0e1d713](https://github.com/structured-world/vue-privacy/commit/0e1d7135949717400216d84e699461e1703f3f2b)), closes [#248](https://github.com/structured-world/vue-privacy/issues/248)
+* **storage:** use a shared consent_uid when a local choice exists ([#255](https://github.com/structured-world/vue-privacy/issues/255)) ([ec57c51](https://github.com/structured-world/vue-privacy/commit/ec57c51a17e6661e0c6b020b5a185795e3ca1b9b)), closes [#251](https://github.com/structured-world/vue-privacy/issues/251)
+
 ## [2.0.1](https://github.com/structured-world/vue-privacy/compare/v2.0.0...v2.0.1) (2026-10-11)
 
 
