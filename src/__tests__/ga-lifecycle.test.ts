@@ -2887,6 +2887,32 @@ describe("basic consent mode", () => {
     expect(onConsentChange.mock.calls[0][0].categories.analytics).toBe(true);
   });
 
+  it("follows another tab's choice made in the same millisecond as this tab's", async () => {
+    // Regression: a choice was told apart from the one acted on by its time alone, so another
+    // tab's choice of the same millisecond (a coarse timer, two programmatic choices) was taken
+    // for this tab's: its callback never ran.
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const onConsentChange = vi.fn();
+    const manager = basicManager({ onConsentChange });
+    await manager.init();
+    await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+    onConsentChange.mockClear();
+
+    storeConsent(
+      {
+        revision: "other-tab",
+        categories: { analytics: true, marketing: false, functional: true },
+        timestamp: now,
+        consentRequired: true,
+      },
+      {}
+    );
+    window.dispatchEvent(new Event("focus"));
+
+    expect(onConsentChange).toHaveBeenCalledTimes(1);
+  });
+
   it("notifies listeners again when another tab regrants after a reset", async () => {
     // Regression: a reset from another tab left the listeners' last grant recorded, so the same
     // grant made again was taken for one already delivered and gated scripts stayed blocked.

@@ -126,7 +126,13 @@ export function getCookie(name: string): string | null {
   for (const cookie of cookies) {
     const [key, value] = cookie.trim().split("=");
     if (key === name) {
-      return decodeURIComponent(value);
+      // A value written raw by another app or a server (a lone `%`) does not decode; it is no
+      // value of ours, so it counts as absent instead of failing whatever reads it.
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return null;
+      }
     }
   }
   return null;
@@ -215,6 +221,7 @@ function hasStoredTypes(record: Record<string, unknown>, categories: Record<stri
     // JSON.stringify writes no Infinity, so an overflowing literal (1e400) was never ours.
     Number.isFinite(record.timestamp) &&
     typeof record.version === "string" &&
+    (record.revision === undefined || typeof record.revision === "string") &&
     // Each flag present is checked itself: a malformed consentRequired is not replaced by isEU.
     isFlag(record.consentRequired) &&
     isFlag(record.isEU)
@@ -222,7 +229,13 @@ function hasStoredTypes(record: Record<string, unknown>, categories: Record<stri
 }
 
 /** The fields the consent cookie holds. */
-const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
+const STORED_FIELDS = new Set([
+  "categories",
+  "timestamp",
+  "version",
+  "consentRequired",
+  "revision",
+]);
 
 /**
  * The consent cookie, as stored, whatever its version, or null. `outdated`: it was written by an
@@ -251,6 +264,7 @@ function parseConsentCookie(
       categories: stored.categories,
       timestamp: stored.timestamp,
       version: stored.version,
+      ...(stored.revision !== undefined && { revision: stored.revision }),
       ...(consentRequired !== undefined && { consentRequired }),
     },
     outdated: Object.keys(parsed).some((key) => !STORED_FIELDS.has(key)),
@@ -312,7 +326,12 @@ export function storeConsent(
   };
   const version = config.version ?? DEFAULT_CONFIG.version;
 
+  // A record written without a time is a new choice: it gets its own revision, so two made in the
+  // same millisecond stay apart. A rewrite of a stored record keeps the revision it carries.
+  const revision =
+    consent.revision ?? (consent.timestamp === undefined ? createConsentRevision() : undefined);
   const stored: StoredConsent = {
+    ...(revision !== undefined && { revision }),
     categories: consent.categories,
     // The caller's own record keeps its time: the page compares its choice to the cookie by it.
     timestamp: consent.timestamp ?? Date.now(),
@@ -328,6 +347,12 @@ export function storeConsent(
   });
 }
 
+/** A decision identity independent of clock precision, also outside secure browser contexts. */
+export function createConsentRevision(): string {
+  const bytes = crypto.getRandomValues(new Uint32Array(4));
+  return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("");
+}
+
 /**
  * Clear stored consent
  */
@@ -338,16 +363,165 @@ export function clearConsent(config: Partial<ConsentConfig> = {}): void {
 }
 
 /**
- * Get consent UID from cookie (used for KV re-identification)
+ * Whether a cookie set with `cookiePath` is sent on `requestPath` (RFC 6265 5.1.4 path-match): the
+ * paths are equal, or the cookie path is a prefix that ends with "/" or is followed by "/".
+ * @internal
  */
-export function getConsentUid(): string | null {
-  return getCookie("consent_uid");
+export function cookiePathMatches(requestPath: string, cookiePath: string): boolean {
+  if (requestPath === cookiePath) return true;
+  if (!requestPath.startsWith(cookiePath)) return false;
+  return cookiePath.endsWith("/") || requestPath.charAt(cookiePath.length) === "/";
 }
 
 /**
- * Set consent UID cookie for re-identification
+ * The site's latest change of consent_uid (setConsentUid() or clearConsentUid(), here or in
+ * another tab): the ID (null: cleared), when it was made (`at`, with `tie` for the same
+ * millisecond), a revision this page advances with each change it applies (0: none), and the value
+ * the cookie still showed here although the change replaced it (null: none). One site has one
+ * consent and one consent_uid: apps that need their own run as separate sites (own domain).
+ */
+interface SiteUidChange {
+  uid: string | null;
+  at: number;
+  tie: string;
+  revision: number;
+  replaced: string | null;
+}
+
+let siteUid: SiteUidChange = { uid: null, at: 0, tie: "", revision: 0, replaced: null };
+
+/**
+ * The latest `at` this page made or applied: a logical clock (Lamport) that puts each own change
+ * after every change seen so far, in call order and also when the system clock reads earlier.
+ */
+let lastChangeAt = 0;
+
+/** Whether change `a` was made after change `b`. */
+function madeAfter(a: { at: number; tie: string }, b: { at: number; tie: string }): boolean {
+  return a.at !== b.at ? a.at > b.at : a.tie > b.tie;
+}
+
+/**
+ * The site's latest change of consent_uid. `revision` lets a manager that keeps an ID the cookie
+ * does not show (cleared by a refusal, or a route outside cookie.path) tell a sign-in or sign-out
+ * apart from a route that cannot read the cookie. `replaced` is an ID the cookie kept showing after
+ * that change (a blocked write, a cookie of another path): it names a record the site left, not
+ * the visitor's.
+ * @internal
+ */
+export function siteConsentUid(): {
+  revision: number;
+  uid: string | null;
+  replaced: string | null;
+} {
+  return { revision: siteUid.revision, uid: siteUid.uid, replaced: siteUid.replaced };
+}
+
+/**
+ * Apply a change of consent_uid, after it reached the cookie. One older than the latest change
+ * applied is dropped: broadcasts arrive asynchronously, and one from another tab may come after
+ * this page's own newer change.
+ */
+function applySiteUidChange(change: { uid: string | null; at: number; tie: string }): void {
+  if (siteUid.revision !== 0 && !madeAfter(change, siteUid)) return;
+  lastChangeAt = Math.max(lastChangeAt, change.at);
+  const shown = getConsentUid();
+  siteUid = {
+    ...change,
+    revision: siteUid.revision + 1,
+    replaced: shown !== null && shown !== change.uid ? shown : null,
+  };
+}
+
+/** Carries the site's changes of consent_uid to its other open tabs. */
+const SITE_UID_CHANNEL = "vue-privacy:consent_uid";
+
+/** Open the channel; null where the browser refuses one (an opaque origin, sandboxed frames). */
+function openChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === "undefined") return null;
+  try {
+    return new BroadcastChannel(SITE_UID_CHANNEL);
+  } catch {
+    return null;
+  }
+}
+
+/** This page's listening channel (null: refused), once a manager with remote storage asked. */
+let siteUidChannel: BroadcastChannel | null | undefined;
+
+/** A change another tab announced, or null for a message of any other shape. */
+function announcedChange(data: unknown): { uid: string | null; at: number; tie: string } | null {
+  if (typeof data !== "object" || data === null) return null;
+  const { uid, at, tie } = data as Record<string, unknown>;
+  if (typeof at !== "number" || typeof tie !== "string") return null;
+  return { uid: typeof uid === "string" ? uid || null : null, at, tie };
+}
+
+/**
+ * Follow the site's sign-ins and sign-outs in other tabs of this origin. A page that keeps a
+ * record ID the consent_uid cookie does not show (a refusal removed it) cannot see another tab
+ * clear it; the change is applied here as if the site had made it on this page. Without a channel
+ * (Safari before 15.4, or refused, as in an opaque-origin frame) other tabs are not followed.
+ * @internal
+ */
+export function followSiteConsentUid(): void {
+  if (typeof document === "undefined" || siteUidChannel !== undefined) return;
+  siteUidChannel = openChannel();
+  if (!siteUidChannel) return;
+  siteUidChannel.onmessage = (event: MessageEvent<unknown>) => {
+    const change = announcedChange(event.data);
+    if (change) applySiteUidChange(change);
+  };
+}
+
+/** Record the site's change of consent_uid here and tell its other open tabs; best effort. */
+function noteSiteConsentUid(uid: string | null): void {
+  const change = { uid, at: Math.max(Date.now(), lastChangeAt + 1), tie: createConsentRevision() };
+  applySiteUidChange(change);
+  // A posted message is queued for every other channel of the name at once, so a channel opened
+  // only to send can close right away.
+  const channel = siteUidChannel ?? openChannel();
+  if (!channel) return;
+  try {
+    channel.postMessage(change);
+  } catch {
+    // Not delivered: other tabs then learn of the change from the cookie only.
+  } finally {
+    if (channel !== siteUidChannel) channel.close();
+  }
+}
+
+/**
+ * Get consent UID from cookie (used for KV re-identification). An empty value names no record.
+ */
+export function getConsentUid(): string | null {
+  return getCookie("consent_uid") || null;
+}
+
+/**
+ * Set consent UID cookie for re-identification. An empty ID names no record, as if cleared.
  */
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
+  if (typeof document === "undefined") return;
+  writeConsentUid(uid, config);
+  noteSiteConsentUid(uid || null);
+}
+
+/**
+ * Clear consent UID cookie
+ */
+export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
+  if (typeof document === "undefined") return;
+  deleteConsentUid(config);
+  noteSiteConsentUid(null);
+}
+
+/**
+ * Write the consent_uid cookie for the consent manager itself, which tracks its own record and
+ * is no sign-in or sign-out of the site.
+ * @internal
+ */
+export function writeConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
   setCookie("consent_uid", uid, {
     expiry: config.cookie?.expiry ?? DEFAULT_CONFIG.cookie.expiry,
     domain: config.cookie?.domain,
@@ -356,9 +530,10 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
 }
 
 /**
- * Clear consent UID cookie
+ * Remove the consent_uid cookie for the consent manager itself (see writeConsentUid()).
+ * @internal
  */
-export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
+export function deleteConsentUid(config: Partial<ConsentConfig> = {}): void {
   const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
   deleteCookie("consent_uid", path, config.cookie?.domain);
 }
