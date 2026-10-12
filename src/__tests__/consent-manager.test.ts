@@ -576,6 +576,37 @@ describe("ConsentManager with remote storage", () => {
     expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });
 
+  // A grant restored with a signed-in account's ID, then another tab signs out: its
+  // clearConsentUid() removes consent_uid but cannot tell this page, and the consent cookie is
+  // unchanged. The next choice here must not write the signed-out visitor's preferences to the
+  // account's record.
+  it("drops a kept ID when another tab clears consent_uid", async () => {
+    const grant = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // The other tab's sign-out: only the cookie goes, this page's module state stays.
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}`;
+    await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
   // With cookie.path set, a client-side route outside it cannot see consent_uid. A choice made
   // there must still update the record the page saw on a route inside the path.
   it("keeps the record ID on a route outside cookie.path", async () => {
