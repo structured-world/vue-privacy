@@ -373,18 +373,18 @@ export function siteConsentUid(): { revision: number; uid: string | null } {
 }
 
 /**
- * Get consent UID from cookie (used for KV re-identification)
+ * Get consent UID from cookie (used for KV re-identification). An empty value names no record.
  */
 export function getConsentUid(): string | null {
-  return getCookie("consent_uid");
+  return getCookie("consent_uid") || null;
 }
 
 /**
- * Set consent UID cookie for re-identification
+ * Set consent UID cookie for re-identification. An empty ID names no record, as if cleared.
  */
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
   if (typeof document === "undefined") return;
-  siteUid = { revision: siteUid.revision + 1, uid };
+  siteUid = { revision: siteUid.revision + 1, uid: uid || null };
   writeConsentUid(uid, config);
 }
 

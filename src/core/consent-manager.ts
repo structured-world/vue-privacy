@@ -908,8 +908,10 @@ export class ConsentManager {
   private storeAndConfirm(record: StoredConsent): void {
     storeConsent(record, this.config);
     const read = getStoredConsent(this.config);
+    // The revision too: an older cookie of the same moment and categories is still not this one.
     this.cookieConfirmed =
       read !== null &&
+      read.revision === record.revision &&
       read.timestamp === record.timestamp &&
       sameCategories(read.categories, record.categories);
   }
@@ -1030,8 +1032,9 @@ export class ConsentManager {
           // not the kept one, which a newer choice moved to the site's latest.
           if (revision !== siteConsentUid().revision) return;
           // A newer choice kept a record of its own (one another tab started after a reset, say):
-          // that record is the visitor's now. One that kept none waits for this write's record.
-          if (this.userIdKeeps !== keeps && this.userId !== null) return;
+          // that record is the visitor's now. One that kept none waits only for a record this
+          // write created; an existing one it updated was dropped by that choice (a reset).
+          if (this.userIdKeeps !== keeps && (this.userId !== null || target !== null)) return;
           // The cookie is kept only for a grant, and only while it is still the latest decision:
           // a withdrawal made meanwhile must not get the grant's id back.
           if (hasNonNecessary && this.consentEpoch === epoch) writeConsentUid(id, this.config);

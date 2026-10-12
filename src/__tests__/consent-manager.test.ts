@@ -3,6 +3,67 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 import { clearConsentUid, setConsentUid } from "../core/storage";
 
+/**
+ * Remote storage whose first `pending` writes wait until the test settles them, in call order;
+ * later writes resolve to `id` at once.
+ */
+function pendingWrites(pending: number, id: string) {
+  const settle: Array<(id: string) => void> = [];
+  const set = vi.fn();
+  for (let i = 0; i < pending; i++) {
+    set.mockImplementationOnce(() => new Promise<string>((resolve) => settle.push(resolve)));
+  }
+  set.mockResolvedValue(id);
+  return { storage: { get: vi.fn().mockResolvedValue(null), set }, settle };
+}
+
+/**
+ * A grant restored with consent_uid=record-a, then a new choice whose write to record-a is still
+ * running (the first of `pending` writes that wait for the test).
+ */
+async function writeInFlightToRecordA(pending: number, laterId: string) {
+  const grant = {
+    categories: { analytics: true, marketing: true, functional: true },
+    timestamp: Date.now(),
+    version: "1.0",
+    consentRequired: true,
+  };
+  cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=record-a`;
+  const { storage, settle } = pendingWrites(pending, laterId);
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  await manager.savePreferences({ analytics: true, marketing: false, functional: true });
+  await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+  return { manager, storage, settle, grant };
+}
+
+/**
+ * A visitor with a remote grant under consent_uid=account, now in a consent jurisdiction: init()
+ * does not restore the grant and the banner asks.
+ */
+async function roamingVisitor(writtenId: string) {
+  cookieStore = "consent_uid=account";
+  const storage = {
+    get: vi.fn().mockResolvedValue({
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: Date.now(),
+      version: "1.0",
+    }),
+    set: vi.fn().mockResolvedValue(writtenId),
+  };
+  const manager = new ConsentManager({
+    storage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  return { manager, storage };
+}
+
 async function restoreLinkedRefusal() {
   const refusal = {
     categories: { analytics: false, marketing: false, functional: false },
@@ -652,26 +713,7 @@ describe("ConsentManager with remote storage", () => {
   // the sign-in, so a later choice must still go to the account.
   it("keeps the account a newer choice took over an older write's record", async () => {
     window.history.pushState({}, "", "/other");
-    let settleFirst: (id: string) => void = () => {};
-    let settleSecond: (id: string) => void = () => {};
-    const mockStorage = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi
-        .fn()
-        .mockImplementationOnce(
-          () =>
-            new Promise<string>((resolve) => {
-              settleFirst = resolve;
-            })
-        )
-        .mockImplementationOnce(
-          () =>
-            new Promise<string>((resolve) => {
-              settleSecond = resolve;
-            })
-        )
-        .mockResolvedValue("account"),
-    };
+    const { storage: mockStorage, settle } = pendingWrites(2, "account");
     const manager = new ConsentManager({
       storage: mockStorage,
       geoDetector: createMockGeoDetector(true),
@@ -688,11 +730,11 @@ describe("ConsentManager with remote storage", () => {
       cookieStore = "";
       await manager.rejectAll();
       // The first write settles now, with the record it created before the sign-in.
-      settleFirst("anonymous");
+      settle[0]("anonymous");
       await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
       // A choice while the account's write still runs.
       await manager.acceptAll();
-      settleSecond("account");
+      settle[1]("account");
 
       await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
       expect(mockStorage.set.mock.calls[2][0]).toBe("account");
@@ -727,32 +769,59 @@ describe("ConsentManager with remote storage", () => {
   // then takes B. When the A write settles before the B write, it must not hand A back as this
   // page's record: a choice made meanwhile would write to the abandoned A.
   it("keeps a newer choice's record when an older write settles", async () => {
-    const grant = {
-      categories: { analytics: true, marketing: true, functional: true },
-      timestamp: Date.now(),
-      version: "1.0",
-      consentRequired: true,
+    const {
+      manager,
+      storage: mockStorage,
+      settle,
+      grant,
+    } = await writeInFlightToRecordA(2, "record-b");
+
+    // Another tab resets and grants: record B.
+    const other = { ...grant, timestamp: Date.now() + 1 };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(other))}; consent_uid=record-b`;
+    await manager.rejectAll();
+    settle[0]("record-a");
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    // A choice while the B write still runs.
+    await manager.acceptAll();
+    settle[1]("record-b");
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
+    expect(mockStorage.set.mock.calls[2][0]).toBe("record-b");
+  });
+
+  // A write to record A runs while another tab resets and refuses; this page's next choice then
+  // keeps no record. The A write settling meanwhile must not make A this page's record again, or
+  // the queued write updates the record the reset abandoned.
+  it("keeps no record when an older write settles after a reset elsewhere", async () => {
+    const {
+      manager,
+      storage: mockStorage,
+      settle,
+      grant,
+    } = await writeInFlightToRecordA(1, "fresh");
+
+    // Another tab resets and refuses: a new consent cookie, no consent_uid.
+    const refusal = {
+      ...grant,
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now() + 1,
     };
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(grant))}; consent_uid=record-a`;
-    let settleFirst: (id: string) => void = () => {};
-    let settleSecond: (id: string) => void = () => {};
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    await manager.acceptAll();
+    settle[0]("record-a");
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    expect(mockStorage.set.mock.calls[1][0]).toBeNull();
+  });
+
+  // An empty consent_uid (setConsentUid(""), or a server's `consent_uid=`) names no record; a
+  // write must create one rather than file every such visitor under the empty key.
+  it("treats an empty consent_uid as no record", async () => {
+    cookieStore = "consent_uid=";
     const mockStorage = {
       get: vi.fn().mockResolvedValue(null),
-      set: vi
-        .fn()
-        .mockImplementationOnce(
-          () =>
-            new Promise<string>((resolve) => {
-              settleFirst = resolve;
-            })
-        )
-        .mockImplementationOnce(
-          () =>
-            new Promise<string>((resolve) => {
-              settleSecond = resolve;
-            })
-        )
-        .mockResolvedValue("record-b"),
+      set: vi.fn().mockResolvedValue("fresh"),
     };
     const manager = new ConsentManager({
       storage: mockStorage,
@@ -760,21 +829,49 @@ describe("ConsentManager with remote storage", () => {
       version: "1.0",
     });
     await manager.init();
-    await manager.savePreferences({ analytics: true, marketing: false, functional: true });
-    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
-
-    // Another tab resets and grants: record B.
-    const other = { ...grant, timestamp: Date.now() + 1 };
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(other))}; consent_uid=record-b`;
-    await manager.rejectAll();
-    settleFirst("record-a");
-    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
-    // A choice while the B write still runs.
     await manager.acceptAll();
-    settleSecond("record-b");
 
-    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
-    expect(mockStorage.set.mock.calls[2][0]).toBe("record-b");
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  // Where cookie writes stop taking effect, an older cookie with the same moment and categories
+  // must not pass for the new choice: its revision differs, and the next choice would take it for
+  // another tab's decision and drop the linked record.
+  it("does not confirm a cookie write by an older choice of the same moment", async () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: now,
+      version: "1.0",
+      consentRequired: true,
+      revision: "earlier",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=account`;
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    // Cookie writes stop taking effect (blocked from here on).
+    Object.defineProperty(document, "cookie", {
+      get: () => cookieStore,
+      set: () => {},
+      configurable: true,
+    });
+    await manager.rejectAll();
+    await manager.acceptAll();
+
+    // The refusal's write is superseded before it runs; the grant's write is the one that counts.
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalled());
+    expect(mockStorage.set.mock.calls.at(-1)?.[0]).toBe("account");
   });
 
   // resetConsent() forgets the visitor's record, also an account ID the site set earlier. A
@@ -810,21 +907,7 @@ describe("ConsentManager with remote storage", () => {
   // banner asks. Another tab's decision meanwhile (after a reset there) replaces it: the banner's
   // answer must not go to the abandoned record.
   it("drops the record kept for a jurisdiction change once another tab decides", async () => {
-    cookieStore = "consent_uid=account";
-    const mockStorage = {
-      get: vi.fn().mockResolvedValue({
-        categories: { analytics: true, marketing: true, functional: true },
-        timestamp: Date.now(),
-        version: "1.0",
-      }),
-      set: vi.fn().mockResolvedValue("fresh"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
-    });
-    await manager.init();
+    const { manager, storage: mockStorage } = await roamingVisitor("fresh");
 
     // Another tab resets and refuses.
     const refusal = {
@@ -844,21 +927,7 @@ describe("ConsentManager with remote storage", () => {
   // and consent_uid goes. The answer must still update that record, or other devices linked to
   // it keep the earlier grant.
   it("writes the answer to the remote record a jurisdiction change did not restore", async () => {
-    cookieStore = "consent_uid=account";
-    const mockStorage = {
-      get: vi.fn().mockResolvedValue({
-        categories: { analytics: true, marketing: true, functional: true },
-        timestamp: Date.now(),
-        version: "1.0",
-      }),
-      set: vi.fn().mockResolvedValue("account"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
-    });
-    await manager.init();
+    const { manager, storage: mockStorage } = await roamingVisitor("account");
     expect(manager.getConsent()).toBeNull();
 
     await manager.rejectAll();
