@@ -647,6 +647,82 @@ describe("ConsentManager with remote storage", () => {
     expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });
 
+  // An older write may settle after the site signed in and a newer choice kept the account's ID
+  // (on a route outside cookie.path, where the cookie cannot tell). Its record is the one before
+  // the sign-in, so a later choice must still go to the account.
+  it("keeps the account a newer choice took over an older write's record", async () => {
+    window.history.pushState({}, "", "/other");
+    let settleFirst: (id: string) => void = () => {};
+    let settleSecond: (id: string) => void = () => {};
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              settleFirst = resolve;
+            })
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<string>((resolve) => {
+              settleSecond = resolve;
+            })
+        )
+        .mockResolvedValue("account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/app" },
+    });
+    try {
+      await manager.init();
+      await manager.acceptAll();
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+
+      setConsentUid("account", { cookie: { path: "/app" } });
+      // The browser does not show the cookie on this route.
+      cookieStore = "";
+      await manager.rejectAll();
+      // The first write settles now, with the record it created before the sign-in.
+      settleFirst("anonymous");
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+      // A choice while the account's write still runs.
+      await manager.acceptAll();
+      settleSecond("account");
+
+      await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(3));
+      expect(mockStorage.set.mock.calls[2][0]).toBe("account");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // A refusal made before init() keeps its record ID; init() then adds the jurisdiction to that
+  // same choice in the cookie. That rewrite is this page's own, not another tab's decision, so the
+  // next choice must still update the shared record.
+  it("keeps the record ID when init() adds the jurisdiction to a choice", async () => {
+    cookieStore = "consent_uid=shared-account";
+    const mockStorage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("shared-account"),
+    };
+    const manager = new ConsentManager({
+      storage: mockStorage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.rejectAll();
+    await manager.init();
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(2));
+    expect(mockStorage.set.mock.calls[1][0]).toBe("shared-account");
+  });
+
   // The remote record of a visitor now in a consent jurisdiction is not restored: the banner asks
   // and consent_uid goes. The answer must still update that record, or other devices linked to
   // it keep the earlier grant.

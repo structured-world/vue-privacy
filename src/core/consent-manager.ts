@@ -872,6 +872,9 @@ export class ConsentManager {
     };
     storeConsent(record, this.config);
     if (this.pageChoice) this.pageChoice = record;
+    // The same choice, rewritten by this page: the kept record ID stays with it, not taken for
+    // another tab's decision.
+    if (this.sameKeptChoice(current)) this.userIdChoice = record;
   }
 
   /**
@@ -1014,9 +1017,10 @@ export class ConsentManager {
           // which keeps its own id; an id that arrived in time is still carried forward.
           if (!id || this.remoteWritesStarted !== started) return;
           if (this.identityGeneration !== identity) return;
-          // The site set or cleared consent_uid while the write ran (a sign-in or sign-out): its
-          // ID decides, so this one is neither kept nor written back.
-          if (this.userIdRevision !== siteConsentUid().revision) return;
+          // The site set or cleared consent_uid since this choice (a sign-in or sign-out): its ID
+          // decides, so this one is neither kept nor written back. The revision this choice saw,
+          // not the kept one, which a newer choice moved to the site's latest.
+          if (revision !== siteConsentUid().revision) return;
           // The cookie is kept only for a grant, and only while it is still the latest decision:
           // a withdrawal made meanwhile must not get the grant's id back.
           if (hasNonNecessary && this.consentEpoch === epoch) writeConsentUid(id, this.config);
