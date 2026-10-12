@@ -359,99 +359,168 @@ export function clearConsent(config: Partial<ConsentConfig> = {}): void {
 }
 
 /**
- * The site's latest change of consent_uid on this page (setConsentUid(), clearConsentUid(), or
- * one announced by another tab): the ID, a revision advanced by each change, and the value the
- * cookie still showed although the site replaced it (null: none).
- */
-interface SiteConsentUid {
-  revision: number;
-  uid: string | null;
-  replaced: string | null;
-}
-
-let siteUid: SiteConsentUid = { revision: 0, uid: null, replaced: null };
-
-/**
- * The ID the site last set on this page (null after clearConsentUid()), with a revision advanced
- * by each such call. A consent manager that keeps an ID the cookie does not show (cleared by a
- * refusal, or a route outside cookie.path) tells a sign-in or sign-out apart from a route that
- * cannot read the cookie, and learns the new ID even where it cannot read it back. `replaced` is
- * an ID the cookie kept showing after the change (a blocked write, a cookie of another path): it
- * names a record the site left, not the visitor's.
+ * Whether a cookie set with `cookiePath` is sent on `requestPath` (RFC 6265 5.1.4 path-match): the
+ * paths are equal, or the cookie path is a prefix that ends with "/" or is followed by "/".
  * @internal
  */
-export function siteConsentUid(): SiteConsentUid {
-  return siteUid;
+export function cookiePathMatches(requestPath: string, cookiePath: string): boolean {
+  if (requestPath === cookiePath) return true;
+  if (!requestPath.startsWith(cookiePath)) return false;
+  return cookiePath.endsWith("/") || requestPath.charAt(cookiePath.length) === "/";
 }
 
-/** Record the site's change of consent_uid to `uid`, after it was applied to the cookie. */
-function noteSiteConsentUid(uid: string | null): void {
-  const shown = getConsentUid();
-  siteUid = {
-    revision: siteUid.revision + 1,
-    uid,
-    replaced: shown !== null && shown !== uid ? shown : null,
+/** Where a consent_uid cookie lives: the domain it was set for ("" host-only) and its path. */
+interface CookieScope {
+  domain: string;
+  path: string;
+}
+
+function cookieScope(config: Partial<ConsentConfig>): CookieScope {
+  return {
+    domain: config.cookie?.domain ?? "",
+    path: config.cookie?.path ?? DEFAULT_CONFIG.cookie.path,
   };
 }
 
 /**
- * The channel that carries the site's changes of consent_uid to its other open tabs: one per
- * cookie scope, so apps of one origin that keep their consent under different paths or domains
- * do not take each other's account.
+ * One change of consent_uid by the site (setConsentUid() or clearConsentUid(), here or in
+ * another tab): the ID (null: cleared), the scope of the cookie it changed, when it was made
+ * (`at`, with `tie` for the same millisecond), the revision this page gave it on arrival, and the
+ * value the cookie still showed here although the change replaced it (null: none).
  */
-function siteUidChannelName(config: Partial<ConsentConfig>): string {
-  const path = config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
-  return `vue-privacy:consent_uid:${config.cookie?.domain ?? ""}:${path}`;
+interface SiteUidChange {
+  uid: string | null;
+  scope: CookieScope;
+  at: number;
+  tie: string;
+  revision: number;
+  replaced: string | null;
 }
 
-/** Open a channel; null where the browser refuses one (an opaque origin, sandboxed frames). */
-function openChannel(name: string): BroadcastChannel | null {
+/** The site's latest change for each cookie scope, by `${domain}:${path}`. */
+const siteUidChanges = new Map<string, SiteUidChange>();
+
+/** Advanced by each change this page applies, so a newer change always carries a newer revision. */
+let siteUidRevision = 0;
+
+/** When this page's latest own change was made (`at`), kept strictly increasing. */
+let lastLocalChangeAt = 0;
+
+/** Whether change `a` was made after change `b`. */
+function madeAfter(a: { at: number; tie: string }, b: { at: number; tie: string }): boolean {
+  return a.at !== b.at ? a.at > b.at : a.tie > b.tie;
+}
+
+/**
+ * The site's latest change of consent_uid that a consent manager with `config` sees: one whose
+ * cookie is sent where that manager's consent cookie is (same domain, path-match), so apps of one
+ * origin under other paths or domains do not take each other's account. `revision` advances with
+ * each such change (0: none), and lets a manager that keeps an ID the cookie does not show (cleared
+ * by a refusal, or a route outside cookie.path) tell a sign-in or sign-out apart from a route that
+ * cannot read the cookie. `replaced` is an ID the cookie kept showing after that change (a blocked
+ * write, a cookie of another path): it names a record the site left, not the visitor's.
+ * @internal
+ */
+export function siteConsentUid(config: Partial<ConsentConfig> = {}): {
+  revision: number;
+  uid: string | null;
+  replaced: string | null;
+} {
+  const own = cookieScope(config);
+  let latest: SiteUidChange | null = null;
+  for (const change of siteUidChanges.values()) {
+    if (change.scope.domain !== own.domain || !cookiePathMatches(own.path, change.scope.path)) {
+      continue;
+    }
+    if (latest === null || madeAfter(change, latest)) latest = change;
+  }
+  return latest
+    ? { revision: latest.revision, uid: latest.uid, replaced: latest.replaced }
+    : { revision: 0, uid: null, replaced: null };
+}
+
+/**
+ * Apply a change of consent_uid, after it reached the cookie. One older than the latest change
+ * already applied for its scope is dropped: broadcasts arrive asynchronously, and one from another
+ * tab may come after this page's own newer change.
+ */
+function applySiteUidChange(change: Omit<SiteUidChange, "revision" | "replaced">): void {
+  const key = `${change.scope.domain}:${change.scope.path}`;
+  const current = siteUidChanges.get(key);
+  if (current && !madeAfter(change, current)) return;
+  const shown = getConsentUid();
+  siteUidChanges.set(key, {
+    ...change,
+    revision: ++siteUidRevision,
+    replaced: shown !== null && shown !== change.uid ? shown : null,
+  });
+}
+
+/** Carries the site's changes of consent_uid, with their scope, to its other open tabs. */
+const SITE_UID_CHANNEL = "vue-privacy:consent_uid";
+
+/** Open the channel; null where the browser refuses one (an opaque origin, sandboxed frames). */
+function openChannel(): BroadcastChannel | null {
   if (typeof BroadcastChannel === "undefined") return null;
   try {
-    return new BroadcastChannel(name);
+    return new BroadcastChannel(SITE_UID_CHANNEL);
   } catch {
     return null;
   }
 }
 
-/** This page's listening channels by name, opened for the consent managers with remote storage. */
-const siteUidChannels = new Map<string, BroadcastChannel | null>();
+/** This page's listening channel (null: refused), once a manager with remote storage asked. */
+let siteUidChannel: BroadcastChannel | null | undefined;
+
+/** A change another tab announced, or null for a message of any other shape. */
+function announcedChange(data: unknown): Omit<SiteUidChange, "revision" | "replaced"> | null {
+  if (typeof data !== "object" || data === null) return null;
+  const { uid, domain, path, at, tie } = data as Record<string, unknown>;
+  if (typeof domain !== "string" || typeof path !== "string") return null;
+  if (typeof at !== "number" || typeof tie !== "string") return null;
+  return { uid: typeof uid === "string" ? uid || null : null, scope: { domain, path }, at, tie };
+}
 
 /**
- * Follow the site's sign-ins and sign-outs in other tabs of this origin, for the cookie scope of
- * `config`. A page that keeps a record ID the consent_uid cookie does not show (a refusal removed
- * it) cannot see another tab clear it; the change is applied here as if the site had made it on
- * this page. Without a channel (refused by the browser) other tabs' changes are not followed.
+ * Follow the site's sign-ins and sign-outs in other tabs of this origin. A page that keeps a
+ * record ID the consent_uid cookie does not show (a refusal removed it) cannot see another tab
+ * clear it; the change is applied here as if the site had made it on this page. Without a channel
+ * (Safari before 15.4, or refused, as in an opaque-origin frame) other tabs are not followed.
  * @internal
  */
-export function followSiteConsentUid(config: Partial<ConsentConfig> = {}): void {
-  if (typeof document === "undefined") return;
-  const name = siteUidChannelName(config);
-  if (siteUidChannels.has(name)) return;
-  const channel = openChannel(name);
-  siteUidChannels.set(name, channel);
-  if (!channel) return;
-  channel.onmessage = (event: MessageEvent<unknown>) => {
-    const data = event.data;
-    if (typeof data !== "object" || data === null || !("uid" in data)) return;
-    noteSiteConsentUid(typeof data.uid === "string" ? data.uid || null : null);
+export function followSiteConsentUid(): void {
+  if (typeof document === "undefined" || siteUidChannel !== undefined) return;
+  siteUidChannel = openChannel();
+  if (!siteUidChannel) return;
+  siteUidChannel.onmessage = (event: MessageEvent<unknown>) => {
+    const change = announcedChange(event.data);
+    if (change) applySiteUidChange(change);
   };
 }
 
-/** Tell the site's other open tabs of the ID it set (null: cleared); best effort. */
-function announceSiteConsentUid(uid: string | null, config: Partial<ConsentConfig>): void {
-  const name = siteUidChannelName(config);
-  const own = siteUidChannels.get(name);
+/** Record the site's change of consent_uid here and tell its other open tabs; best effort. */
+function noteSiteConsentUid(uid: string | null, config: Partial<ConsentConfig>): void {
+  const scope = cookieScope(config);
+  // This page's changes follow one another in call order, also within one millisecond.
+  lastLocalChangeAt = Math.max(Date.now(), lastLocalChangeAt + 1);
+  const change = { uid, scope, at: lastLocalChangeAt, tie: createConsentRevision() };
+  applySiteUidChange(change);
   // A posted message is queued for every other channel of the name at once, so a channel opened
   // only to send can close right away.
-  const channel = own ?? openChannel(name);
+  const channel = siteUidChannel ?? openChannel();
   if (!channel) return;
   try {
-    channel.postMessage({ uid });
+    channel.postMessage({
+      uid,
+      domain: scope.domain,
+      path: scope.path,
+      at: change.at,
+      tie: change.tie,
+    });
   } catch {
     // Not delivered: other tabs then learn of the change from the cookie only.
   } finally {
-    if (channel !== own) channel.close();
+    if (channel !== siteUidChannel) channel.close();
   }
 }
 
@@ -468,8 +537,7 @@ export function getConsentUid(): string | null {
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
   if (typeof document === "undefined") return;
   writeConsentUid(uid, config);
-  noteSiteConsentUid(uid || null);
-  announceSiteConsentUid(uid || null, config);
+  noteSiteConsentUid(uid || null, config);
 }
 
 /**
@@ -478,8 +546,7 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
 export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
   if (typeof document === "undefined") return;
   deleteConsentUid(config);
-  noteSiteConsentUid(null);
-  announceSiteConsentUid(null, config);
+  noteSiteConsentUid(null, config);
 }
 
 /**

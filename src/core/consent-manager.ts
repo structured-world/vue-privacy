@@ -29,6 +29,7 @@ import {
   deleteConsentUid,
   siteConsentUid,
   followSiteConsentUid,
+  cookiePathMatches,
   createConsentRevision,
 } from "./storage";
 import {
@@ -300,7 +301,7 @@ export class ConsentManager {
 
     if (config.storage) {
       this.remoteStorage = config.storage;
-      followSiteConsentUid(this.config);
+      followSiteConsentUid();
     }
   }
 
@@ -939,7 +940,7 @@ export class ConsentManager {
    */
   private keepRecordId(id: string | null, choice: StoredConsent | null = null): void {
     this.userId = id;
-    this.userIdRevision = siteConsentUid().revision;
+    this.userIdRevision = siteConsentUid(this.config).revision;
     this.userIdChoice = choice;
     this.userIdOnCookie = id !== null && this.cookieRecordId() === id;
     this.userIdKeeps++;
@@ -952,7 +953,7 @@ export class ConsentManager {
    */
   private cookieRecordId(): string | null {
     const uid = getConsentUid();
-    return uid !== null && uid === siteConsentUid().replaced ? null : uid;
+    return uid !== null && uid === siteConsentUid(this.config).replaced ? null : uid;
   }
 
   /** Remove consent_uid for this page's own reasons (a refusal, a jurisdiction change). */
@@ -967,7 +968,7 @@ export class ConsentManager {
    * decision replaced the choice it was kept with, where this page can read the consent cookie.
    */
   private keptRecordId(): string | null {
-    const site = siteConsentUid();
+    const site = siteConsentUid(this.config);
     if (site.revision !== this.userIdRevision) return site.uid;
     // consent_uid named the kept ID and this page never removed it: gone now, another tab signed
     // out (a different ID there is read before this is asked).
@@ -1058,7 +1059,8 @@ export class ConsentManager {
           const started = ++this.remoteWritesStarted;
           // Without an ID at the choice, the record an earlier write of this page created since;
           // never an ID the site set after the choice (a consent callback signing in reacts to it).
-          const target = recordId ?? (siteConsentUid().revision === revision ? this.userId : null);
+          const target =
+            recordId ?? (siteConsentUid(this.config).revision === revision ? this.userId : null);
           const id = await storage.set(target, consent, controller.signal);
           // A write that settled past the grace period is behind a newer one already running,
           // which keeps its own id; an id that arrived in time is still carried forward.
@@ -1067,7 +1069,7 @@ export class ConsentManager {
           // The site set or cleared consent_uid since this choice (a sign-in or sign-out): its ID
           // decides, so this one is neither kept nor written back. The revision this choice saw,
           // not the kept one, which a newer choice moved to the site's latest.
-          if (revision !== siteConsentUid().revision) return;
+          if (revision !== siteConsentUid(this.config).revision) return;
           // A newer choice kept a record of its own (one another tab started after a reset, say):
           // that record is the visitor's now. One that kept none waits only for a record this
           // write created; an existing one it updated was dropped by that choice (a reset). An
@@ -1704,11 +1706,10 @@ export class ConsentManager {
    */
   private cookieInScope(): boolean {
     if (typeof location === "undefined") return true;
-    const cookiePath = this.config.cookie?.path ?? DEFAULT_CONFIG.cookie.path;
-    const path = location.pathname;
-    if (path === cookiePath) return true;
-    if (!path.startsWith(cookiePath)) return false;
-    return cookiePath.endsWith("/") || path.charAt(cookiePath.length) === "/";
+    return cookiePathMatches(
+      location.pathname,
+      this.config.cookie?.path ?? DEFAULT_CONFIG.cookie.path
+    );
   }
 
   /**

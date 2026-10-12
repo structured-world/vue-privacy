@@ -761,6 +761,73 @@ describe("ConsentManager with remote storage", () => {
     expect(manager.getConsent()).toBeNull();
   });
 
+  // One SPA runs two apps that keep their consent under /a and /b. The app under /a signs in on
+  // this page; the manager under /b, which restored a refusal linked to its own account, cannot
+  // read /a's cookie and must keep updating its own record.
+  it("keeps a sign-in under another cookie path out of this manager's record", async () => {
+    const refusal = {
+      categories: { analytics: false, marketing: false, functional: false },
+      timestamp: Date.now(),
+      version: "1.0",
+      consentRequired: true,
+    };
+    const preferences = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}`;
+    window.history.pushState({}, "", "/b/page");
+    cookieStore = `${preferences}; consent_uid=account-b`;
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("account-b"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+      cookie: { path: "/b" },
+    });
+    try {
+      await manager.init();
+
+      setConsentUid("account-a", { cookie: { path: "/a" } });
+      // That cookie belongs to /a: pages under /b never see it.
+      cookieStore = preferences;
+      await manager.acceptAll();
+
+      await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+      expect(storage.set.mock.calls[0][0]).toBe("account-b");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
+  // Another tab signs in to account A, then this tab to account B. The other tab's message is
+  // delivered later than this tab's own change; it is older and must not replace account B.
+  it("ignores another tab's sign-in that arrives after a newer one here", async () => {
+    const storage = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue("anonymous"),
+    };
+    const manager = new ConsentManager({
+      storage,
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+
+    vi.resetModules();
+    const otherTab = await import("../core/storage");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    otherTab.setConsentUid("account-a");
+    now.mockReturnValue(2_000);
+    setConsentUid("account-b");
+    now.mockRestore();
+    // Let the other tab's message arrive.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await manager.acceptAll();
+
+    await vi.waitFor(() => expect(storage.set).toHaveBeenCalledTimes(1));
+    expect(storage.set.mock.calls[0][0]).toBe("account-b");
+  });
+
   // In a sandboxed frame with an opaque origin the browser exposes BroadcastChannel but its
   // constructor throws. The manager must still be created, without cross-tab sign-outs.
   it("works where BroadcastChannel cannot be created", async () => {
