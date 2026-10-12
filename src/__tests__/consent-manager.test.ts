@@ -737,6 +737,30 @@ describe("ConsentManager with remote storage", () => {
     expect(manager.getConsent()?.revision).toBe("other-tab");
   });
 
+  // This tab is in a consent jurisdiction; another tab that has not noticed the move saves a
+  // grant made outside one in the same millisecond as this page's choice. The roaming rule
+  // rejects that grant here: it must not pass for this page's own choice by its time alone.
+  it("does not take another tab's same-millisecond grant for this page's choice", async () => {
+    const manager = new ConsentManager({
+      geoDetector: createMockGeoDetector(true),
+      version: "1.0",
+    });
+    await manager.init();
+    await manager.rejectAll();
+    const own = manager.getConsent()!;
+
+    const otherTab = {
+      categories: { analytics: true, marketing: true, functional: true },
+      timestamp: own.timestamp,
+      version: "1.0",
+      consentRequired: false,
+      revision: "other-tab",
+    };
+    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(otherTab))}`;
+
+    expect(manager.getConsent()).toBeNull();
+  });
+
   // In a sandboxed frame with an opaque origin the browser exposes BroadcastChannel but its
   // constructor throws. The manager must still be created, without cross-tab sign-outs.
   it("works where BroadcastChannel cannot be created", async () => {

@@ -1690,7 +1690,10 @@ export class ConsentManager {
     // rejects it;
     // every reader (the Google tag, the script blocker, getConsent()) gets the same answer.
     // This page's own choice carries the location it was made with and is not judged again.
-    return found.timestamp === this.pageChoice?.timestamp ? found : null;
+    // By time and revision: another tab's record of the same millisecond is not this page's.
+    return this.pageChoice !== null && recordKey(found) === recordKey(this.pageChoice)
+      ? found
+      : null;
   }
 
   /**
