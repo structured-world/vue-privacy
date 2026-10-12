@@ -63,7 +63,11 @@ describe("the consent cookie", () => {
 
     const written = consentWrites();
     expect(written.length).toBeGreaterThan(0);
-    for (const record of written) expect(Object.keys(record).sort()).toEqual(CONSENT_FIELDS);
+    for (const record of written) {
+      // The revision identifies this decision, independent of timestamp precision; no location is stored.
+      expect(Object.keys(record).sort()).toEqual([...CONSENT_FIELDS, "revision"].sort());
+      expect(record.revision).toMatch(/^[a-f0-9]{32}$/);
+    }
     expect(manager.getConsent()).not.toHaveProperty("countryCode");
   });
 

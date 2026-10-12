@@ -147,6 +147,8 @@ export interface GoogleAnalyticsOptions {
  * and no location.
  */
 export interface StoredConsent {
+  /** Unique revision of the local decision, distinguishing choices made at the same time. */
+  revision?: string;
   /** Consent categories */
   categories: Omit<ConsentCategories, "necessary">;
   /** Timestamp when consent was given */

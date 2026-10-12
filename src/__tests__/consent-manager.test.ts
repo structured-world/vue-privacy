@@ -3,6 +3,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConsentManager, CCPA_REGIONS } from "../core/consent-manager";
 import { clearConsentUid, setConsentUid } from "../core/storage";
 
+async function restoreLinkedRefusal() {
+  const refusal = {
+    categories: { analytics: false, marketing: false, functional: false },
+    timestamp: Date.now(),
+    version: "1.0",
+    consentRequired: true,
+  };
+  cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
+  const mockStorage = {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue("new-identity"),
+  };
+  const manager = new ConsentManager({
+    storage: mockStorage,
+    geoDetector: createMockGeoDetector(true),
+    version: "1.0",
+  });
+  await manager.init();
+  return { refusal, mockStorage, manager };
+}
+
 function createMockGeoDetector(consentRequired = false, countryCode?: string, region?: string) {
   return {
     detect: vi.fn().mockResolvedValue({
@@ -437,23 +458,7 @@ describe("ConsentManager with remote storage", () => {
   // Another tab reset and chose again since this page restored a refusal: the cookie names that
   // tab's new record now, and this page's next choice must update it, not the abandoned one.
   it("writes to the record another tab started after its reset", async () => {
-    const refusal = {
-      categories: { analytics: false, marketing: false, functional: false },
-      timestamp: Date.now(),
-      version: "1.0",
-      consentRequired: true,
-    };
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
-    const mockStorage = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue("new-identity"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
-    });
-    await manager.init();
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
 
     // Another tab resets, then grants: both cookies are back, naming its new record.
     const grant = {
@@ -537,29 +542,25 @@ describe("ConsentManager with remote storage", () => {
   // decision replaced the one this page kept an ID for, so the ID may name the record the reset
   // abandoned, and the next choice must not write to it.
   it("drops a kept ID once another tab's decision replaced this page's", async () => {
-    const refusal = {
-      categories: { analytics: false, marketing: false, functional: false },
-      timestamp: Date.now(),
-      version: "1.0",
-      consentRequired: true,
-    };
-    cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(refusal))}; consent_uid=old-identity`;
-    const mockStorage = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue("new-identity"),
-    };
-    const manager = new ConsentManager({
-      storage: mockStorage,
-      geoDetector: createMockGeoDetector(true),
-      version: "1.0",
-    });
-    await manager.init();
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
 
     // Another tab resets, then refuses: a new consent cookie, no consent_uid.
     const later = { ...refusal, timestamp: Date.now() + 1 };
     cookieStore = `consent_preferences=${encodeURIComponent(JSON.stringify(later))}`;
     await manager.acceptAll();
 
+    await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
+    expect(mockStorage.set.mock.calls[0][0]).toBeNull();
+  });
+
+  it("drops an abandoned ID when the replacement refusal has the same timestamp", async () => {
+    // Timer quantization must not make another tab's reset-and-refusal the old identity.
+    const { refusal, mockStorage, manager } = await restoreLinkedRefusal();
+    vi.spyOn(Date, "now").mockReturnValue(refusal.timestamp);
+    cookieStore = "";
+    const other = new ConsentManager({ geoDetector: createMockGeoDetector(true), version: "1.0" });
+    await other.rejectAll();
+    await manager.acceptAll();
     await vi.waitFor(() => expect(mockStorage.set).toHaveBeenCalledTimes(1));
     expect(mockStorage.set.mock.calls[0][0]).toBeNull();
   });

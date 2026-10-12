@@ -221,6 +221,7 @@ function hasStoredTypes(record: Record<string, unknown>, categories: Record<stri
     // JSON.stringify writes no Infinity, so an overflowing literal (1e400) was never ours.
     Number.isFinite(record.timestamp) &&
     typeof record.version === "string" &&
+    (record.revision === undefined || typeof record.revision === "string") &&
     // Each flag present is checked itself: a malformed consentRequired is not replaced by isEU.
     isFlag(record.consentRequired) &&
     isFlag(record.isEU)
@@ -228,7 +229,13 @@ function hasStoredTypes(record: Record<string, unknown>, categories: Record<stri
 }
 
 /** The fields the consent cookie holds. */
-const STORED_FIELDS = new Set(["categories", "timestamp", "version", "consentRequired"]);
+const STORED_FIELDS = new Set([
+  "categories",
+  "timestamp",
+  "version",
+  "consentRequired",
+  "revision",
+]);
 
 /**
  * The consent cookie, as stored, whatever its version, or null. `outdated`: it was written by an
@@ -257,6 +264,7 @@ function parseConsentCookie(
       categories: stored.categories,
       timestamp: stored.timestamp,
       version: stored.version,
+      ...(stored.revision !== undefined && { revision: stored.revision }),
       ...(consentRequired !== undefined && { consentRequired }),
     },
     outdated: Object.keys(parsed).some((key) => !STORED_FIELDS.has(key)),
@@ -319,6 +327,7 @@ export function storeConsent(
   const version = config.version ?? DEFAULT_CONFIG.version;
 
   const stored: StoredConsent = {
+    ...(consent.revision !== undefined && { revision: consent.revision }),
     categories: consent.categories,
     // The caller's own record keeps its time: the page compares its choice to the cookie by it.
     timestamp: consent.timestamp ?? Date.now(),
@@ -332,6 +341,12 @@ export function storeConsent(
     domain: cookieConfig.domain,
     path: cookieConfig.path,
   });
+}
+
+/** A decision identity independent of clock precision, also outside secure browser contexts. */
+export function createConsentRevision(): string {
+  const bytes = crypto.getRandomValues(new Uint32Array(4));
+  return Array.from(bytes, (value) => value.toString(16).padStart(8, "0")).join("");
 }
 
 /**
@@ -368,6 +383,7 @@ export function getConsentUid(): string | null {
  * Set consent UID cookie for re-identification
  */
 export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}): void {
+  if (typeof document === "undefined") return;
   siteUid = { revision: siteUid.revision + 1, uid };
   writeConsentUid(uid, config);
 }
@@ -376,6 +392,7 @@ export function setConsentUid(uid: string, config: Partial<ConsentConfig> = {}):
  * Clear consent UID cookie
  */
 export function clearConsentUid(config: Partial<ConsentConfig> = {}): void {
+  if (typeof document === "undefined") return;
   siteUid = { revision: siteUid.revision + 1, uid: null };
   deleteConsentUid(config);
 }
