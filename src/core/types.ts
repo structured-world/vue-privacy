@@ -147,7 +147,10 @@ export interface GoogleAnalyticsOptions {
  * and no location.
  */
 export interface StoredConsent {
-  /** Unique revision of the local decision, distinguishing choices made at the same time. */
+  /**
+   * Random ID of this decision in the consent cookie; tells two choices made in the same
+   * millisecond apart (another tab's from this page's). Not set on remote records.
+   */
   revision?: string;
   /** Consent categories */
   categories: Omit<ConsentCategories, "necessary">;
