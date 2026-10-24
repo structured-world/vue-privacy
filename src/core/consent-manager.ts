@@ -36,8 +36,11 @@ import {
   sendInitialConsent,
   hasConsentDefault,
   queueGoogleAnalyticsConfig,
+  queueTagSettings,
+  queueContainerStart,
   queueConsentUpdate,
-  loadManagedGtagScript,
+  loadManagedTagScript,
+  type GoogleTagScript,
   clearAnalyticsCookies,
   setAnalyticsDisabled,
   isTagLiveFor,
@@ -137,6 +140,22 @@ interface ConsentInEffect {
   signals: GoogleConsentSignals;
 }
 
+/** A Google tag the manager loads (gtag.js for `gaId`, the container for `gtmId`) and its load state. */
+interface ManagedTag {
+  id: string;
+  script: GoogleTagScript;
+  /** A load attempt is in flight. */
+  loading: boolean;
+  /** The tag loaded; no further attempt is needed. */
+  loaded: boolean;
+  /** A consent push found the load in flight; a failure of that attempt retries at once. */
+  retryOnFailure: boolean;
+}
+
+function managedTag(id: string, script: GoogleTagScript): ManagedTag {
+  return { id, script, loading: false, loaded: false, retryOnFailure: false };
+}
+
 /**
  * Consent Manager - orchestrates consent flow
  */
@@ -222,12 +241,8 @@ export class ConsentManager {
   private impliedChoice: StoredConsent | null = null;
   /** Basic mode: the page view tracked while analytics was off, measured once it is allowed. */
   private pendingPageView: { path: string; title?: string } | null = null;
-  /** A gtag.js load attempt is in flight. */
-  private gaLoading = false;
-  /** gtag.js loaded; no further attempt is needed. */
-  private gaLoaded = false;
-  /** A consent push found the load in flight; a failure of that attempt retries at once. */
-  private gaRetryOnFailure = false;
+  /** The Google tags this manager loads, in load order. */
+  private readonly tags: ManagedTag[];
   /** destroy() ran: a load still in flight settles without reporting or retrying. */
   private destroyed = false;
   /** Tail of the remote consent writes, which run one after another. */
@@ -277,9 +292,11 @@ export class ConsentManager {
 
   constructor(config: ConsentConfig = {}) {
     // Basic mode's promise (nothing reaches Google before consent or after a refusal) holds only
-    // for a tag this manager loads and can switch off; a tag the site loads itself is beyond it.
-    if (config.consentMode === "basic" && !config.gaId) {
-      throw new Error("consentMode 'basic' requires gaId: the manager must load the Google tag");
+    // for a tag this manager loads and can stop; a tag the site loads itself is beyond it.
+    if (config.consentMode === "basic" && !config.gaId && !config.gtmId) {
+      throw new Error(
+        "consentMode 'basic' requires gaId or gtmId: the manager must load the Google tag"
+      );
     }
     if (config.theme !== undefined && !CONSENT_THEMES.includes(config.theme)) {
       throw new Error(`theme must be one of ${CONSENT_THEMES.join(", ")}, not '${config.theme}'`);
@@ -304,6 +321,10 @@ export class ConsentManager {
       cookie: { ...DEFAULT_CONFIG.cookie, ...config.cookie },
     };
     this.basicMode = config.consentMode === "basic";
+    this.tags = [
+      ...(config.gaId ? [managedTag(config.gaId, "gtag")] : []),
+      ...(config.gtmId ? [managedTag(config.gtmId, "gtm")] : []),
+    ];
 
     if (config.storage) {
       this.remoteStorage = config.storage;
@@ -617,7 +638,7 @@ export class ConsentManager {
     // Initialize script blocker (auto-unblocks on consent change)
     if (typeof document !== "undefined") {
       this.scriptBlockerCleanup = initScriptBlocker(this);
-      if (this.basicMode && this.config.gaId) this.watchOtherTabs();
+      if (this.basicMode) this.watchOtherTabs();
     }
 
     if (this.pageChoice !== null) {
@@ -1214,16 +1235,17 @@ export class ConsentManager {
   }
 
   /**
-   * Send consent signals to Google Consent Mode. With `gaId`, the first push is the page's
-   * single `consent default`, followed at once by `js` and `config`, so every event queued
-   * later follows them; every later push is a `consent update`. Without `gaId` the site loads
-   * gtag itself, so every push is an update.
+   * Send consent signals to Google Consent Mode. With `gaId` or `gtmId`, the first push is the
+   * page's single `consent default`, followed at once by `js` and `config` (gtag.js) and the
+   * `gtm.js` event (the container), so every event queued later follows them; every later push
+   * is a `consent update`. Without either the site loads its tags itself, so every push is an
+   * update.
    *
    * In basic mode Google gets nothing until a push allows analytics, which only the visitor's
    * own choice does (consentInEffect() denies everything on a jurisdiction's grant): until then
    * pushes are dropped, and from then on they go out as in advanced mode. A push that leaves
-   * analytics denied also deletes the `_ga` cookies and switches a tag already on the page off.
-   * Loading the tag is reconcile()'s last step, not this one's.
+   * analytics denied also deletes the `_ga` cookies and switches gtag.js off if it is on the
+   * page. Loading the tags is reconcile()'s last step, not this one's.
    *
    * @param final - The signals are a decision (stored, granted by jurisdiction, chosen), so
    *   tags need not hold their first hits for an update
@@ -1233,15 +1255,14 @@ export class ConsentManager {
     final: boolean,
     restoring: boolean
   ): void {
-    const gaId = this.config.gaId;
     const previous = this.sentSignals;
     this.sentSignals = signals;
     const firstSetup = !this.gaDefaultsSent;
     let startsMeasuring = false;
-    if (gaId && this.basicMode) {
+    if (this.basicMode) {
       if (signals.analytics_storage === "granted") {
-        startsMeasuring = this.switchAnalyticsOn(gaId, previous);
-      } else if (!this.switchAnalyticsOff(gaId, previous, restoring) && firstSetup) {
+        startsMeasuring = this.switchAnalyticsOn(previous);
+      } else if (!this.switchAnalyticsOff(previous, restoring) && firstSetup) {
         // A refusal before anything was sent, with no tag on the page: Google gets nothing.
         return;
       }
@@ -1251,69 +1272,78 @@ export class ConsentManager {
   }
 
   /**
-   * Basic mode: a push that leaves analytics denied deletes the `_ga` cookies and switches the
-   * tag off. Returns whether a tag runs on the page.
+   * Basic mode: a push that leaves analytics denied deletes the `_ga` cookies and switches
+   * gtag.js off. Returns whether one of the manager's tags runs on the page.
    */
-  private switchAnalyticsOff(
-    gaId: string,
-    previous: GoogleConsentSignals | null,
-    restoring: boolean
-  ): boolean {
+  private switchAnalyticsOff(previous: GoogleConsentSignals | null, restoring: boolean): boolean {
     // The tag may already run on the page whatever this instance has sent (an earlier manager
     // instance loaded it before a remount), so it is told about a refusal all the same.
     // A request in flight or past its timeout may still run; one that failed cannot.
-    const tagRunning = isTagLiveFor(gaId);
+    const tagRunning = this.tags.some((tag) => isTagLiveFor(tag.id, tag.script));
     // Products linked to the same Google tag (Ads, Floodlight) ignore ga-disable and keep
-    // sending cookieless pings; only a reload stops a running tag. A marketing-only
-    // withdrawal needs none: with analytics allowed the next page loads the same tag, and
-    // the denied ad signals reach the running one as an update already. Analytics refused
-    // before was already withdrawn, so a repeated refusal reloads nothing. For the state init()
-    // found, only a tag a consent manager loaded (a previous one's, before a remount) counts:
-    // the site's own tag comes back with every load, and a reload for it would never end.
+    // sending cookieless pings, and a container has no switch at all; only a reload stops a
+    // running tag. A marketing-only withdrawal needs none: with analytics allowed the next page
+    // loads the same tags, and the denied ad signals reach the running ones as an update
+    // already. Analytics refused before was already withdrawn, so a repeated refusal reloads
+    // nothing. For the state init() found, only a tag a consent manager loaded (a previous
+    // one's, before a remount) counts: the site's own tag comes back with every load, and a
+    // reload for it would never end.
     const withdrawn = previous?.analytics_storage !== "denied";
-    const stoppable = restoring ? isManagedTagLiveFor(gaId) : tagRunning;
+    const stoppable = restoring
+      ? this.tags.some((tag) => isManagedTagLiveFor(tag.id, tag.script))
+      : tagRunning;
     if (withdrawn && stoppable && this.config.reloadOnWithdrawal) this.scheduleReload();
-    clearAnalyticsCookies(gaId, this.config.googleAnalytics);
-    setAnalyticsDisabled(gaId, true);
+    const { gaId, gtmId, googleAnalytics } = this.config;
+    if (gaId) {
+      clearAnalyticsCookies(gaId, googleAnalytics);
+      setAnalyticsDisabled(gaId, true);
+    }
+    // The container's GA4 tags keep their measurement IDs to themselves.
+    if (gtmId) clearAnalyticsCookies(null, googleAnalytics);
     // A refusal itself must not cause a request to Google: no retry of a failed load either.
-    this.gaRetryOnFailure = false;
+    for (const tag of this.tags) tag.retryOnFailure = false;
     return tagRunning;
   }
 
   /** Basic mode: lift this library's switch. Returns whether analytics starts measuring now. */
-  private switchAnalyticsOn(gaId: string, previous: GoogleConsentSignals | null): boolean {
+  private switchAnalyticsOn(previous: GoogleConsentSignals | null): boolean {
     // A newer choice allows analytics again before a pending withdrawal reload ran (a
     // consent callback answering the refusal): the tag stays, so the reload has no purpose.
     this.pendingReload = null;
-    setAnalyticsDisabled(gaId, false);
+    if (this.config.gaId) setAnalyticsDisabled(this.config.gaId, false);
     return previous?.analytics_storage !== "granted";
   }
 
-  /** The `consent default` (with `js` and `config`) on the first push, an update otherwise. */
+  /**
+   * The `consent default` on the first push, with what starts the tags (`js` and `config` for
+   * gtag.js, the `gtm.js` event for the container); an update otherwise.
+   */
   private sendConsentCommands(signals: GoogleConsentSignals, final: boolean): void {
-    const gaId = this.config.gaId;
-    if (!gaId) {
+    const { gaId, gtmId } = this.config;
+    if (!gaId && !gtmId) {
       updateGoogleConsent(signals);
-    } else if (this.gaDefaultsSent) {
-      queueConsentUpdate(signals);
-    } else {
-      this.gaDefaultsSent = true;
-      // The page's single default may already exist (another manager instance, a remount, the
-      // site's own snippet); this manager's first push is then an update.
-      if (hasConsentDefault()) queueConsentUpdate(signals);
-      else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
-      queueGoogleAnalyticsConfig(
-        gaId,
-        this.config.sendPageView ?? true,
-        this.config.googleAnalytics
-      );
+      return;
     }
+    if (this.gaDefaultsSent) {
+      queueConsentUpdate(signals);
+      return;
+    }
+    this.gaDefaultsSent = true;
+    // The page's single default may already exist (another manager instance, a remount, the
+    // site's own snippet); this manager's first push is then an update.
+    if (hasConsentDefault()) queueConsentUpdate(signals);
+    else sendInitialConsent(signals, final ? 0 : DEFAULT_WAIT_FOR_UPDATE_MS);
+    const options = this.config.googleAnalytics ?? {};
+    if (gaId) queueGoogleAnalyticsConfig(gaId, this.config.sendPageView ?? true, options);
+    else queueTagSettings(options);
+    if (gtmId) queueContainerStart();
   }
 
   /**
    * Basic mode: measure the page in view, tracked while analytics was off, now that it is
-   * allowed. On the first setup `config` sends the page view itself unless the site tracks page
-   * views manually (sendPageView: false, as the SPA integrations do).
+   * allowed. On the first setup `config` sends the page view itself (a container's page-load
+   * triggers fire on its `gtm.js` event) unless the site tracks page views manually
+   * (sendPageView: false, as the SPA integrations do).
    */
   private sendPendingPageView(firstSetup: boolean): void {
     const pending = this.pendingPageView;
@@ -1353,24 +1383,23 @@ export class ConsentManager {
     if (write !== this.remoteWrite) return this.reloadAfterWrites(token);
     this.pendingReload = null;
     // The request found in flight may have failed meanwhile: nothing is left to stop then.
-    const gaId = this.config.gaId;
-    if (gaId && isTagLiveFor(gaId)) reloadPage();
+    if (this.tags.some((tag) => isTagLiveFor(tag.id, tag.script))) reloadPage();
   }
 
   /**
-   * One attempt to load gtag.js, which then processes the queued commands. Nothing waits on
-   * it: a blocked or failed load never holds up or fails the consent flow.
+   * One attempt to load a tag, which then processes the queued commands. Nothing waits on it:
+   * a blocked or failed load never holds up or fails the consent flow.
    */
-  private loadGtag(gaId: string): void {
-    this.gaLoading = true;
-    this.gaRetryOnFailure = false;
-    loadManagedGtagScript(gaId).then(
+  private loadTag(tag: ManagedTag): void {
+    tag.loading = true;
+    tag.retryOnFailure = false;
+    loadManagedTagScript(tag.id, tag.script).then(
       () => {
-        this.gaLoading = false;
-        this.gaLoaded = true;
+        tag.loading = false;
+        tag.loaded = true;
       },
       (error: unknown) => {
-        this.gaLoading = false;
+        tag.loading = false;
         // The app that owned this manager is gone; nothing may be reported or appended for it.
         if (this.destroyed) return;
         try {
@@ -1381,7 +1410,7 @@ export class ConsentManager {
         // A consent change during this attempt found it in flight and started nothing, and no
         // later change may come; retry for it now. Otherwise the next push retries. The error
         // callback above may have destroyed the manager, so that is checked again here.
-        if (this.gaRetryOnFailure && !this.destroyed) this.loadGtag(gaId);
+        if (tag.retryOnFailure && !this.destroyed) this.loadTag(tag);
       }
     );
   }
@@ -1529,18 +1558,16 @@ export class ConsentManager {
     this.reconcile(final, true);
   }
 
-  /** Load gtag.js for the consent just sent, unless it refuses analytics in basic mode. */
+  /** Load the tags for the consent just sent, unless it refuses analytics in basic mode. */
   private startTagLoad(signals: GoogleConsentSignals): void {
-    const gaId = this.config.gaId;
-    if (!gaId || this.destroyed) return;
+    if (this.destroyed) return;
     // A refusal itself must not cause a request to Google: no load now and no retry later.
     if (this.basicMode && signals.analytics_storage === "denied") return;
-    if (this.gaLoading) {
+    for (const tag of this.tags) {
       // Should the attempt in flight fail, this decision still gets its retry.
-      this.gaRetryOnFailure = true;
-      return;
+      if (tag.loading) tag.retryOnFailure = true;
+      else if (!tag.loaded) this.loadTag(tag);
     }
-    if (!this.gaLoaded) this.loadGtag(gaId);
   }
 
   /**

@@ -14,7 +14,7 @@ Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visit
 
 ## Features
 
-- **Nothing Before Consent** — With `consentMode: 'basic'` the Google tag the library loads (from `gaId`) stays off the page, with no `dataLayer` entry or request, until the visitor allows analytics; withdrawal switches it off and deletes its cookies. Tags and scripts the site loads itself are its own to gate
+- **Nothing Before Consent** — With `consentMode: 'basic'` the Google tag the library loads (gtag.js from `gaId`, a [Tag Manager container](https://privacy.sw.foundation/guide/google-tag-manager) from `gtmId`) stays off the page, with no `dataLayer` entry or request, until the visitor allows analytics; withdrawal switches gtag.js off, deletes the `_ga` cookies, and can reload a running container away. Tags and scripts the site loads itself are its own to gate
 - **Holds Across the SPA Lifecycle** — Reloads, client-side navigation and slow lookups never override a newer choice; in basic mode a choice or reset in another tab is followed
 - **Google Consent Mode v2** — Full support for `analytics_storage`, `ad_storage`, `ad_user_data`, `ad_personalization`
 - **GDPR & CCPA Building Blocks** — A fair banner and stored choice for the GDPR, CCPA state detection and "Do Not Sell" text; compliance still depends on the whole site ([Limits](https://privacy.sw.foundation/guide/limits))
@@ -152,6 +152,10 @@ interface ConsentConfig {
   // Google Analytics measurement ID
   gaId?: string;
 
+  // Google Tag Manager container ID: the manager issues the consent default, then loads the
+  // container (drop the site's own container snippet)
+  gtmId?: string;
+
   // Automatic page_view from the tag's config call (false for SPAs). Default: true
   sendPageView?: boolean;
 
@@ -164,13 +168,14 @@ interface ConsentConfig {
     urlPassthrough?: boolean;                   // gtag('set', 'url_passthrough', ...)
   };
 
-  // 'advanced' (default): gtag.js loads for every visitor with denied defaults and Google
+  // 'advanced' (default): the tags load for every visitor with denied defaults and Google
   //   receives cookieless pings before any choice and after a refusal.
-  // 'basic': nothing reaches Google until the visitor allows analytics. Requires gaId.
+  // 'basic': nothing reaches Google until the visitor allows analytics. Requires gaId or gtmId.
   consentMode?: 'advanced' | 'basic';
 
-  // Basic mode: reload the page when analytics is withdrawn after the Google tag loaded, so
-  // products linked to that tag (Google Ads, Floodlight) stop too. Default: false
+  // Basic mode: reload the page when analytics is withdrawn after a Google tag loaded, so
+  // products linked to that tag (Google Ads, Floodlight) and a container's tags stop too.
+  // Default: false
   reloadOnWithdrawal?: boolean;
 
   // Locale for UI text. When not set: the first of the browser's preferred languages

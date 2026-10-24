@@ -3152,11 +3152,14 @@ describe("basic consent mode", () => {
     expect(listened).toEqual([false]);
   });
 
-  it("refuses basic mode without a measurement ID", () => {
+  it("refuses basic mode without a measurement or container ID", () => {
     // Regression: without gaId the site loads gtag itself, so nothing the manager does keeps
     // Google from being contacted before consent or after a refusal; basic mode silently
     // degraded to sending consent updates to that tag.
-    expect(() => new ConsentManager({ consentMode: "basic" })).toThrow(/gaId/);
+    expect(() => new ConsentManager({ consentMode: "basic" })).toThrow(
+      "consentMode 'basic' requires gaId or gtmId: the manager must load the Google tag"
+    );
+    expect(() => new ConsentManager({ consentMode: "basic", gtmId: "GTM-TEST" })).not.toThrow();
   });
 
   it("keeps the advanced mode as the default", async () => {

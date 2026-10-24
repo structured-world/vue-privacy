@@ -191,7 +191,7 @@ Call `listener(locale)` on every language switch, for a custom dialog to re-rend
 
 #### `onConsentChange(listener): void`
 
-Call `listener(categories)` whenever the categories in effect change on this page. With `consentMode: 'basic'` (and `gaId`) a choice made in another tab of the site counts too, once this tab follows it; in the default advanced mode the listeners are not called for another tab's choice. Each listener gets its own copy; one that throws is logged and does not stop the others.
+Call `listener(categories)` whenever the categories in effect change on this page. With `consentMode: 'basic'` a choice made in another tab of the site counts too, once this tab follows it; in the default advanced mode the listeners are not called for another tab's choice. Each listener gets its own copy; one that throws is logged and does not stop the others.
 
 #### Dialog callbacks
 

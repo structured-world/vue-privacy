@@ -482,6 +482,14 @@ export interface ConsentConfig {
   gaId?: string;
 
   /**
+   * Google Tag Manager container ID (GTM-XXXXXXX). The manager issues the page's
+   * `consent default`, then queues the container's `gtm.js` event and loads the container, as it
+   * does gtag.js for `gaId`; drop the site's own container snippet and its `<noscript>` iframe.
+   * Works alone or next to `gaId`.
+   */
+  gtmId?: string;
+
+  /**
    * Locale for UI text. When not set, the first of the browser's preferred languages
    * (navigator.languages) among `locales`, else `fallbackLocale`. `setLocale()` switches it later.
    * Supported: every official EU language (bg, cs, da, de, el, en, es, et, fi, fr, ga, hr, hu,
@@ -577,31 +585,35 @@ export interface ConsentConfig {
   /**
    * Configuration of the Google tag for `gaId`: `config` and `set` fields, Consent Mode's
    * `ads_data_redaction` and `url_passthrough`. Sent once, after the consent default and before
-   * the tag loads; in basic mode, only once the visitor allows analytics.
+   * the tag loads; in basic mode, only once the visitor allows analytics. With `gtmId` the `set`
+   * fields, `adsDataRedaction` and `urlPassthrough` go ahead of the container too; `config` and
+   * `customParameters` apply to `gaId` only (a container configures its own tags).
    */
   googleAnalytics?: GoogleAnalyticsOptions;
 
   /**
-   * How the Google tag for `gaId` relates to consent (Google Consent Mode):
-   * - `'advanced'` (default): gtag.js loads for every visitor with denied defaults, and Google
+   * How the Google tags for `gaId` and `gtmId` relate to consent (Google Consent Mode):
+   * - `'advanced'` (default): the tags load for every visitor with denied defaults, and Google
    *   receives cookieless pings (page views, events) before any choice and after a refusal.
    * - `'basic'`: nothing reaches Google (no script, no dataLayer entry, no request) until the
    *   visitor explicitly allows analytics; a grant implied by the jurisdiction (CCPA, outside
-   *   consent jurisdictions) does not count. Withdrawing analytics switches a loaded tag off
-   *   (`ga-disable-<ID>`) and deletes the `_ga` cookies.
+   *   consent jurisdictions) does not count. Withdrawing analytics switches the gtag.js tag off
+   *   (`ga-disable-<ID>`) and deletes the `_ga` cookies; a running container cannot be switched
+   *   off, only reloaded away (`reloadOnWithdrawal`).
    *   Choose it when the site promises "Google Analytics only with consent"; Google then
-   *   models no conversions for visitors who did not consent. Requires `gaId` (the manager
-   *   loads the tag); a site that loads gtag itself cannot keep that promise, and the
-   *   constructor throws.
+   *   models no conversions for visitors who did not consent. Requires `gaId` or `gtmId` (the
+   *   manager loads the tag); a site that loads its tags itself cannot keep that promise, and
+   *   the constructor throws.
    * @default 'advanced'
    */
   consentMode?: "advanced" | "basic";
 
   /**
-   * Basic mode only: reload the page when the visitor withdraws analytics after the Google tag
-   * has loaded on it. A withdrawal stops Google Analytics on the spot, but other products linked
-   * to the same Google tag (Google Ads, Floodlight) keep sending cookieless pings until the page
-   * reloads, and a running script cannot be unloaded. The choice is saved first (a remote write
+   * Basic mode only: reload the page when the visitor withdraws analytics after a Google tag
+   * (gtag.js or the container) has loaded on it. A withdrawal stops gtag.js measurement on the
+   * spot, but other products linked to the same Google tag (Google Ads, Floodlight) and every
+   * tag in a container keep sending cookieless pings until the page reloads, and a running
+   * script cannot be unloaded. The choice is saved first (a remote write
    * through `storage` is waited for, up to 10 seconds) and the consent callbacks run; the reload follows even if they destroy the manager, since the tag runs
    * page-wide, and is dropped if they allow analytics again. It drops in-page state, so enable it deliberately. While analytics stays allowed
    * the tag loads, and linked advertising products follow the ad signals (cookieless pings when
@@ -611,7 +623,7 @@ export interface ConsentConfig {
   reloadOnWithdrawal?: boolean;
 
   /**
-   * Called when gtag.js fails to load (an ad blocker, a network error). The consent flow is
+   * Called when gtag.js or the container fails to load (an ad blocker, a network error). The consent flow is
    * not affected: the banner still shows and choices are saved; the next consent change
    * retries the load.
    */
