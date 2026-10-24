@@ -14,6 +14,12 @@ interface ConsentConfig {
   gaId?: string;
 
   /**
+   * Google Tag Manager container ID (GTM-XXXXXXX): the manager issues the consent default,
+   * then queues gtm.js and loads the container. Alone or next to gaId. See the GTM guide.
+   */
+  gtmId?: string;
+
+  /**
    * UI language. When not set: the first of the browser's preferred languages among
    * `locales`, else `fallbackLocale`. setLocale() switches it later. See the Languages guide.
    */
@@ -84,30 +90,33 @@ interface ConsentConfig {
   /**
    * Google tag configuration for gaId, sent once after the consent default
    * and before the tag loads (in basic mode, once analytics is allowed).
+   * With gtmId the set fields, adsDataRedaction and urlPassthrough precede
+   * the container too; config and customParameters apply to gaId only.
    */
   googleAnalytics?: GoogleAnalyticsOptions;
 
   /**
-   * 'advanced': gtag.js loads for every visitor with denied defaults;
+   * 'advanced': the tags load for every visitor with denied defaults;
    * Google receives cookieless pings before any choice and after a refusal.
    * 'basic': nothing reaches Google until the visitor allows analytics;
    * a grant implied by the jurisdiction does not count, and withdrawing
-   * analytics switches a loaded tag off and deletes the _ga cookies.
-   * Requires gaId: the manager loads the tag (the constructor throws without it).
+   * analytics switches gtag.js off and deletes the _ga cookies (a running
+   * container can only be reloaded away, see reloadOnWithdrawal).
+   * Requires gaId or gtmId: the manager loads the tag (the constructor throws without one).
    * @default 'advanced'
    */
   consentMode?: "advanced" | "basic";
 
   /**
-   * Basic mode: reload the page when analytics is withdrawn after the
+   * Basic mode: reload the page when analytics is withdrawn after a
    * Google tag loaded, so products linked to that tag (Google Ads,
-   * Floodlight) stop too; the choice is saved first.
+   * Floodlight) and the tags of a container stop too; the choice is saved first.
    * @default false
    */
   reloadOnWithdrawal?: boolean;
 
   /**
-   * Called when gtag.js fails to load (an ad blocker, a network error).
+   * Called when gtag.js or the container fails to load (an ad blocker, a network error).
    * The banner still shows and choices are still saved; the next consent
    * change retries the load.
    */

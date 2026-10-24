@@ -73,14 +73,24 @@ export function isGoogleTagLoaded(): boolean {
 }
 
 /**
- * Whether gtag.js ran for this measurement ID. The Google tag records every ID it loaded as a
- * key of `window.google_tag_manager`; the object itself is page-wide and also exists for an
- * unrelated Tag Manager container, so its presence alone says nothing about this ID.
+ * Whether the Google tag ran for this ID: gtag.js for a measurement ID, Google Tag Manager for a
+ * container ID. Both record every ID they loaded as a key of `window.google_tag_manager`; the
+ * object itself is page-wide, so its presence alone says nothing about this ID.
  */
-export function isTagLoadedFor(gaId: string): boolean {
+export function isTagLoadedFor(id: string): boolean {
   if (typeof window === "undefined") return false;
   const tags = window.google_tag_manager;
-  return typeof tags === "object" && tags !== null && gaId in tags;
+  return typeof tags === "object" && tags !== null && id in tags;
+}
+
+/** The script a Google tag runs from: gtag.js for a measurement ID, gtm.js for a container. */
+export type GoogleTagScript = "gtag" | "gtm";
+
+const TAG_SCRIPT_PATHS: Record<GoogleTagScript, string> = { gtag: "gtag/js", gtm: "gtm.js" };
+const TAG_SCRIPT_NAMES: Record<GoogleTagScript, string> = { gtag: "gtag.js", gtm: "gtm.js" };
+
+function tagScriptSrc(id: string, script: GoogleTagScript): string {
+  return `https://www.googletagmanager.com/${TAG_SCRIPT_PATHS[script]}?id=${id}`;
 }
 
 /**
@@ -141,10 +151,10 @@ function isExecutable(element: HTMLScriptElement): boolean {
   return value === "" || value === "module" || JAVASCRIPT_MIME_TYPES.has(value);
 }
 
-function tagElementsFor(gaId: string): HTMLScriptElement[] {
+function tagElementsFor(id: string, script: GoogleTagScript): HTMLScriptElement[] {
   return Array.from(
     document.querySelectorAll<HTMLScriptElement>(
-      `script[src*="googletagmanager.com/gtag/js?id=${gaId}"]`
+      `script[src*="googletagmanager.com/${TAG_SCRIPT_PATHS[script]}?id=${id}"]`
     )
   ).filter(isExecutable);
 }
@@ -154,23 +164,25 @@ function tagElementsFor(gaId: string): HTMLScriptElement[] {
  * it is on the page and has not failed (a request in flight, or one past its timeout that can
  * still arrive and run).
  *
- * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param id - Measurement ID (G-XXXXXXXXXX), or container ID (GTM-XXXXXXX) with `script` "gtm"
+ * @param script - The script the tag runs from
  */
-export function isTagLiveFor(gaId: string): boolean {
-  if (isTagLoadedFor(gaId)) return true;
+export function isTagLiveFor(id: string, script: GoogleTagScript = "gtag"): boolean {
+  if (isTagLoadedFor(id)) return true;
   if (typeof document === "undefined") return false;
-  return tagElementsFor(gaId).some((element) => !failedTags.has(element));
+  return tagElementsFor(id, script).some((element) => !failedTags.has(element));
 }
 
 /**
- * Whether a gtag.js element a consent manager appended for this ID is on the page and has not
+ * Whether a tag element a consent manager appended for this ID is on the page and has not
  * failed: the tag may run, and a reload removes it for good.
  *
- * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param id - Measurement ID (G-XXXXXXXXXX), or container ID (GTM-XXXXXXX) with `script` "gtm"
+ * @param script - The script the tag runs from
  */
-export function isManagedTagLiveFor(gaId: string): boolean {
+export function isManagedTagLiveFor(id: string, script: GoogleTagScript = "gtag"): boolean {
   if (typeof document === "undefined") return false;
-  return tagElementsFor(gaId).some(
+  return tagElementsFor(id, script).some(
     (element) => managedTags.has(element) && !failedTags.has(element)
   );
 }
@@ -282,16 +294,12 @@ function moveAheadOfQueuedMeasurement(): void {
 }
 
 /**
- * A gtag.js element fired load. gtag.js registers its measurement ID while it runs, before that
- * event; a load without it (a blocker's stand-in script) is not the tag, so the deadline stays
- * and checks once more when it expires.
+ * A tag element fired load. The tag registers its ID while it runs, before that event; a load
+ * without it (a blocker's stand-in script) is not the tag, so the deadline stays and checks once
+ * more when it expires.
  */
-function settleOnLoad(
-  timer: ReturnType<typeof setTimeout>,
-  resolve: () => void,
-  gaId: string
-): void {
-  if (!isTagLoadedFor(gaId)) return;
+function settleOnLoad(timer: ReturnType<typeof setTimeout>, resolve: () => void, id: string): void {
+  if (!isTagLoadedFor(id)) return;
   clearTimeout(timer);
   resolve();
 }
@@ -306,31 +314,33 @@ function settleOnLoad(
  */
 export function loadGtagScript(gaId: string): Promise<void> {
   // The site's own call: it runs again on every start, so the element is not the manager's.
-  return appendGtagScript(gaId, false);
+  return appendTagScript(gaId, "gtag", false);
 }
 
 /**
- * The consent manager's load of gtag.js. The element it appends counts as the manager's: unlike
- * a site's own load, it does not come back after a reload. Not part of the public API.
+ * The consent manager's load of gtag.js or of a Tag Manager container. The element it appends
+ * counts as the manager's: unlike a site's own load, it does not come back after a reload. Not
+ * part of the public API.
  *
- * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param id - Measurement ID (G-XXXXXXXXXX), or container ID (GTM-XXXXXXX) with `script` "gtm"
+ * @param script - The script the tag runs from
  */
-export function loadManagedGtagScript(gaId: string): Promise<void> {
-  return appendGtagScript(gaId, true);
+export function loadManagedTagScript(id: string, script: GoogleTagScript): Promise<void> {
+  return appendTagScript(id, script, true);
 }
 
-function appendGtagScript(gaId: string, managed: boolean): Promise<void> {
+function appendTagScript(id: string, script: GoogleTagScript, managed: boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     if (typeof document === "undefined") {
       resolve();
       return;
     }
 
-    const failure = () => new Error(`Failed to load gtag.js for ${gaId}`);
-    const matching = tagElementsFor(gaId);
+    const failure = () => new Error(`Failed to load ${TAG_SCRIPT_NAMES[script]} for ${id}`);
+    const matching = tagElementsFor(id, script);
     // Any element for this ID, one given up on as stalled included, may since have run: then
     // the tag is up and another element would only load it twice.
-    if (matching.length > 0 && isTagLoadedFor(gaId)) {
+    if (matching.length > 0 && isTagLoadedFor(id)) {
       resolve();
       return;
     }
@@ -344,10 +354,10 @@ function appendGtagScript(gaId: string, managed: boolean): Promise<void> {
         reject(failure());
       };
       const timer = setTimeout(
-        () => (isTagLoadedFor(gaId) ? resolve() : fail()),
+        () => (isTagLoadedFor(id) ? resolve() : fail()),
         TAG_LOAD_TIMEOUT_MS
       );
-      existing.addEventListener("load", () => settleOnLoad(timer, resolve, gaId), { once: true });
+      existing.addEventListener("load", () => settleOnLoad(timer, resolve, id), { once: true });
       // Also after the timeout: the element then stops counting as a tag that may still run.
       existing.addEventListener(
         "error",
@@ -360,29 +370,29 @@ function appendGtagScript(gaId: string, managed: boolean): Promise<void> {
       return;
     }
 
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
-    if (managed) managedTags.add(script);
+    const element = document.createElement("script");
+    element.async = true;
+    element.src = tagScriptSrc(id, script);
+    if (managed) managedTags.add(element);
     // A request that neither loads nor fails would otherwise hold every later attempt forever.
     const timer = setTimeout(() => {
-      if (isTagLoadedFor(gaId)) {
+      if (isTagLoadedFor(id)) {
         resolve();
         return;
       }
-      stalledTags.add(script);
+      stalledTags.add(element);
       reject(failure());
     }, TAG_LOAD_TIMEOUT_MS);
-    script.onload = () => settleOnLoad(timer, resolve, gaId);
+    element.onload = () => settleOnLoad(timer, resolve, id);
     // Also after the timeout, when the promise has settled: the element goes either way.
-    script.onerror = () => {
+    element.onerror = () => {
       clearTimeout(timer);
       // A failed element would make the next attempt wait on it instead of retrying.
-      script.remove();
+      element.remove();
       reject(failure());
     };
 
-    document.head.appendChild(script);
+    document.head.appendChild(element);
   });
 }
 
@@ -415,12 +425,15 @@ export function setAnalyticsDisabled(gaId: string, disabled: boolean): void {
 /** Values gtag.js stores: `GA1.<n>.<id>.<time>` in `_ga`, `GS1.`/`GS2.` session state in `_ga_<ID>`. */
 const GA_COOKIE_VALUE = /^G[AS]\d\./;
 
+/** A `_ga_<ID>` session cookie name for any measurement ID (the stream ID without "G-"). */
+const ANY_SESSION_COOKIE = /_ga_[A-Z0-9]+$/;
+
 /**
  * The parameters a dataLayer command applies to the tag for an ID, or null. `set` applies to
  * every tag on the page, `config` only to the ID it names. `set` also takes one setting as
  * `gtag('set', 'cookie_path', '/path')`.
  */
-function paramsFor(command: ArrayLike<unknown>, gaId: string): unknown {
+function paramsFor(command: ArrayLike<unknown>, gaId: string | null): unknown {
   if (command[0] === "set") {
     return typeof command[1] === "string" ? { [command[1]]: command[2] } : command[1];
   }
@@ -449,7 +462,10 @@ function addCookieSettings(settings: CookieSettings, params: unknown): void {
  * with: from this page's `set` and `config` commands, and from the options a consent manager
  * holds, which name the cookies an earlier page set before anything was queued on this one.
  */
-function configuredCookieSettings(gaId: string, options: GoogleAnalyticsOptions): CookieSettings {
+function configuredCookieSettings(
+  gaId: string | null,
+  options: GoogleAnalyticsOptions
+): CookieSettings {
   const settings: CookieSettings = {
     prefixes: new Set([""]),
     paths: new Set<string>(),
@@ -476,10 +492,15 @@ function configuredCookieSettings(gaId: string, options: GoogleAnalyticsOptions)
  * and every parent domain, on "/" and every path prefix of this page; the combinations that do
  * not match are no-ops.
  *
- * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX)
+ * @param gaId - Google Analytics measurement ID (G-XXXXXXXXXX); null for the GA4 tags of a Tag
+ *   Manager container, whose IDs live in the container: then every visible `_ga_<ID>` cookie
+ *   with GA's value format goes
  * @param options - The tag configuration the manager sends, whose cookie settings count too
  */
-export function clearAnalyticsCookies(gaId: string, options: GoogleAnalyticsOptions = {}): void {
+export function clearAnalyticsCookies(
+  gaId: string | null,
+  options: GoogleAnalyticsOptions = {}
+): void {
   if (typeof document === "undefined") return;
   const configured = configuredCookieSettings(gaId, options);
   const paths = analyticsCookiePaths(configured);
@@ -492,12 +513,14 @@ export function clearAnalyticsCookies(gaId: string, options: GoogleAnalyticsOpti
 }
 
 /** The configured `_ga` / `_ga_<ID>` names, plus visible GA-like names whose value is GA's. */
-function analyticsCookieNames(gaId: string, configured: CookieSettings): Set<string> {
-  const session = `_ga_${gaId.replace(/^G-/, "")}`;
+function analyticsCookieNames(gaId: string | null, configured: CookieSettings): Set<string> {
+  const session = gaId === null ? null : `_ga_${gaId.replace(/^G-/, "")}`;
+  const isSession = (name: string): boolean =>
+    session === null ? ANY_SESSION_COOKIE.test(name) : name.endsWith(session);
   const names = new Set<string>();
   for (const prefix of configured.prefixes) {
     names.add(`${prefix}_ga`);
-    names.add(`${prefix}${session}`);
+    if (session !== null) names.add(`${prefix}${session}`);
   }
   let jar = "";
   try {
@@ -510,7 +533,7 @@ function analyticsCookieNames(gaId: string, configured: CookieSettings): Set<str
     if (separator < 0) continue;
     const name = entry.slice(0, separator).trim();
     const value = entry.slice(separator + 1).trim();
-    if ((name.endsWith("_ga") || name.endsWith(session)) && GA_COOKIE_VALUE.test(value)) {
+    if ((name.endsWith("_ga") || isSession(name)) && GA_COOKIE_VALUE.test(value)) {
       names.add(name);
     }
   }
@@ -640,16 +663,30 @@ function setCommandFields(options: GoogleAnalyticsOptions): Record<string, unkno
 }
 
 /**
- * Queue `set`, `js` and `config` right after the consent defaults, as Google's own snippet does:
- * the dataLayer is processed in order once gtag.js runs, so every later event follows `config`
- * whether the script is still loading, failed and is retried, or already ran.
- *
- * `set` goes ahead of every measurement command already queued (a site's own snippet, a Tag
+ * Queue the `set` fields (`set`, `ads_data_redaction`, `url_passthrough`) right after the consent
+ * defaults, ahead of every measurement command already queued (a site's own snippet, a Tag
  * Manager `gtm.js` event): `url_passthrough` has to precede every `config`, and
- * `ads_data_redaction` every Ads or Floodlight hit. It is sent also when `config` for this ID is
- * already queued, since it needs no second `config`. A matching `set` already in the queue does
+ * `ads_data_redaction` every Ads or Floodlight hit. A matching `set` already in the queue does
  * not replace it: that one may sit after a queued event, and moving the page's own commands
  * would reorder its later overrides. A repeated `set` with the same fields changes nothing.
+ *
+ * @param options - The tag configuration; only its `set` fields are sent here
+ */
+export function queueTagSettings(options: GoogleAnalyticsOptions): void {
+  if (typeof window === "undefined") return;
+  initGtag();
+  const settings = setCommandFields(options);
+  if (settings === null) return;
+  window.gtag("set", settings);
+  moveAheadOfQueuedMeasurement();
+}
+
+/**
+ * Queue `set`, `js` and `config` right after the consent defaults, as Google's own snippet does:
+ * the dataLayer is processed in order once gtag.js runs, so every later event follows `config`
+ * whether the script is still loading, failed and is retried, or already ran. `set` is sent
+ * also when `config` for this ID is already queued, since it needs no second `config` (see
+ * {@link queueTagSettings}).
  *
  * @param gaId - Google Analytics measurement ID
  * @param sendPageView - Whether `config` sends the automatic page_view
@@ -661,12 +698,7 @@ export function queueGoogleAnalyticsConfig(
   options: GoogleAnalyticsOptions = {}
 ): void {
   if (typeof window === "undefined") return;
-  initGtag();
-  const settings = setCommandFields(options);
-  if (settings !== null) {
-    window.gtag("set", settings);
-    moveAheadOfQueuedMeasurement();
-  }
+  queueTagSettings(options);
   // Once per page: a retried initialisation would otherwise queue a second `config`, and
   // both are processed (two page views) once the tag loads.
   const queued = window.dataLayer.some((entry) => {
@@ -681,4 +713,22 @@ export function queueGoogleAnalyticsConfig(
     ...options.config,
     send_page_view: sendPageView,
   });
+}
+
+/**
+ * Queue the `gtm.js` event of Google Tag Manager's snippet after the consent defaults: the
+ * container fires its page-load triggers on it once gtm.js runs. Once per page: an event the
+ * site's own snippet or an earlier attempt queued already starts every container that loads.
+ */
+export function queueContainerStart(): void {
+  if (typeof window === "undefined") return;
+  initGtag();
+  const queued = window.dataLayer.some(
+    (entry) =>
+      commandOf(entry) === null &&
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as Record<string, unknown>).event === "gtm.js"
+  );
+  if (!queued) window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
 }
