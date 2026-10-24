@@ -83,7 +83,23 @@ Leave out the `<noscript>` iframe: it loads `ns.html` from `googletagmanager.com
 The manager supplies the consent state; the container decides what each tag does with it.
 
 - **Google tags** (the Google tag, GA4 events, Google Ads, Floodlight, Conversion Linker) have built-in consent checks and adjust to the signals themselves. Turn on **Admin → Container Settings → Enable consent overview** to see them per tag.
-- **Other tags** (Meta Pixel, Hotjar, a Custom HTML tag) have none. Open the tag's **Advanced Settings → Consent Settings**, pick **Require additional consent for tag to fire** and add `ad_storage` for advertising tags, `analytics_storage` for analytics ones. Such a tag waits until the signal is granted and fires then.
+- **Other tags** (Meta Pixel, Hotjar, a Custom HTML tag) have none. Open the tag's **Advanced Settings → Consent Settings**, pick **Require additional consent for tag to fire** and add `ad_storage` for advertising tags, `analytics_storage` for analytics ones. The check runs only when the tag's trigger fires: a tag blocked on the page-load trigger stays unfired after the visitor accepts, since a consent update fires no trigger. Give such tags a trigger that fires after each decision, below.
 - **No consent management template** and no **Consent Initialization** tag for another CMP: the manager is the CMP, and a second default from the container would compete with its own.
+
+### Firing Tags After Consent
+
+`onConsentChange` runs after the manager has sent the new signals to Google: for a stored choice when the page starts, and for every later choice. Push an event from it:
+
+```typescript
+createConsentPlugin({
+  gtmId: 'GTM-XXXXXXX',
+  onConsentChange: () => {
+    // In basic mode the dataLayer may not exist yet before a grant
+    (window.dataLayer = window.dataLayer || []).push({ event: 'consent_change' });
+  },
+});
+```
+
+In the container, add a **Custom Event** trigger with the event name `consent_change` and use it on the tags with additional consent checks, in place of All Pages. Keep their consent checks, so a refusal still blocks them, and set **Advanced Settings → Tag firing options** to **Once per page**, so a later change of another category does not initialise them twice. A visitor who has not chosen yet gets no event until the choice; outside consent jurisdictions the jurisdiction's grant runs the callback when the page starts, as a stored choice does.
 
 Events the site sends to the container (`dataLayer.push({ event: 'sign_up' })`) are the site's own: the manager does not gate them. In basic mode a container loaded later processes the events queued before it, so push events only while `getConsent()?.categories.analytics` is `true` if none may be counted from before the grant.
