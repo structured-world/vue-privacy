@@ -196,7 +196,7 @@ See [Ecommerce Tracking](/guide/ecommerce) for full parameter documentation.
 
 | Format | Size | Gzipped |
 |--------|------|---------|
-| UMD (`<script>` tag and `require`) | ~97 kB | ~31 kB |
-| ES modules (main entry with its chunks) | ~98 kB | ~29 kB |
+| UMD (`<script>` tag and `require`) | ~103 kB | ~33 kB |
+| ES modules (main entry with its chunks) | ~126 kB | ~36 kB |
 
 Both include all 31 locales.

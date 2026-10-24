@@ -31,7 +31,7 @@ Cookie consent for Vue 3, Nuxt, VitePress, Quasar and plain HTML where the visit
 - **Vanilla JS** — Framework-agnostic entry point (`/vanilla`) for non-Vue projects
 - **UMD/CDN** — Use via `<script>` tag, no build tools needed
 - **TypeScript** — Full type safety
-- **No runtime dependencies** — ~31 kB gzip (UMD, all 31 locales included)
+- **No runtime dependencies** — ~33 kB gzip (UMD, all 31 locales included)
 - **SSR Safe** — Works with server-side rendering
 - **Accessible** — ARIA-compliant components with focus trap
 
