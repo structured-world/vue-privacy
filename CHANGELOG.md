@@ -4,6 +4,13 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.1.0](https://github.com/structured-world/vue-privacy/compare/v2.0.2...v2.1.0) (2026-10-24)
+
+
+### Features
+
+* **gtm:** load a Tag Manager container under consent mode ([#259](https://github.com/structured-world/vue-privacy/issues/259)) ([3f04c24](https://github.com/structured-world/vue-privacy/commit/3f04c243a1722e2ca9c469da39a3c9f362693f4b)), closes [#258](https://github.com/structured-world/vue-privacy/issues/258)
+
 ## [2.0.2](https://github.com/structured-world/vue-privacy/compare/v2.0.1...v2.0.2) (2026-10-12)
 
 
