@@ -4,6 +4,13 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.1.1](https://github.com/structured-world/vue-privacy/compare/v2.1.0...v2.1.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **vue:** trap Shift+Tab from the preference modal container ([#264](https://github.com/structured-world/vue-privacy/issues/264)) ([5003575](https://github.com/structured-world/vue-privacy/commit/50035750ac83d1a7368bd71d784af7d269987b81)), closes [#263](https://github.com/structured-world/vue-privacy/issues/263)
+
 ## [2.1.0](https://github.com/structured-world/vue-privacy/compare/v2.0.2...v2.1.0) (2026-10-24)
 
 
