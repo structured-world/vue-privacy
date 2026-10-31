@@ -175,8 +175,11 @@ function handleKeydown(e: KeyboardEvent) {
 
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
+    // The container holds focus on open, before the first control: Shift+Tab from it wraps too
+    const focusBeforeFirst =
+      document.activeElement === firstElement || document.activeElement === container;
 
-    if (e.shiftKey && document.activeElement === firstElement) {
+    if (e.shiftKey && focusBeforeFirst) {
       e.preventDefault();
       lastElement.focus();
     } else if (!e.shiftKey && document.activeElement === lastElement) {
