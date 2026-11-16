@@ -56,6 +56,11 @@ jobs:
           test -f dist/quasar/index.d.ts
           test -f dist/vanilla/index.d.ts
 
+      # The packed package as a consumer installs it, under node16, nodenext and bundler
+      # resolution: its declarations must resolve and keep their types.
+      - name: Check package types
+        run: yarn test:types
+
       - name: Test
         run: yarn test --coverage
 

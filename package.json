@@ -78,7 +78,7 @@
     "node": ">=20.10"
   },
   "scripts": {
-    "build": "vite build && vite build --config vite.config.umd.ts && vue-tsc --project tsconfig.build.json --emitDeclarationOnly",
+    "build": "vite build && vite build --config vite.config.umd.ts",
     "dev": "vite build --watch",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src/",
@@ -88,6 +88,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
+    "test:types": "node --experimental-strip-types scripts/package-types/check.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

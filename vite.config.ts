@@ -3,6 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import dts from "vite-plugin-dts";
 import { resolve } from "path";
 import { copyFileSync, mkdirSync } from "fs";
+import { rewriteDeclarationSpecifiers } from "./scripts/dts-specifiers";
 // Building needs Node 22.12+ (the toolchain's minimum; CI runs 22.x and 24.x), which covers
 // `with { type: "json" }` and `import.meta.dirname`. package.json `engines` is about consumers
 // of the built library, not this build.
@@ -44,8 +45,8 @@ export default defineConfig({
       include: ["src/**/*"],
       exclude: ["src/__tests__/**"],
       outDir: "dist",
-      rollupTypes: false,
       tsconfigPath: "./tsconfig.build.json",
+      afterBuild: rewriteDeclarationSpecifiers,
     }),
     copyVanillaCss(),
   ],
