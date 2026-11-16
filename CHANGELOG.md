@@ -4,6 +4,13 @@
 
 * **consent:** add basic consent mode ([#221](https://github.com/structured-world/vue-privacy/issues/221)) ([1b54d22](https://github.com/structured-world/vue-privacy/commit/1b54d22e462290bcde9a791c00fa4f678e745354)), closes [#199](https://github.com/structured-world/vue-privacy/issues/199)
 
+## [2.1.2](https://github.com/structured-world/vue-privacy/compare/v2.1.1...v2.1.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **types:** resolve declarations under node16 and nodenext ([#272](https://github.com/structured-world/vue-privacy/issues/272)) ([fd8ee46](https://github.com/structured-world/vue-privacy/commit/fd8ee4678fa71833289eb58f6af770b1e0e71dcc)), closes [#271](https://github.com/structured-world/vue-privacy/issues/271)
+
 ## [2.1.1](https://github.com/structured-world/vue-privacy/compare/v2.1.0...v2.1.1) (2026-10-31)
 
 
