@@ -88,7 +88,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "test:types": "node scripts/package-types/check.ts",
+    "test:types": "node --experimental-strip-types scripts/package-types/check.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

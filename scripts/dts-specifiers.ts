@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import ts from "typescript";
+import { normalizePath } from "vite";
 
 /**
  * Rewrites the relative module specifiers in emitted declaration files to the form ESM
@@ -16,10 +17,12 @@ import ts from "typescript";
  * @param emitted Every emitted file, absolute path to content (vite-plugin-dts `afterBuild`).
  */
 export function rewriteDeclarationSpecifiers(emitted: ReadonlyMap<string, string>): void {
-  const declarations = new Set([...emitted.keys()].filter((path) => path.endsWith(".d.ts")));
-  for (const path of declarations) {
-    const content = emitted.get(path) ?? "";
-    const rewritten = rewriteFile(path, content, declarations);
+  // Every path is compared in Vite's form (forward slashes): on Windows `resolve()` returns
+  // backslashes and would miss a declaration the plugin keyed with forward slashes.
+  const files = [...emitted].filter(([path]) => path.endsWith(".d.ts"));
+  const declarations = new Set(files.map(([path]) => normalizePath(path)));
+  for (const [path, content] of files) {
+    const rewritten = rewriteFile(normalizePath(path), content, declarations);
     if (rewritten !== content) writeFileSync(path, rewritten);
   }
 }
@@ -73,10 +76,10 @@ function resolveSpecifier(
   specifier: string,
   declarations: ReadonlySet<string>
 ): string {
-  const bare = specifier.replace(/\/+$/, "");
-  const target = resolve(dirname(from), bare);
+  const bare = specifier.endsWith("/") ? specifier.slice(0, -1) : specifier;
+  const target = normalizePath(resolve(dirname(from), bare));
   if (bare.endsWith(".js") && declarations.has(`${target.slice(0, -3)}.d.ts`)) return bare;
   if (declarations.has(`${target}.d.ts`)) return `${bare}.js`;
-  if (declarations.has(resolve(target, "index.d.ts"))) return `${bare}/index.js`;
+  if (declarations.has(`${target}/index.d.ts`)) return `${bare}/index.js`;
   throw new Error(`${from}: "${specifier}" names no emitted declaration file`);
 }

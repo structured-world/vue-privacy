@@ -57,6 +57,8 @@ const BASE_OPTIONS: ts.CompilerOptions = {
 };
 
 function packTarball(destination: string): string {
+  // `npm` and `tar` come from the caller's PATH on purpose: this check runs as the developer or CI
+  // user, whose PATH no other party can write to, and must pack with the npm that publishes.
   const output = execFileSync("npm", ["pack", "--json", "--pack-destination", destination], {
     cwd: repoRoot,
     encoding: "utf8",
